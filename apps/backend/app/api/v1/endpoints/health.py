@@ -9,6 +9,8 @@ from app.schemas.health import LivenessStatus, ReadinessStatus
 logger = get_logger(__name__)
 router = APIRouter(tags=["health"])
 
+TIMESCALEDB_VERSION = text("SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'")
+
 
 @router.get("/live", summary="Sonde de vivacite")
 async def liveness(settings: SettingsDep) -> LivenessStatus:
@@ -23,11 +25,19 @@ async def liveness(settings: SettingsDep) -> LivenessStatus:
 @router.get("/ready", summary="Sonde de disponibilite")
 async def readiness(session: SessionDep) -> ReadinessStatus:
     try:
-        await session.execute(text("SELECT 1"))
-    except (SQLAlchemyError, OSError):
+        version: str | None = await session.scalar(TIMESCALEDB_VERSION)
+    except SQLAlchemyError, OSError:
         logger.exception("Base de donnees injoignable")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Base de donnees injoignable",
         ) from None
-    return ReadinessStatus(status="ready", database="reachable")
+
+    if version is None:
+        logger.error("Extension TimescaleDB absente de la base")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Extension TimescaleDB absente",
+        )
+
+    return ReadinessStatus(status="ready", database="reachable", timescaledb=version)

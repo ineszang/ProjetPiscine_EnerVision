@@ -22,6 +22,9 @@ uv sync --all-groups
 `APP_SECRET_KEY` et `DATABASE_URL` n'ont pas de valeur par defaut : l'application refuse
 de demarrer sans elles.
 
+`DATABASE_URL` pointe sur `localhost:5433`, le port publie par le service `db` du
+`docker-compose.yml` racine. Demarrer la base depuis la racine avec `make db-up`.
+
 ## Commandes
 
 Depuis la racine du monorepo, via le `Makefile` : `make install`, `make dev`, `make lint`,
@@ -35,7 +38,12 @@ uv run ruff check .          # lint
 uv run ruff format .         # format
 uv run mypy app              # typage strict
 uv run pytest                # tests + couverture
+uv run pytest -m integration # tests exigeant une base joignable
 ```
+
+`pytest` ecarte par defaut les tests marques `integration`, pour que `make check` reste
+jouable sans Docker. Ces tests visent la base `enervision_test`, creee par
+`db/init/110-test-database.sql` au premier demarrage du conteneur.
 
 L'application est exposee par une factory (`create_app`) et non par un objet module :
 aucune configuration n'est lue a l'import, ce qui rend les tests et les migrations
@@ -73,7 +81,7 @@ Le sens de dependance est unique : `endpoints` vers `services` vers `repositorie
 | Route                  | Role                                            |
 |------------------------|-------------------------------------------------|
 | `/api/v1/health/live`  | Sonde de vivacite, aucune dependance externe    |
-| `/api/v1/health/ready` | Sonde de disponibilite, verifie la base         |
+| `/api/v1/health/ready` | Sonde de disponibilite, verifie la base et TimescaleDB |
 | `/metrics`             | Metriques au format Prometheus                  |
 | `/docs`, `/openapi.json` | Documentation, desactivee quand `APP_ENV=prod` |
 
@@ -85,6 +93,10 @@ uv run alembic upgrade head
 ```
 
 L'URL de connexion vient de `DATABASE_URL`, pas de `alembic.ini`.
+
+La premiere revision ne cree aucune table : elle refuse de s'appliquer si l'extension
+TimescaleDB manque, ce qui arrive quand `db/init` n'a pas ete joue. Le DDL propre a
+TimescaleDB qui ne depend pas du schema applicatif vit dans `db/`, pas ici.
 
 ## Image Docker
 
