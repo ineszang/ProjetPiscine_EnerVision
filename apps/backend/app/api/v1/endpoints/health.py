@@ -24,7 +24,7 @@ async def liveness(settings: SettingsDep) -> LivenessStatus:
 async def readiness(session: SessionDep) -> ReadinessStatus:
     try:
         await session.execute(text("SELECT 1"))
-    except SQLAlchemyError, OSError:
+    except (SQLAlchemyError, OSError):
         logger.exception("Base de donnees injoignable")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
