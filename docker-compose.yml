@@ -1,5 +1,7 @@
 # Piege : PGDATA de l'image timescaledb-ha vaut /home/postgres/pgdata/data, pas le chemin
 # habituel de l'image postgres. Monte ailleurs, le volume ne retient rien, sans erreur.
+# Piege : db/init est monte fichier par fichier. Monter le dossier masquerait les scripts
+# d'init de l'image, dont timescaledb-tune. Ajouter un fichier impose une ligne ici.
 
 name: enervision
 
@@ -10,11 +12,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
       POSTGRES_DB: ${POSTGRES_DB:?}
+      TIMESCALEDB_TELEMETRY: ${TIMESCALEDB_TELEMETRY:-off}
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/home/postgres/pgdata/data
-      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/init/100-extensions.sql:/docker-entrypoint-initdb.d/100-extensions.sql:ro
+      - ./db/init/110-test-database.sql:/docker-entrypoint-initdb.d/110-test-database.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
