@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node / Angular
+node_modules/
+.angular/
+apps/frontend/dist/
+apps/frontend/.angular/
+npm-debug.log*
+yarn-error.log*
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Airflow
+etl/airflow/logs/
+airflow.db
+airflow-webserver.pid
+standalone_admin_password.txt
+
+# Environnement et secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Donnees locales
+data/
+*.sqlite3
+monitoring/grafana/data/
+monitoring/prometheus/data/
+
+# IDE et OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
