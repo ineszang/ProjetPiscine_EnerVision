@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="2" failures="0" errors="0" time="0.0699261">
+    <testsuite name="src/app/app.spec.ts" timestamp="2026-09-14T14:27:28.895Z" hostname="76SE37-GL5HHZ3" tests="2" failures="0" errors="0" skipped="0" time="0.0699261">
+        <testcase classname="src/app/app.spec.ts" name="App &gt; should create the app" time="0.0527847">
+        </testcase>
+        <testcase classname="src/app/app.spec.ts" name="App &gt; should render title" time="0.015831">
+        </testcase>
+    </testsuite>
+</testsuites>
