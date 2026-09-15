@@ -40,4 +40,5 @@ async def readiness(session: SessionDep) -> ReadinessStatus:
             detail="Extension TimescaleDB absente",
         )
 
-    return ReadinessStatus(status="ready", database="reachable", timescaledb=version)
+    logger.debug("Extension TimescaleDB en version %s", version)
+    return ReadinessStatus(status="ready", database="reachable", timescaledb="loaded")
