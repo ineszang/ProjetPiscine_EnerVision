@@ -31,7 +31,7 @@ class FakeSession:
         return self._result
 
 
-# Piege : les arguments nommes priment sur l'environnement et sur .env, contrairement
-# aux variables posees par la fixture `environment`, qui restent surchargeables.
+# Piège : les arguments nommés priment sur l'environnement et sur .env, contrairement
+# aux variables posées par la fixture `environment`, qui restent surchargeables.
 def make_settings(**overrides: Any) -> Settings:
     return Settings(**{**SETTINGS_DE_TEST, **overrides})

@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     logger.info(
-        "Demarrage de %s %s en environnement %s", settings.name, settings.version, settings.env
+        "Démarrage de %s %s en environnement %s", settings.name, settings.version, settings.env
     )
     yield
     await get_engine().dispose()

@@ -59,7 +59,7 @@ async def test_readiness_returns_503_when_database_is_unreachable(
     response = await client.get("/api/v1/health/ready")
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "Base de donnees injoignable"
+    assert response.json()["detail"] == "Base de données injoignable"
 
 
 @pytest.mark.parametrize("path", ["/openapi.json", "/metrics"])
