@@ -22,7 +22,7 @@ def environment() -> Iterator[None]:
             "APP_DEBUG": "false",
             "APP_LOG_LEVEL": "WARNING",
             "APP_CORS_ORIGINS": "",
-            "APP_SECRET_KEY": "secret-de-test",
+            "APP_SECRET_KEY": "secret-de-test-assez-long-pour-le-validateur",
         }
     )
     os.environ.setdefault(

@@ -7,7 +7,7 @@ SETTINGS_DE_TEST: dict[str, Any] = {
     "debug": False,
     "log_level": "WARNING",
     "cors_origins": "",
-    "secret_key": "secret-de-test",
+    "secret_key": "secret-de-test-assez-long-pour-le-validateur",
     "database_url": "postgresql+asyncpg://enervision:change_me@localhost:5433/enervision_test",
 }
 
