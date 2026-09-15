@@ -67,7 +67,7 @@ class UserRepository:
             .values(
                 password_hash=password_hash,
                 must_change_password=must_change_password,
-                credentials_changed_at=func.now(),
+                credentials_changed_at=func.clock_timestamp(),
             )
         )
 
@@ -86,12 +86,12 @@ class UserRepository:
         await self._session.execute(
             update(AppUser)
             .where(AppUser.id == user_id)
-            .values(role=role.value, credentials_changed_at=func.now())
+            .values(role=role.value, credentials_changed_at=func.clock_timestamp())
         )
 
     async def set_active(self, user_id: UUID, *, is_active: bool) -> None:
         await self._session.execute(
             update(AppUser)
             .where(AppUser.id == user_id)
-            .values(is_active=is_active, credentials_changed_at=func.now())
+            .values(is_active=is_active, credentials_changed_at=func.clock_timestamp())
         )

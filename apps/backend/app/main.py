@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from app.api.errors import register_error_handlers
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
@@ -45,6 +46,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    register_error_handlers(application)
 
     Instrumentator().instrument(application).expose(
         application, endpoint="/metrics", include_in_schema=False
