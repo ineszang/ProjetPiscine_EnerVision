@@ -13,7 +13,12 @@ from app.api.deps import (
 )
 from app.core.cookies import RefreshCookie, cookie_name
 from app.core.logging import get_logger
-from app.schemas.auth import LoginRequest, PrincipalResponse, TokenResponse
+from app.schemas.auth import (
+    LoginRequest,
+    PasswordChangeRequest,
+    PrincipalResponse,
+    TokenResponse,
+)
 from app.services.auth import (
     AuthenticatedSession,
     InvalidCredentialsError,
@@ -161,3 +166,37 @@ async def logout_all(
 @router.get("/me", response_model=PrincipalResponse, summary="Décrit le compte connecté")
 async def me(principal: CurrentPrincipalDep) -> PrincipalResponse:
     return PrincipalResponse.from_principal(principal)
+
+
+@router.post(
+    "/password",
+    response_model=TokenResponse,
+    summary="Change son propre mot de passe",
+    dependencies=[Depends(require_trusted_origin)],
+)
+async def change_password(
+    payload: PasswordChangeRequest,
+    principal: CurrentPrincipalDep,
+    request: Request,
+    response: Response,
+    settings: SettingsDep,
+    service: AuthServiceDep,
+    client_ip: str | None = Depends(get_client_ip),
+) -> TokenResponse:
+    response.headers["Cache-Control"] = "no-store"
+
+    try:
+        session = await service.change_password(
+            principal=principal,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+            client_ip=client_ip,
+            user_agent=request.headers.get("user-agent"),
+        )
+    except InvalidCredentialsError as erreur:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=DETAIL_IDENTIFIANTS
+        ) from erreur
+
+    logger.info("auth.password_changed user_id=%s", principal.id)
+    return repond(response, settings, session)

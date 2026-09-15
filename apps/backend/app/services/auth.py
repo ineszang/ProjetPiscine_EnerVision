@@ -162,6 +162,44 @@ class AuthService:
             await self._refresh.revoke_family(ligne.family_id, RevocationReason.DECONNEXION)
         await self._transaction.commit()
 
+    async def change_password(
+        self,
+        *,
+        principal: Principal,
+        current_password: str,
+        new_password: str,
+        client_ip: str | None,
+        user_agent: str | None,
+    ) -> AuthenticatedSession:
+        compte = await self._users.get_by_id(principal.id)
+        if compte is None or not await self._hasher.verify(compte.password_hash, current_password):
+            raise InvalidCredentialsError("Identifiants invalides")
+
+        await self._users.update_password(
+            principal.id, await self._hasher.hash(new_password), must_change_password=False
+        )
+        # Toutes les sessions tombent, puis on en rouvre une : l'appareil courant reste
+        # connecté et tous les autres sont déconnectés.
+        revoquees = await self._refresh.revoke_all_for_user(
+            principal.id, RevocationReason.CHANGEMENT_MOT_DE_PASSE
+        )
+        secret = await self._ouvre_une_famille(
+            user_id=principal.id, client_ip=client_ip, user_agent=user_agent
+        )
+        await self._audit.record(
+            action=AuditAction.COMPTE_MOT_DE_PASSE_CHANGE,
+            actor=principal,
+            target_type="app_user",
+            target_id=str(principal.id),
+            client_ip=client_ip,
+            user_agent=user_agent,
+            detail={"sessions_revoquees": revoquees},
+        )
+        await self._transaction.commit()
+
+        rafraichi = await self._users.get_by_id(principal.id)
+        return self._session(self._en_principal(rafraichi or compte), secret)
+
     async def logout_all(self, principal: Principal) -> int:
         revoquees = await self._refresh.revoke_all_for_user(
             principal.id, RevocationReason.DECONNEXION

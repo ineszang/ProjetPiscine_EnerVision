@@ -26,6 +26,7 @@ from app.repositories.login_attempt import LoginAttemptRepository
 from app.repositories.refresh_token import RefreshTokenRepository
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService, LoginPolicy
+from app.services.user import UserService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -112,6 +113,22 @@ def get_auth_service(
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+def get_user_service(
+    session: SessionDep,
+    hasher: Annotated[Argon2Hasher, Depends(get_hasher)],
+) -> UserService:
+    return UserService(
+        users=UserRepository(session),
+        refresh_tokens=RefreshTokenRepository(session),
+        audit=AuditLogRepository(session),
+        hasher=hasher,
+        transaction=session,
+    )
+
+
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 
 async def get_current_principal(
