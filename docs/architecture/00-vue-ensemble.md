@@ -13,8 +13,9 @@ parce qu'ils disent ce que le projet doit prouver, et donc à quoi sert chaque d
 |---|---|---|
 | J1 | Valider la préparation de l'environnement et du repo | `10-infra.md` décrit la stack du poste de développement et la commande qui la démarre |
 | J2 | Valider le périmètre retenu et les choix technologiques | Les ADR (`../adr/`) portent les choix ; `40-data.md` liste les questions de périmètre encore ouvertes |
-| J3 | Valider l'architecture et la gestion de la sécurité | Les cinq vues, et la section « Sécurité » ci-dessous qui consolide les surfaces exposées |
-| J4 | Valider la robustesse et assurer les livrables | `20-backend.md` et `30-frontend.md` renvoient aux conventions de tests de chaque application |
+| J3 | Ingestion & backend | `20-backend.md` |
+| J4 | Architecture, sécurité & frontend | Les cinq vues, et la section « Sécurité » ci-dessous qui consolide les surfaces exposées |
+| J5 | Valider la robustesse et assurer les livrables | `20-backend.md` et `30-frontend.md` renvoient aux conventions de tests de chaque application |
 
 ## Contexte
 
