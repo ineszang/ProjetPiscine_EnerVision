@@ -23,7 +23,7 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | Initialise    |
 | ETL        | Apache Airflow                      | `etl/airflow`       | A initialiser |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
-| CI/CD      | GitHub Actions                      | `.github/workflows` | A initialiser |
+| CI/CD      | GitHub Actions                      | `.github/workflows` | Backend en place |
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
 
 Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Le frontend

@@ -7,7 +7,7 @@ SETTINGS_DE_TEST: dict[str, Any] = {
     "debug": False,
     "log_level": "WARNING",
     "cors_origins": "",
-    "secret_key": "secret-de-test",
+    "secret_key": "secret-de-test-assez-long-pour-le-validateur",
     "database_url": "postgresql+asyncpg://enervision:change_me@localhost:5433/enervision_test",
 }
 
@@ -31,7 +31,7 @@ class FakeSession:
         return self._result
 
 
-# Piege : les arguments nommes priment sur l'environnement et sur .env, contrairement
-# aux variables posees par la fixture `environment`, qui restent surchargeables.
+# Piège : les arguments nommés priment sur l'environnement et sur .env, contrairement
+# aux variables posées par la fixture `environment`, qui restent surchargeables.
 def make_settings(**overrides: Any) -> Settings:
     return Settings(**{**SETTINGS_DE_TEST, **overrides})

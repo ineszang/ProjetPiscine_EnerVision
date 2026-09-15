@@ -12,8 +12,8 @@ from app.main import create_app
 from tests.factories import FakeSession
 
 
-# Piege : les variables d'environnement priment sur apps/backend/.env. Celles qu'on ne
-# pose pas ici, c'est le .env du poste qui les decide, et les assertions avec.
+# Piège : les variables d'environnement priment sur apps/backend/.env. Celles qu'on ne
+# pose pas ici, c'est le .env du poste qui les décide, et les assertions avec.
 @pytest.fixture(autouse=True, scope="session")
 def environment() -> Iterator[None]:
     os.environ.update(
@@ -22,7 +22,7 @@ def environment() -> Iterator[None]:
             "APP_DEBUG": "false",
             "APP_LOG_LEVEL": "WARNING",
             "APP_CORS_ORIGINS": "",
-            "APP_SECRET_KEY": "secret-de-test",
+            "APP_SECRET_KEY": "secret-de-test-assez-long-pour-le-validateur",
         }
     )
     os.environ.setdefault(
@@ -33,8 +33,8 @@ def environment() -> Iterator[None]:
     get_settings.cache_clear()
 
 
-# Piege : get_engine est lru_cache et pytest-asyncio ouvre une boucle par test. Sans ce
-# recyclage, le 2e test touchant vraiment la base heriterait d une boucle morte.
+# Piège : get_engine est lru_cache et pytest-asyncio ouvre une boucle par test. Sans ce
+# recyclage, le 2e test touchant vraiment la base hériterait d'une boucle morte.
 @pytest.fixture(autouse=True)
 async def engine_per_test() -> AsyncIterator[None]:
     yield
@@ -67,7 +67,7 @@ def fake_session(app: FastAPI) -> Callable[..., None]:
     return install
 
 
-# Contrainte : ouvre une vraie connexion, donc reservee aux tests `integration`.
+# Contrainte : ouvre une vraie connexion, donc réservée aux tests `integration`.
 @pytest.fixture
 async def session() -> AsyncIterator[AsyncSession]:
     async with get_session_factory()() as async_session:
