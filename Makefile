@@ -23,11 +23,11 @@ typecheck: ## Verifie le typage du backend
 	cd $(BACKEND) && uv run mypy app
 
 test: ## Execute les tests backend ne demandant pas de base
-	cd $(BACKEND) && uv run pytest
+	cd $(BACKEND) && uv run pytest --cov-fail-under=85
 
 test-cov: ## Rapports de couverture HTML et XML, plus les resultats au format JUnit
-	cd $(BACKEND) && uv run pytest --cov-report=html --cov-report=xml \
-		--junitxml=test-results/junit.xml
+	cd $(BACKEND) && uv run pytest --cov-fail-under=85 --cov-report=html \
+		--cov-report=xml --junitxml=test-results/junit.xml
 
 test-integration: ## Execute les tests exigeant une base joignable
 	cd $(BACKEND) && uv run pytest -m integration
