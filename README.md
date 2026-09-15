@@ -79,6 +79,6 @@ curl -s localhost:8000/api/v1/health/ready
 
 ## Conventions
 
-- Branches : `feat/`, `fix/`, `chore/`, `docs/` suivi d'un libelle court.
+- Branches : `feat/`, `fix/`, `chore/`, `docs/`, `test/` suivi d'un libelle court.
 - Commits : Conventional Commits, portee = dossier de premier niveau concerne.
 - Toute decision structurante donne lieu a un ADR dans `docs/adr`.

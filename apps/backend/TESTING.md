@@ -104,10 +104,17 @@ marqueur `integration`, ecarte par defaut.
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.site import Site
+from app.repositories.site import SiteRepository
+
 
 @pytest.mark.integration
 async def test_repository_reads_back_what_it_wrote(session: AsyncSession) -> None:
-    ...
+    repository = SiteRepository(session)
+
+    await repository.add(Site(name="Toulouse"))
+
+    assert await repository.by_name("Toulouse") is not None
 ```
 
 ## Marqueurs
