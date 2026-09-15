@@ -16,11 +16,14 @@ on:
             - test
             - deploy
             - all
-
-  # push:
-    # branches: [ "dev" ]
+  push:
+    paths:
+      - "apps/frontend/**"
+      - ".github/workflows/dev-front-pipeline.yml"
   pull_request:
-    branches: [ "dev" ]
+    paths:
+      - "apps/frontend/**"
+      - ".github/workflows/dev-front-pipeline.yml"
 
 
 jobs:
@@ -40,6 +43,7 @@ jobs:
     if: ${{ github.event.inputs.job_choice == 'test' }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -47,18 +51,19 @@ jobs:
       - run: npm ci
       - run: npm test -- --watch=false
 
-  # build:
-  #   # si l'utilisateur a choise le job 'build' ou l'ensemble des jobs avec l'option 'all'
-  #   if: ${{ github.event.inputs.job_choice == 'build' || github.event.inputs.job_choice == 'all' }}
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 24
-  #         cache: npm
+  build:
+    # si l'utilisateur a choise le job 'build' ou l'ensemble des jobs avec l'option 'all'
+    if: ${{ github.event.inputs.job_choice == 'build' || github.event.inputs.job_choice == 'all' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
       
-  #     - run: npm ci
-  #     - run: npm run build
+      - run: npm ci
+      - run: npm run build
     
   # deploy:
     # if: ${{ github.event.inputs.job_choice == 'deploy' }}
