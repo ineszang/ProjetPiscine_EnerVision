@@ -1,7 +1,7 @@
 # Pipeline à multiple scénarios
 # pour l'environnement de dev
 
-name: Dev Pipeline (frontend)
+name: Frontend
 
 on:
   # workflow_dispatch -> lancement manuel des jobs
@@ -56,8 +56,8 @@ jobs:
     if: ${{ github.event.inputs.job_choice == 'build' || github.event.inputs.job_choice == 'all' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
