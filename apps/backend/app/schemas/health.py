@@ -13,3 +13,4 @@ class LivenessStatus(BaseModel):
 class ReadinessStatus(BaseModel):
     status: Literal["ready"]
     database: Literal["reachable"]
+    timescaledb: str
