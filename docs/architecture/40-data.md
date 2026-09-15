@@ -141,3 +141,46 @@ Elles relèvent du jalon J2, « valider le périmètre retenu », et bloquent le
 - **Quelle profondeur de rétention** en données brutes, et à partir de quand on compresse.
 - **Quelles unités** sont manipulées, et si une même table les mélange.
 - **Multi-tenant ou non** : un site appartient-il à un client, et faut-il cloisonner les lectures.
+
+## Modélisation détaillée des données
+
+Cette modélisation prend en compte les fichiers CSV historiques,
+leurs métadonnées JSON et les données de l’API Mock.
+Elle comprend six tables, depuis le stockage des mesures
+jusqu’aux recommandations proposées à l’utilisateur.
+
+### Schéma de données
+
+Le diagramme ci-dessous présente les tables et leurs relations.
+Il décrit une structure de conception ; les migrations correspondantes
+restent à implémenter.
+
+![Schéma de données EnerVision](images/EnerVision-schema-donnees.png)
+
+*Figure — Modélisation des données EnerVision.*
+
+### Description des tables
+
+Chaque table remplit un rôle précis dans le traitement et l’exploitation
+des données.
+
+| Table | Rôle | Origine des informations |
+|---|---|---|
+| `datasets` | Identifier les jeux historiques, retrouver leurs fichiers et conserver leurs métadonnées | Archive CSV/JSON et informations ajoutées lors de l’import |
+| `sites` | Regrouper les informations des sites : identifiant, nom, type et caractéristiques disponibles | CSV et API Mock `/api/v1/sites` |
+| `readings` | Stocker les mesures, leur provenance, leur qualité et les éventuelles valeurs imputées | CSV et API Mock `/current` et `/readings` |
+| `predictions` | Conserver les prévisions, leur période cible et la référence du modèle utilisé | Traitements ML d’EnerVision |
+| `alerts` | Enregistrer les alertes, leur type, leur gravité et leur message | API Mock `/alerts` et détections EnerVision |
+| `recommendations` | Proposer des actions et expliquer la règle qui les motive | Règles métier d’EnerVision |
+
+Les anomalies historiques décrites dans les JSON sont conservées
+dans `datasets.metadata`. Elles servent à l’analyse des données
+et ne sont pas considérées comme des alertes actuelles.
+
+### Relations entre les tables
+
+- Un site possède plusieurs mesures, prévisions et alertes.
+- Un jeu de données historique contient plusieurs mesures CSV.
+- Les mesures API ne sont pas rattachées à un dataset historique.
+- Une alerte peut être associée à une prévision du même site.
+- Une alerte peut donner lieu à plusieurs recommandations.
