@@ -56,12 +56,17 @@ async def test_the_database_refuses_to_mutate_the_audit_log(
 
 async def test_record_keeps_a_snapshot_of_the_actor(session: AsyncSession) -> None:
     depot = AuditLogRepository(session)
+    cible = uuid.uuid4().hex
 
-    await depot.record(action=AuditAction.COMPTE_DESACTIVE, actor=ACTEUR)
+    await depot.record(action=AuditAction.COMPTE_DESACTIVE, actor=ACTEUR, target_id=cible)
     await session.flush()
     ligne = (
         await session.execute(
-            text("select actor_id, actor_email, actor_role, outcome from audit_log")
+            text(
+                "select actor_id, actor_email, actor_role, outcome from audit_log "
+                "where target_id = :c"
+            ),
+            {"c": cible},
         )
     ).one()
     await session.rollback()
@@ -77,9 +82,15 @@ async def test_record_accepts_a_label_when_there_is_no_authenticated_actor(
 ) -> None:
     depot = AuditLogRepository(session)
 
-    await depot.record(action=AuditAction.ADMIN_AMORCE, actor_label="cli")
+    cible = uuid.uuid4().hex
+    await depot.record(action=AuditAction.ADMIN_AMORCE, actor_label="cli", target_id=cible)
     await session.flush()
-    ligne = (await session.execute(text("select actor_id, actor_email from audit_log"))).one()
+    ligne = (
+        await session.execute(
+            text("select actor_id, actor_email from audit_log where target_id = :c"),
+            {"c": cible},
+        )
+    ).one()
     await session.rollback()
 
     assert ligne.actor_id is None
@@ -91,13 +102,19 @@ async def test_record_drops_the_detail_keys_outside_the_allow_list(
 ) -> None:
     depot = AuditLogRepository(session)
 
+    cible = uuid.uuid4().hex
     await depot.record(
         action=AuditAction.COMPTE_ROLE_CHANGE,
         actor=ACTEUR,
+        target_id=cible,
         detail={"role_avant": "lecteur", "mot_de_passe": "ne-doit-pas-passer"},
     )
     await session.flush()
-    detail = (await session.execute(text("select detail from audit_log"))).scalar_one()
+    detail = (
+        await session.execute(
+            text("select detail from audit_log where target_id = :c"), {"c": cible}
+        )
+    ).scalar_one()
     await session.rollback()
 
     assert detail == {"role_avant": "lecteur"}
