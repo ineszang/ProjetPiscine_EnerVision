@@ -1,13 +1,14 @@
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.core.config import get_settings
-from app.db.session import get_engine, get_session_factory
+from app.db.session import get_engine, get_session, get_session_factory
 from app.main import create_app
+from tests.factories import FakeSession
 
 
 # Piege : les variables d'environnement priment sur apps/backend/.env. Celles qu'on ne
@@ -52,3 +53,14 @@ async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as async_client:
         yield async_client
+
+
+@pytest.fixture
+def fake_session(app: FastAPI) -> Callable[..., None]:
+    def install(result: object = None, failure: Exception | None = None) -> None:
+        async def override() -> AsyncIterator[FakeSession]:
+            yield FakeSession(result=result, failure=failure)
+
+        app.dependency_overrides[get_session] = override
+
+    return install
