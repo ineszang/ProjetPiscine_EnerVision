@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Callable, Iterator
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.session import get_engine, get_session, get_session_factory
@@ -64,3 +65,10 @@ def fake_session(app: FastAPI) -> Callable[..., None]:
         app.dependency_overrides[get_session] = override
 
     return install
+
+
+# Contrainte : ouvre une vraie connexion, donc reservee aux tests `integration`.
+@pytest.fixture
+async def session() -> AsyncIterator[AsyncSession]:
+    async with get_session_factory()() as async_session:
+        yield async_session
