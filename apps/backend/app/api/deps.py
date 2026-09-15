@@ -149,7 +149,10 @@ async def get_current_principal(
     compte = await UserRepository(session).get_by_id(claims.subject)
     if compte is None or not compte.is_active:
         raise _non_authentifie("invalid_token")
-    if claims.issued_at < compte.credentials_changed_at:
+    # Piège : `iat` est une date JWT, donc en secondes entières. Comparer sans tronquer le
+    # marqueur rejetterait tout jeton émis dans la même seconde que le changement, c'est-à-dire
+    # celui que `/auth/password` vient de rendre pour garder l'appareil courant connecté.
+    if int(claims.issued_at.timestamp()) < int(compte.credentials_changed_at.timestamp()):
         raise _non_authentifie("token_stale")
     if claims.role != compte.role:
         raise _non_authentifie("token_stale")
