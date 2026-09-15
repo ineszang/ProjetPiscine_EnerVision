@@ -41,6 +41,9 @@ uv run pytest                # tests + couverture
 uv run pytest -m integration # tests exigeant une base joignable
 ```
 
+Les conventions de tests, les gabarits et le detail des marqueurs sont dans
+[`TESTING.md`](TESTING.md).
+
 `pytest` ecarte par defaut les tests marques `integration`, pour que `make check` reste
 jouable sans Docker. Ces tests visent la base `enervision_test`, creee par
 `db/init/110-test-database.sql` au premier demarrage du conteneur.

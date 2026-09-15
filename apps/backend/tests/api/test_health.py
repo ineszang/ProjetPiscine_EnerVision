@@ -1,11 +1,8 @@
-from collections.abc import AsyncIterator
+from collections.abc import Callable
 
 import pytest
-from fastapi import FastAPI
 from httpx import AsyncClient
 from sqlalchemy.exc import OperationalError
-
-from app.db.session import get_session
 
 
 async def test_liveness_exposes_service_metadata(client: AsyncClient) -> None:
@@ -20,15 +17,10 @@ async def test_liveness_exposes_service_metadata(client: AsyncClient) -> None:
     }
 
 
-async def test_readiness_reports_the_timescaledb_version(app: FastAPI, client: AsyncClient) -> None:
-    class ReadySession:
-        async def scalar(self, *_: object, **__: object) -> str:
-            return "2.22.1"
-
-    async def override() -> AsyncIterator[ReadySession]:
-        yield ReadySession()
-
-    app.dependency_overrides[get_session] = override
+async def test_readiness_reports_the_timescaledb_version(
+    fake_session: Callable[..., None], client: AsyncClient
+) -> None:
+    fake_session(result="2.22.1")
 
     response = await client.get("/api/v1/health/ready")
 
@@ -41,16 +33,9 @@ async def test_readiness_reports_the_timescaledb_version(app: FastAPI, client: A
 
 
 async def test_readiness_returns_503_when_the_extension_is_missing(
-    app: FastAPI, client: AsyncClient
+    fake_session: Callable[..., None], client: AsyncClient
 ) -> None:
-    class SessionWithoutExtension:
-        async def scalar(self, *_: object, **__: object) -> None:
-            return None
-
-    async def override() -> AsyncIterator[SessionWithoutExtension]:
-        yield SessionWithoutExtension()
-
-    app.dependency_overrides[get_session] = override
+    fake_session(result=None)
 
     response = await client.get("/api/v1/health/ready")
 
@@ -67,16 +52,9 @@ async def test_readiness_returns_503_when_the_extension_is_missing(
     ids=["erreur_sqlalchemy", "erreur_reseau_asyncpg"],
 )
 async def test_readiness_returns_503_when_database_is_unreachable(
-    app: FastAPI, client: AsyncClient, failure: Exception
+    fake_session: Callable[..., None], client: AsyncClient, failure: Exception
 ) -> None:
-    class UnreachableSession:
-        async def scalar(self, *_: object, **__: object) -> None:
-            raise failure
-
-    async def override() -> AsyncIterator[UnreachableSession]:
-        yield UnreachableSession()
-
-    app.dependency_overrides[get_session] = override
+    fake_session(failure=failure)
 
     response = await client.get("/api/v1/health/ready")
 

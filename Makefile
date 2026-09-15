@@ -1,8 +1,8 @@
 BACKEND := apps/backend
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev lint format typecheck test test-integration check docker-build \
-        db-up db-down db-reset db-logs db-psql migrate
+.PHONY: help install dev lint format typecheck test test-cov test-integration check \
+        docker-build db-up db-down db-reset db-logs db-psql migrate
 
 help: ## Liste les cibles disponibles
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -23,7 +23,11 @@ typecheck: ## Verifie le typage du backend
 	cd $(BACKEND) && uv run mypy app
 
 test: ## Execute les tests backend ne demandant pas de base
-	cd $(BACKEND) && uv run pytest
+	cd $(BACKEND) && uv run pytest --cov-fail-under=85
+
+test-cov: ## Rapports de couverture HTML et XML, plus les resultats au format JUnit
+	cd $(BACKEND) && uv run pytest --cov-fail-under=85 --cov-report=html \
+		--cov-report=xml --junitxml=test-results/junit.xml
 
 test-integration: ## Execute les tests exigeant une base joignable
 	cd $(BACKEND) && uv run pytest -m integration
