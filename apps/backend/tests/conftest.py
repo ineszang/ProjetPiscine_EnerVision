@@ -10,9 +10,19 @@ from app.db.session import get_engine, get_session_factory
 from app.main import create_app
 
 
+# Piege : les variables d'environnement priment sur apps/backend/.env. Celles qu'on ne
+# pose pas ici, c'est le .env du poste qui les decide, et les assertions avec.
 @pytest.fixture(autouse=True, scope="session")
 def environment() -> Iterator[None]:
-    os.environ.setdefault("APP_SECRET_KEY", "secret-de-test")
+    os.environ.update(
+        {
+            "APP_ENV": "local",
+            "APP_DEBUG": "false",
+            "APP_LOG_LEVEL": "WARNING",
+            "APP_CORS_ORIGINS": "",
+            "APP_SECRET_KEY": "secret-de-test",
+        }
+    )
     os.environ.setdefault(
         "DATABASE_URL", "postgresql+asyncpg://enervision:change_me@localhost:5433/enervision_test"
     )

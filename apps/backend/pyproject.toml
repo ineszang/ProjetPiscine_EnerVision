@@ -79,6 +79,7 @@ disallow_untyped_defs = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 addopts = "-q --strict-markers -m 'not integration' --cov=app --cov-report=term-missing"
 markers = ["integration: requiert une base PostgreSQL joignable, hors `make test`"]
 
