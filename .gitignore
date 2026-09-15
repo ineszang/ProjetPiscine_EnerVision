@@ -9,6 +9,7 @@ venv/
 .coverage
 coverage.xml
 htmlcov/
+test-results/
 dist/
 build/
 *.egg-info/
@@ -23,7 +24,7 @@ yarn-error.log*
 
 # Terraform
 .terraform/
-.terraform.lock.hcl
+# .terraform.lock.hcl est versionne (pas ignore) pour figer les versions de provider entre contributeurs/CI
 *.tfstate
 *.tfstate.*
 *.tfplan
@@ -32,6 +33,9 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+*.tfvars
+!*.tfvars.example
+kubeconfig
 
 # Airflow
 etl/airflow/logs/

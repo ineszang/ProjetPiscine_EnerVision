@@ -79,8 +79,14 @@ disallow_untyped_defs = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-q --strict-markers --cov=app --cov-report=term-missing"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q --strict-markers -m 'not integration' --cov=app --cov-report=term-missing"
+markers = ["integration: requiert une base PostgreSQL joignable, hors `make test`"]
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["app/main.py", "alembic/*"]
+branch = true
+omit = ["alembic/*"]
+
+[tool.coverage.report]
+show_missing = true
