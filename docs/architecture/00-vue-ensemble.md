@@ -109,24 +109,52 @@ consolidée.
 
 ### En place
 
+- **Authentification et autorisation.** JWT d'accès de 15 minutes, jeton de rafraîchissement
+  opaque en cookie `HttpOnly` avec rotation et détection de réutilisation, mots de passe en
+  Argon2id, RBAC à trois rôles. Détail dans [20-backend.md](20-backend.md), décisions dans les
+  [ADR 0002](../adr/0002-authentification-jwt-et-refresh-opaque.md) et
+  [0003](../adr/0003-autorisation-rbac-a-trois-roles.md).
+- **Interdire par défaut.** Toute route exige un jeton, sauf quatre exceptions listées dans un
+  fichier de test qui interroge réellement chaque route sans identifiant.
+- **Révocation immédiate.** Le compte est relu en base à chaque requête : une désactivation ou un
+  changement de rôle prend effet à la requête suivante, pas au bout de 15 minutes.
+- **Limitation de débit à fenêtre glissante** sur trois clés, évaluée avant le hachage. Pas de
+  verrouillage de compte, qui serait un déni de service trivial.
+- **Journal d'audit en ajout seul**, garanti par deux déclencheurs PostgreSQL
+  ([ADR 0004](../adr/0004-journal-d-audit-en-ajout-seul.md)).
 - **Les secrets n'ont pas de valeur par défaut.** `APP_SECRET_KEY` et `DATABASE_URL` sont requis
-  sans repli : l'application refuse de démarrer si l'un manque, plutôt que de tourner avec une
-  valeur de démonstration. `.env` reste hors dépôt, `.env.example` est versionné.
-- **CORS conditionnel** : le middleware n'est ajouté que si `APP_CORS_ORIGINS` est renseigné.
-- **Documentation interactive fermée en production** : `/docs`, `/redoc` et `/openapi.json` sont
-  désactivés dès que `APP_ENV=prod`.
+  sans repli, et la configuration refuse de démarrer sur cinq erreurs silencieuses : secret trop
+  court ou laissé à sa valeur d'exemple, `debug` en production, joker CORS, origines vides hors
+  local, cookie `SameSite=None` sans `Secure`.
+- **CORS explicite** : origines listées, méthodes et en-têtes énumérés, jamais de joker.
+- **En-têtes de sécurité** posés par l'application (`nosniff`, `DENY`, `no-referrer`) et
+  `Cache-Control: no-store` sur les routes d'authentification.
+- **Caviardage des journaux** : jetons, empreintes Argon2, mots de passe et cookies sont
+  expurgés avant écriture.
+- **Documentation interactive fermée** en préproduction et en production, `/metrics` derrière un
+  jeton facultatif, sonde de disponibilité qui ne publie plus la version de TimescaleDB.
+- **CI backend bloquante** : format, lint, typage strict et tests avec seuil de couverture.
 - **Conteneur backend non-root**, déclaré dans `apps/backend/Dockerfile`.
 - **Côté infrastructure** : la clé SSH est marquée `sensitive`, le kubeconfig reste en `600/root`
   sur la machine cible et n'est lu que par `sudo`, `*.tfvars` est ignoré par git sauf les
   `.example`.
 
-### Absent
+### Absent, et assumé
 
-- **Aucune authentification ni autorisation.** Les deux endpoints exposés sont publics. Rien
-  n'est encore décidé sur ce point.
-- Pas de TLS, pas de limitation de débit, pas de journalisation des accès, pas de rotation des
-  secrets.
-- Aucune analyse de dépendances ni de conteneur, faute de CI.
+- **Rôles PostgreSQL cantonnés** pour l'ETL et le travail d'apprentissage. C'est la vraie
+  frontière pour ces deux consommateurs, qui écrivent en base et non par HTTP. Reporté parce que
+  cela impose une réinitialisation de base à toute l'équipe. Voir l'ADR 0003.
+- **`REVOKE` sur `audit_log`** : les déclencheurs arrêtent les accidents, les privilèges
+  arrêteraient une application compromise. Même raison de report.
+- **Portée par site** dans l'autorisation : les rôles sont globaux, un opérateur du site A peut
+  agir sur le site B. C'est la limite connue du modèle.
+- **TLS, HSTS et CSP** : ils appartiennent au terminateur TLS, qui n'existe pas encore.
+- **Limitation de débit au frontal** : celle de l'application protège les identifiants, pas
+  l'infrastructure.
+- **Analyse de dépendances et de conteneurs** dans la CI, qui relève du chantier CI/CD.
+- **Le fichier `environment.ts` de production** pointe encore sur `http://localhost:8000` en HTTP
+  simple : dans cet état, le cookie `Secure` ne sera pas posé. Voir
+  [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ## Décisions structurantes
 
