@@ -1,7 +1,7 @@
 """Création des six tables Data et de l'hypertable readings.
 
 Revision ID: e6d2026091501
-Revises: 5353c0e4f094
+Revises: 821f71be74c0
 """
 
 from alembic import op
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "e6d2026091501"
-down_revision = "5353c0e4f094"
+down_revision = "821f71be74c0"
 branch_labels = None
 depends_on = None
 
