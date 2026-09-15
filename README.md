@@ -11,12 +11,12 @@ series temporelles energetiques, deployee sur une machine on-premise.
 | Frontend   | Angular, Node 24 LTS                | `apps/frontend`     | A initialiser |
 | Base       | PostgreSQL + TimescaleDB            | `db`                | A initialiser |
 | ETL        | Apache Airflow                      | `etl/airflow`       | A initialiser |
-| Infra      | Terraform                           | `infra/terraform`   | A initialiser |
+| Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | A initialiser |
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
 
-Seul le backend est initialise a ce stade. Les autres dossiers portent l'arborescence et
-un README de cadrage, leur contenu fait l'objet d'un ticket dedie.
+Le backend et l'infrastructure (Terraform/k3s) sont initialises. Les autres dossiers
+portent l'arborescence et un README de cadrage, leur contenu fait l'objet d'un ticket dedie.
 
 ## Arborescence
 
