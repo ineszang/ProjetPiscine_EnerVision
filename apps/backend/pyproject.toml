@@ -85,4 +85,9 @@ markers = ["integration: requiert une base PostgreSQL joignable, hors `make test
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["app/main.py", "alembic/*"]
+branch = true
+omit = ["alembic/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 85
