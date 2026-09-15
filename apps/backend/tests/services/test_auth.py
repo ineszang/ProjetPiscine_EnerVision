@@ -56,6 +56,7 @@ class FauxDepotComptes:
         self.compte = compte
         self.rehachages = 0
         self.connexions_datees = 0
+        self.mots_de_passe_changes = 0
 
     async def get_by_email(self, email: str) -> FauxCompte | None:
         return self.compte
@@ -65,6 +66,9 @@ class FauxDepotComptes:
 
     async def rehash_password(self, user_id: UUID, password_hash: str) -> None:
         self.rehachages += 1
+
+    async def update_password(self, user_id: UUID, password_hash: str, **_: object) -> None:
+        self.mots_de_passe_changes += 1
 
     async def touch_last_login(self, user_id: UUID) -> None:
         self.connexions_datees += 1
@@ -438,3 +442,54 @@ def test_fingerprint_is_what_the_service_stores_not_the_secret_itself() -> None:
     empreinte = fingerprint_refresh(secret)
 
     assert secret.encode() not in empreinte
+
+
+async def test_change_password_revokes_every_session_then_reopens_the_current_one() -> None:
+    compte = FauxCompte()
+    attirail = fabrique_service(compte=compte)
+    acteur = Principal(
+        id=compte.id,
+        email=compte.email,
+        role=Role.OPERATEUR,
+        kind=AccountKind.HUMAIN,
+        must_change_password=True,
+    )
+
+    session = await attirail.service.change_password(
+        principal=acteur,
+        current_password="l-ancien-mot-de-passe",
+        new_password="le-nouveau-mot-de-passe",
+        client_ip="203.0.113.10",
+        user_agent="pytest",
+    )
+
+    assert attirail.jetons.revocations_par_compte == [
+        (compte.id, RevocationReason.CHANGEMENT_MOT_DE_PASSE.value)
+    ]
+    assert len(attirail.jetons.crees) == 1, "l'appareil courant doit repartir avec une session"
+    assert session.refresh_secret
+    assert "password_changed" in attirail.audit.lignes[0][0]
+
+
+async def test_change_password_refuses_a_wrong_current_password() -> None:
+    compte = FauxCompte()
+    attirail = fabrique_service(compte=compte, hacheur=FauxHacheur(accepte=False))
+    acteur = Principal(
+        id=compte.id,
+        email=compte.email,
+        role=Role.OPERATEUR,
+        kind=AccountKind.HUMAIN,
+        must_change_password=False,
+    )
+
+    with pytest.raises(InvalidCredentialsError):
+        await attirail.service.change_password(
+            principal=acteur,
+            current_password="mauvais",
+            new_password="le-nouveau-mot-de-passe",
+            client_ip=None,
+            user_agent=None,
+        )
+
+    assert attirail.jetons.revocations_par_compte == []
+    assert attirail.jetons.crees == []
