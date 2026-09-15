@@ -1,0 +1,48 @@
+<div class="dashboard">
+  <header class="dashboard__header">
+    <h1>Vue d'ensemble</h1>
+    <p class="dashboard__subtitle">Consommation instantanée du parc</p>
+  </header>
+
+  @if (stats(); as s) {
+    <section class="overview">
+      <div class="card card--gauge">
+        <span class="card__label">Consommation vs capacité</span>
+        <app-consumption-gauge [consumption]="s.total_consumption_kw" [capacity]="s.total_capacity_kw" />
+        <span class="card__value">{{ s.total_consumption_kw | number:'1.0-1' }} / {{ s.total_capacity_kw | number }} kW</span>
+      </div>
+
+      <div class="card">
+        <span class="card__label">Charge moyenne du parc</span>
+        <span class="card__value">{{ s.average_load_percent }} %</span>
+        <div class="progress-bar">
+          <div class="progress-bar__fill" [style.width.%]="s.average_load_percent"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <span class="card__label">Sites suivis</span>
+        <span class="card__value">{{ s.total_sites }}</span>
+      </div>
+    </section>
+
+    <section class="chart-section">
+      <h2>Charge et alerte visuelle par site</h2>
+      <app-site-load-chart [sites]="s.sites" />
+    </section>
+  }
+
+  @if (alerts().length > 0) {
+    <section class="alerts-section">
+      <h2>Alertes actives</h2>
+      <ul class="alerts-list">
+        @for (alert of alerts(); track alert.alert_id) {
+          <li class="alert-item" [class]="'alert-item--' + alert.severity">
+            <span class="alert-item__badge">{{ alert.severity }}</span>
+            <span class="alert-item__message">{{ alert.message }}</span>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+</div>
