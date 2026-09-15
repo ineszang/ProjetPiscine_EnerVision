@@ -27,6 +27,10 @@ it('devrait faire X quand Y', () => {
 - Composants avec logique (formulaires, conditions d'affichage) — pas nécessaire pour
   un composant 100% template, sans logique
 
+`core/services/`, `core/guards/` et `core/interceptors/` n'existent pas encore : c'est
+l'arborescence cible, décrite dans
+[docs/architecture/30-frontend.md](../../docs/architecture/30-frontend.md).
+
 ## Gabarit — tester un service avec appel HTTP
 ```typescript
 import { TestBed } from '@angular/core/testing';
