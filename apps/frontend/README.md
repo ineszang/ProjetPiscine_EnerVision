@@ -72,7 +72,8 @@ Points à vérifier après toute regénération :
 
 1. Pointer l'API dans `src/environments/` sur `http://localhost:8000/api/v1`.
 2. Ajouter le proxy de développement (`proxy.conf.json`) vers le backend.
-3. Vérifier que `npm start` sert bien sur le port 4200 attendu par `docker-compose.yml`.
+3. Vérifier que `npm start` sert bien sur le port 4200, valeur par défaut d'`APP_CORS_ORIGINS`
+   côté backend. Le `docker-compose.yml` n'a aucun service frontend.
 4. Ajouter le `Dockerfile` multi-stage (build Angular puis service statique nginx).
 
 ## Additional Resources

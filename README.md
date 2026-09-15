@@ -3,20 +3,35 @@
 Monorepo de la plateforme EnerVision : collecte, stockage, analyse et restitution de
 series temporelles energetiques, deployee sur une machine on-premise.
 
+## Jalons
+
+| Jalon | Intitulé |
+|-------|----------------------------------------------------------|
+| J1    | Valider la préparation de l'environnement et du repo     |
+| J2    | Valider le périmètre retenu et les choix technologiques  |
+| J3    | Valider l'architecture et la gestion de la sécurité      |
+| J4    | Valider la robustesse et assurer les livrables           |
+
+Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.md](docs/architecture/00-vue-ensemble.md).
+
 ## Stack cible
 
 | Domaine    | Technologie                         | Emplacement         | Etat          |
 |------------|-------------------------------------|---------------------|---------------|
 | Backend    | FastAPI, Python 3.14                | `apps/backend`      | Initialise    |
-| Frontend   | Angular, Node 24 LTS                | `apps/frontend`     | A initialiser |
+| Frontend   | Angular 22, Node 24 LTS             | `apps/frontend`     | Squelette     |
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | Initialise    |
 | ETL        | Apache Airflow                      | `etl/airflow`       | A initialiser |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | A initialiser |
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
 
-Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Les autres dossiers
+Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Le frontend
+porte le squelette Angular, sans code metier : aucune route, aucun appel d'API. Les autres dossiers
 portent l'arborescence et un README de cadrage, leur contenu fait l'objet d'un ticket dedie.
+
+L'etat detaille de chaque brique et les vues d'architecture sont dans
+[docs/architecture](docs/architecture/README.md).
 
 ## Arborescence
 
@@ -82,3 +97,4 @@ curl -s localhost:8000/api/v1/health/ready
 - Branches : `feat/`, `fix/`, `chore/`, `docs/`, `test/` suivi d'un libelle court.
 - Commits : Conventional Commits, portee = dossier de premier niveau concerne.
 - Toute decision structurante donne lieu a un ADR dans `docs/adr`.
+- Toute PR qui change un composant met a jour sa vue dans `docs/architecture`, dans la meme PR.
