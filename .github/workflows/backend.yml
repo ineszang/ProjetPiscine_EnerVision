@@ -1,0 +1,58 @@
+name: Backend
+
+# Piège : la version de Python vient de apps/backend/.python-version, et elle doit rester
+# en 3.14. Le code utilise le PEP 758, qu'un interpréteur 3.13 refuse de compiler.
+
+on:
+  push:
+    paths:
+      - "apps/backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "apps/backend/**"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verification:
+    name: Lint, typage et tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        run: uv python install
+
+      - name: Synchronise les dépendances sans dévier du verrou
+        run: uv sync --all-groups --frozen
+
+      - name: Vérifie le formatage
+        run: uv run ruff format --check .
+
+      - name: Analyse statique
+        run: uv run ruff check --output-format=github .
+
+      - name: Typage
+        run: uv run mypy app
+
+      # Le marqueur `integration` est exclu par défaut, donc aucune base n'est nécessaire ici.
+      - name: Tests et couverture
+        run: uv run pytest --cov-fail-under=85
