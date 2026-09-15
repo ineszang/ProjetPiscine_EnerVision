@@ -23,6 +23,7 @@ from app.core.security import decode_access_token as decode_token
 from app.db.session import get_session
 from app.repositories.audit_log import AuditLogRepository
 from app.repositories.login_attempt import LoginAttemptRepository
+from app.repositories.refresh_token import RefreshTokenRepository
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService, LoginPolicy
 
@@ -95,6 +96,7 @@ def get_auth_service(
     return AuthService(
         users=UserRepository(session),
         attempts=LoginAttemptRepository(session),
+        refresh_tokens=RefreshTokenRepository(session),
         audit=AuditLogRepository(session),
         hasher=hasher,
         transaction=session,
@@ -105,6 +107,7 @@ def get_auth_service(
             max_failures_per_ip=settings.login_max_failures_per_ip,
             max_failures_per_identifier=settings.login_max_failures_per_identifier,
         ),
+        refresh_ttl=timedelta(seconds=settings.refresh_token_ttl_seconds),
     )
 
 

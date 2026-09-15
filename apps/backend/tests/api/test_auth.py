@@ -12,6 +12,7 @@ from app.services.auth import (
     AuthenticatedSession,
     InvalidCredentialsError,
     RateLimitedError,
+    SessionRejectedError,
 )
 
 IDENTIFIANTS = {"email": "operateur@enervision.fr", "password": "un-mot-de-passe-valide"}
@@ -29,11 +30,20 @@ class FauxService:
     def __init__(self, erreur: Exception | None = None) -> None:
         self._erreur = erreur
 
+    async def refresh(self, **_: object) -> AuthenticatedSession:
+        return await self.authenticate()
+
+    async def logout(self, **_: object) -> None:
+        return None
+
     async def authenticate(self, **_: object) -> AuthenticatedSession:
         if self._erreur is not None:
             raise self._erreur
         return AuthenticatedSession(
-            principal=PRINCIPAL, access_token="un.jeton.factice", expires_in=900
+            principal=PRINCIPAL,
+            access_token="un.jeton.factice",
+            expires_in=900,
+            refresh_secret="un-secret-opaque",
         )
 
 
@@ -104,3 +114,95 @@ async def test_login_rejects_a_malformed_body_without_echoing_the_password(
     assert response.status_code == 422
     assert "un-mot-de-passe-valide" not in response.text
     assert "x" * 129 not in response.text
+
+
+async def test_login_posts_an_http_only_refresh_cookie_scoped_to_the_auth_routes(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post("/api/v1/auth/login", json=IDENTIFIANTS)
+
+    depose = response.headers["set-cookie"]
+    assert depose.startswith("ev_refresh=un-secret-opaque")
+    assert "HttpOnly" in depose
+    assert "SameSite=strict" in depose
+    assert "Path=/api/v1/auth" in depose
+
+
+async def test_login_keeps_the_refresh_secret_out_of_the_response_body(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post("/api/v1/auth/login", json=IDENTIFIANTS)
+
+    assert "un-secret-opaque" not in response.text
+
+
+async def test_refresh_returns_401_when_no_cookie_is_presented(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 401
+
+
+async def test_refresh_rotates_the_cookie_when_the_session_is_still_valid(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    client.cookies.set("ev_refresh", "un-secret-opaque")
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 200
+    assert "ev_refresh=" in response.headers["set-cookie"]
+
+
+async def test_refresh_clears_the_cookie_when_the_session_is_rejected(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    fake_auth_service[0] = SessionRejectedError("Session révoquée")
+    client.cookies.set("ev_refresh", "un-secret-rejoue")
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 401
+    assert 'ev_refresh=""' in response.headers["set-cookie"]
+    assert "Path=/api/v1/auth" in response.headers["set-cookie"]
+
+
+async def test_logout_answers_204_and_clears_the_cookie(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    client.cookies.set("ev_refresh", "un-secret-opaque")
+
+    response = await client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 204
+    assert 'ev_refresh=""' in response.headers["set-cookie"]
+
+
+async def test_logout_stays_idempotent_without_a_cookie(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 204
+
+
+@pytest.mark.parametrize(
+    "chemin",
+    ["/api/v1/auth/refresh", "/api/v1/auth/logout"],
+    ids=["rotation", "deconnexion"],
+)
+async def test_a_cookie_bearing_route_refuses_a_foreign_origin(
+    fake_auth_service: list[Exception | None], client: AsyncClient, chemin: str
+) -> None:
+    response = await client.post(chemin, headers={"Origin": "https://malveillant.example"})
+
+    assert response.status_code == 403
+
+
+async def test_a_cookie_bearing_route_accepts_a_request_without_origin(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post("/api/v1/auth/logout")
+
+    assert response.status_code != 403

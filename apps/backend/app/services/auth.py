@@ -5,19 +5,30 @@
 # vérification réelle. Sans lui, l'écart de temps de réponse est un oracle d'existence.
 # Piège : la tentative échouée est validée en base AVANT que l'erreur ne soit levée.
 # `get_session()` ne valide pas de lui-même, donc la preuve disparaîtrait avec la transaction.
+# Piège : dans `refresh()`, un jeton expiré ne révoque PAS la famille, un jeton déjà tourné si.
+# La rotation ne protège de rien par elle-même : elle rend la réutilisation détectable, et
+# c'est la détection qui termine le vol.
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import NoReturn, Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.hashing import Argon2Hasher
 from app.core.principal import Principal
 from app.core.roles import AccountKind, Role
-from app.core.security import TokenPolicy, encode_access_token
-from app.models.audit_log import AuditAction
+from app.core.security import (
+    TokenPolicy,
+    encode_access_token,
+    fingerprint_refresh,
+    generate_refresh_secret,
+)
+from app.models.audit_log import AuditAction, AuditOutcome
 from app.models.login_attempt import LoginOutcome
+from app.models.refresh_token import RevocationReason
 from app.repositories.audit_log import AuditLogRepository
 from app.repositories.login_attempt import LoginAttemptRepository
+from app.repositories.refresh_token import RefreshTokenRepository
 from app.repositories.user import UserRepository
 
 
@@ -30,6 +41,10 @@ class AuthError(Exception):
 
 
 class InvalidCredentialsError(AuthError):
+    pass
+
+
+class SessionRejectedError(AuthError):
     pass
 
 
@@ -52,6 +67,7 @@ class AuthenticatedSession:
     principal: Principal
     access_token: str
     expires_in: int
+    refresh_secret: str
 
 
 class AuthService:
@@ -60,19 +76,23 @@ class AuthService:
         *,
         users: UserRepository,
         attempts: LoginAttemptRepository,
+        refresh_tokens: RefreshTokenRepository,
         audit: AuditLogRepository,
         hasher: Argon2Hasher,
         transaction: Transaction,
         token_policy: TokenPolicy,
         login_policy: LoginPolicy,
+        refresh_ttl: timedelta,
     ) -> None:
         self._users = users
         self._attempts = attempts
+        self._refresh = refresh_tokens
         self._audit = audit
         self._hasher = hasher
         self._transaction = transaction
         self._token_policy = token_policy
         self._login_policy = login_policy
+        self._refresh_ttl = refresh_ttl
 
     async def authenticate(
         self, *, email: str, password: str, client_ip: str | None, user_agent: str | None
@@ -101,19 +121,60 @@ class AuthService:
         await self._attempts.record(
             email=email, client_ip=client_ip, outcome=LoginOutcome.SUCCES, user_id=compte.id
         )
+        secret = await self._ouvre_une_famille(
+            user_id=compte.id, client_ip=client_ip, user_agent=user_agent
+        )
         await self._transaction.commit()
 
-        return self.issue_access_token(
-            Principal(
-                id=compte.id,
-                email=compte.email,
-                role=Role(compte.role),
-                kind=AccountKind(compte.kind),
-                must_change_password=compte.must_change_password,
-            )
-        )
+        return self._session(self._en_principal(compte), secret)
 
-    def issue_access_token(self, principal: Principal) -> AuthenticatedSession:
+    async def refresh(
+        self, *, secret: str, client_ip: str | None, user_agent: str | None
+    ) -> AuthenticatedSession:
+        empreinte = fingerprint_refresh(secret)
+        revendique = await self._refresh.claim_for_rotation(empreinte)
+        if revendique is None:
+            await self._traite_rotation_refusee(empreinte, client_ip, user_agent)
+
+        compte = await self._users.get_by_id(revendique.user_id)
+        if compte is None or not compte.is_active:
+            await self._refresh.revoke_family(revendique.family_id, RevocationReason.ADMINISTRATION)
+            await self._transaction.commit()
+            raise SessionRejectedError("Session révoquée")
+
+        nouveau_secret = generate_refresh_secret()
+        nouveau = await self._refresh.create(
+            user_id=revendique.user_id,
+            family_id=revendique.family_id,
+            token_hash=fingerprint_refresh(nouveau_secret),
+            expires_at=revendique.expires_at,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+        await self._refresh.link_replacement(revendique.id, nouveau.id)
+        await self._transaction.commit()
+
+        return self._session(self._en_principal(compte), nouveau_secret)
+
+    async def logout(self, *, secret: str) -> None:
+        ligne = await self._refresh.inspect(fingerprint_refresh(secret))
+        if ligne is not None:
+            await self._refresh.revoke_family(ligne.family_id, RevocationReason.DECONNEXION)
+        await self._transaction.commit()
+
+    async def logout_all(self, principal: Principal) -> int:
+        revoquees = await self._refresh.revoke_all_for_user(
+            principal.id, RevocationReason.DECONNEXION
+        )
+        await self._audit.record(
+            action=AuditAction.SESSIONS_REVOQUEES,
+            actor=principal,
+            detail={"sessions_revoquees": revoquees},
+        )
+        await self._transaction.commit()
+        return revoquees
+
+    def _session(self, principal: Principal, refresh_secret: str) -> AuthenticatedSession:
         jeton = encode_access_token(
             self._token_policy,
             subject=principal.id,
@@ -124,7 +185,58 @@ class AuthService:
             principal=principal,
             access_token=jeton,
             expires_in=int(self._token_policy.access_ttl.total_seconds()),
+            refresh_secret=refresh_secret,
         )
+
+    def _en_principal(self, compte: object) -> Principal:
+        return Principal(
+            id=compte.id,  # type: ignore[attr-defined]
+            email=compte.email,  # type: ignore[attr-defined]
+            role=Role(compte.role),  # type: ignore[attr-defined]
+            kind=AccountKind(compte.kind),  # type: ignore[attr-defined]
+            must_change_password=compte.must_change_password,  # type: ignore[attr-defined]
+        )
+
+    async def _ouvre_une_famille(
+        self, *, user_id: UUID, client_ip: str | None, user_agent: str | None
+    ) -> str:
+        secret = generate_refresh_secret()
+        await self._refresh.create(
+            user_id=user_id,
+            family_id=uuid4(),
+            token_hash=fingerprint_refresh(secret),
+            expires_at=datetime.now(UTC) + self._refresh_ttl,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+        return secret
+
+    async def _traite_rotation_refusee(
+        self, empreinte: bytes, client_ip: str | None, user_agent: str | None
+    ) -> NoReturn:
+        ligne = await self._refresh.inspect(empreinte)
+        if ligne is None:
+            raise SessionRejectedError("Session inconnue")
+
+        if ligne.expires_at <= datetime.now(UTC):
+            raise SessionRejectedError("Session expirée")
+
+        # Présenter un jeton déjà tourné est une preuve de compromission, pas un accident : toute
+        # la famille tombe, y compris la session encore vivante du voleur ou de la victime.
+        revoquees = await self._refresh.revoke_family(
+            ligne.family_id, RevocationReason.REUTILISATION
+        )
+        await self._audit.record(
+            action=AuditAction.REFRESH_REUTILISE,
+            outcome=AuditOutcome.ECHEC,
+            target_type="refresh_token",
+            target_id=str(ligne.family_id),
+            client_ip=client_ip,
+            user_agent=user_agent,
+            detail={"famille": str(ligne.family_id), "sessions_revoquees": revoquees},
+        )
+        await self._transaction.commit()
+        raise SessionRejectedError("Session révoquée")
 
     async def _refuse_si_limite(
         self, *, email: str, client_ip: str | None, user_agent: str | None
@@ -148,6 +260,7 @@ class AuthService:
         if compteurs.per_identifier >= politique.max_failures_per_identifier:
             await self._audit.record(
                 action=AuditAction.LIMITE_PAR_IDENTIFIANT,
+                outcome=AuditOutcome.ECHEC,
                 actor_label=email.strip().lower(),
                 client_ip=client_ip,
                 user_agent=user_agent,

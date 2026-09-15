@@ -47,6 +47,13 @@ class RefreshCookie:
     def as_kwargs(self) -> dict[str, Any]:
         return asdict(self)
 
+    def as_deletion_kwargs(self) -> dict[str, Any]:
+        # `Response.delete_cookie()` n'accepte ni `value` ni `max_age`, mais il exige le même
+        # nom, le même chemin et les mêmes attributs, sinon le navigateur garde le cookie.
+        arguments = asdict(self)
+        del arguments["value"], arguments["max_age"]
+        return arguments
+
 
 def cookie_name(settings: Settings) -> str:
     if settings.cookies_are_secure:

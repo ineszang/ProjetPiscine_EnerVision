@@ -16,6 +16,8 @@ ROUTES_PUBLIQUES = frozenset(
         ("GET", "/api/v1/health/live"),
         ("GET", "/api/v1/health/ready"),
         ("POST", "/api/v1/auth/login"),
+        # Sans cookie, la déconnexion ne fait rien et répond 204 : elle est idempotente.
+        ("POST", "/api/v1/auth/logout"),
         ("GET", "/metrics"),
     }
 )
