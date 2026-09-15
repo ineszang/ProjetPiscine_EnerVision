@@ -1,0 +1,7 @@
+ssh_host                = "10.0.0.10"
+ssh_port                = 22
+ssh_user                = "root"
+ssh_private_key_path    = "~/.ssh/id_ed25519_enervision"
+k3s_version             = ""
+k3s_disable_components  = ["traefik"]
+kubeconfig_output_path  = "./kubeconfig"
