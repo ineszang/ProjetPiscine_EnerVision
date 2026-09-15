@@ -23,8 +23,12 @@ variable "ssh_private_key_path" {
 
 variable "k3s_version" {
   type        = string
-  description = "Version k3s a installer (ex: v1.31.2+k3s1). Chaine vide = derniere version stable."
-  default     = ""
+  description = "Version k3s a epingler pour un deploiement reproductible (ex: v1.31.5+k3s1). Voir https://github.com/k3s-io/k3s/releases."
+
+  validation {
+    condition     = length(trimspace(var.k3s_version)) > 0
+    error_message = "k3s_version doit etre epinglee explicitement, pas de valeur vide (sinon k3s.io installerait la derniere version a chaque run, non reproductible)."
+  }
 }
 
 variable "k3s_disable_components" {

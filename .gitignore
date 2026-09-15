@@ -23,7 +23,7 @@ yarn-error.log*
 
 # Terraform
 .terraform/
-.terraform.lock.hcl
+# .terraform.lock.hcl est versionne (pas ignore) pour figer les versions de provider entre contributeurs/CI
 *.tfstate
 *.tfstate.*
 *.tfplan
