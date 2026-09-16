@@ -59,6 +59,18 @@ TAGS: Final[list[dict[str, Any]]] = [
         "description": "Consultation des alertes de consommation. Accessible à partir du rôle "
         "`lecteur`.",
     },
+    {
+        "name": "recommendations",
+        "description": (
+            "Consultation des recommandations issues des alertes. Accessible à partir du rôle "
+            "`lecteur`."
+        ),
+    },
+    {
+        "name": "stats",
+        "description": "Statistiques agrégées de consommation. Accessible à partir du rôle "
+        "`lecteur`.",
+    },
 ]
 
 cookie_de_rafraichissement = APIKeyCookie(

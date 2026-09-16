@@ -1024,6 +1024,209 @@
           }
         }
       }
+    },
+    "/api/v1/recommendations": {
+      "get": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "Liste les recommandations",
+        "operationId": "list_recommendations_api_v1_recommendations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecommendationResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Recommendations Api V1 Recommendations Get"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Mot de passe provisoire à changer (`detail` vaut `password_change_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recommendations/{recommendation_id}": {
+      "get": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "Décrit une recommandation",
+        "operationId": "get_recommendation_api_v1_recommendations__recommendation_id__get",
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "recommendation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Recommendation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Mot de passe provisoire à changer (`detail` vaut `password_change_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps invalide. Le détail nomme le champ fautif et le type d'erreur, jamais la valeur envoyée.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Aucune recommandation ne porte cet identifiant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stats/summary": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Résume la consommation instantanée du parc",
+        "operationId": "get_summary_api_v1_stats_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsSummaryResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Mot de passe provisoire à changer (`detail` vaut `password_change_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1321,6 +1524,45 @@
         ],
         "title": "ReadinessStatus"
       },
+      "RecommendationResponse": {
+        "properties": {
+          "recommendation_id": {
+            "type": "integer",
+            "title": "Recommendation Id"
+          },
+          "alert_id": {
+            "type": "integer",
+            "title": "Alert Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "rule_reference": {
+            "type": "string",
+            "title": "Rule Reference"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recommendation_id",
+          "alert_id",
+          "action",
+          "explanation",
+          "rule_reference",
+          "created_at"
+        ],
+        "title": "RecommendationResponse"
+      },
       "Role": {
         "type": "string",
         "enum": [
@@ -1388,6 +1630,106 @@
           "status"
         ],
         "title": "SiteResponse"
+      },
+      "SiteSummaryResponse": {
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "title": "Site Id"
+          },
+          "site_name": {
+            "type": "string",
+            "title": "Site Name"
+          },
+          "current_consumption_kw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Consumption Kw"
+          },
+          "capacity_kw": {
+            "type": "number",
+            "title": "Capacity Kw"
+          },
+          "load_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Percent"
+          },
+          "data_quality": {
+            "type": "string",
+            "enum": [
+              "good",
+              "partial",
+              "degraded",
+              "critical"
+            ],
+            "title": "Data Quality"
+          }
+        },
+        "type": "object",
+        "required": [
+          "site_id",
+          "site_name",
+          "current_consumption_kw",
+          "capacity_kw",
+          "load_percent",
+          "data_quality"
+        ],
+        "title": "SiteSummaryResponse"
+      },
+      "StatsSummaryResponse": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "total_sites": {
+            "type": "integer",
+            "title": "Total Sites"
+          },
+          "total_consumption_kw": {
+            "type": "number",
+            "title": "Total Consumption Kw"
+          },
+          "total_capacity_kw": {
+            "type": "number",
+            "title": "Total Capacity Kw"
+          },
+          "average_load_percent": {
+            "type": "number",
+            "title": "Average Load Percent"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/SiteSummaryResponse"
+            },
+            "type": "array",
+            "title": "Sites"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "total_sites",
+          "total_consumption_kw",
+          "total_capacity_kw",
+          "average_load_percent",
+          "sites"
+        ],
+        "title": "StatsSummaryResponse"
       },
       "TemporaryPasswordResponse": {
         "properties": {
@@ -1609,6 +1951,14 @@
     {
       "name": "alerts",
       "description": "Consultation des alertes de consommation. Accessible à partir du rôle `lecteur`."
+    },
+    {
+      "name": "recommendations",
+      "description": "Consultation des recommandations issues des alertes. Accessible à partir du rôle `lecteur`."
+    },
+    {
+      "name": "stats",
+      "description": "Statistiques agrégées de consommation. Accessible à partir du rôle `lecteur`."
     }
   ]
 }

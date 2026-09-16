@@ -12,10 +12,10 @@ Les quatre couches existent désormais, portées par l'authentification.
 
 ```mermaid
 flowchart TB
-  ep["endpoints<br/>health, auth, users, sites"]
+  ep["endpoints<br/>health, auth, users, sites,<br/>recommendations, stats"]
   sc["schemas<br/>Pydantic"]
-  sv["services<br/>AuthService, UserService,<br/>SiteService"]
-  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site"]
+  sv["services<br/>AuthService, UserService,<br/>SiteService, RecommendationService,<br/>StatsService"]
+  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site, recommendation, reading"]
   md["models<br/>10 tables"]
   db[("PostgreSQL")]
 
@@ -143,6 +143,9 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | GET | `/api/v1/sites` | Liste les sites. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/sites/{site_id}` | Décrit un site. `lecteur` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/alerts` | Liste les alertes, filtrable par `site_id` et `severity`. `lecteur` | 401, 403, 422, 500 |
+| GET | `/api/v1/recommendations` | Liste les recommandations. `lecteur` | 401, 403, 500 |
+| GET | `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation. `lecteur` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/stats/summary` | Résume la consommation instantanée du parc. `lecteur` | 401, 403, 500 |
 | GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
 | GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
 
@@ -161,7 +164,12 @@ tables déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent
 contrairement aux routes d'administration qui exigent `admin`. `SiteRepository` lit par
 `AsyncSession.scalar()` (une ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par
 `execute()`, ce qui la rend testable par la fixture `fake_session` au niveau endpoint sans base
-réelle. Le contrat détaillé pour le frontend est dans
+réelle. `GET /recommendations` et `GET /recommendations/{recommendation_id}` reprennent le même
+gabarit à la lettre, `recommendation_id` étant un entier plutôt qu'un texte. Une recommandation ne
+porte pas `site_id` : elle remonte à un site par sa seule `alert_id`, `alert` n'étant pas encore
+exposée. `GET /stats/summary` agrège deux repositories (`SiteRepository`, `ReadingRepository`)
+dans un service dédié plutôt que d'exposer une table : elle n'entre donc pas dans ce gabarit
+route-par-table. Le contrat détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ### `/health/ready`
@@ -238,8 +246,8 @@ Les modèles de `app/schemas/errors.py` décrivent ce que les gestionnaires renv
 
 ### Ajouter une route métier
 
-Checklist pour toute nouvelle route sur le gabarit `sites`/`alerts` (`reading`, `dataset`,
-`prediction`, `recommendation`) :
+Checklist pour toute nouvelle route sur le gabarit `sites`/`alerts`/`recommendations`/`stats`
+(`reading`, `dataset`, `prediction`) :
 
 1. Composer ses `responses=` depuis `app/api/openapi.py` : `REPONSES_LECTEUR`/`REPONSES_ADMIN`
    au niveau de l'`include_router()` du routeur, `REPONSE_VALIDATION` et les codes locaux
