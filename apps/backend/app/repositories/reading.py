@@ -27,4 +27,5 @@ class ReadingRepository:
             .order_by(Reading.timestamp.desc())
             .limit(1)
         )
-        return await self._session.scalar(requete)
+        lecture: Reading | None = await self._session.scalar(requete)
+        return lecture

@@ -42,9 +42,7 @@ async def get_site(site_id: str, _: LecteurDep, service: SiteServiceDep) -> Site
     summary="Dernière mesure d'un site",
     responses=REPONSES_INTROUVABLE,
 )
-async def get_current(
-    site_id: str, _: LecteurDep, service: SiteServiceDep
-) -> SiteCurrentResponse:
+async def get_current(site_id: str, _: LecteurDep, service: SiteServiceDep) -> SiteCurrentResponse:
     try:
         actuel = await service.current(site_id)
     except SiteNotFoundError as erreur:

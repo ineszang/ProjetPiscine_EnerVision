@@ -70,9 +70,9 @@ class SiteService:
                 data_quality="critical",
             )
 
-        qualite: DataQuality = (
-            derniere.data_quality if derniere.data_quality in QUALITES_CONNUES else "critical"
-        )
+        qualite: DataQuality = "critical"
+        if derniere.data_quality in QUALITES_CONNUES:
+            qualite = derniere.data_quality  # type: ignore[assignment]
         return SiteCurrentReading(
             timestamp=derniere.timestamp,
             site_id=site.site_id,

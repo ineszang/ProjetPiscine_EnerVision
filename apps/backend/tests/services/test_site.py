@@ -54,9 +54,7 @@ class FauxDepotLectures:
         return self._lectures.get(site_id)
 
 
-def service(
-    sites: list[Site], lectures: dict[str, FauxLecture] | None = None
-) -> SiteService:
+def service(sites: list[Site], lectures: dict[str, FauxLecture] | None = None) -> SiteService:
     return SiteService(
         sites=FakeRepository(sites),  # type: ignore[arg-type]
         readings=FauxDepotLectures(lectures or {}),  # type: ignore[arg-type]
