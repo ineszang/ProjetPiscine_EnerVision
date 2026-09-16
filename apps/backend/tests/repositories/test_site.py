@@ -48,11 +48,12 @@ async def test_get_by_id_returns_nothing_for_an_unknown_identifier(
 
 async def test_list_all_returns_the_sites_sorted_by_identifier(session: AsyncSession) -> None:
     depot = SiteRepository(session)
-    await creer(session, site_id=f"zz-{identifiant()}")
-    await creer(session, site_id=f"aa-{identifiant()}")
+    premier, second = sorted([f"zz-{identifiant()}", f"aa-{identifiant()}"])
+    await creer(session, site_id=second)
+    await creer(session, site_id=premier)
 
     sites = await depot.list_all()
-    identifiants = [site.site_id for site in sites]
+    identifiants = [site.site_id for site in sites if site.site_id in (premier, second)]
     await session.rollback()
 
-    assert identifiants == sorted(identifiants)
+    assert identifiants == [premier, second]
