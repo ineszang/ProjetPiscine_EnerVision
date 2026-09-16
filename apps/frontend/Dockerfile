@@ -3,17 +3,14 @@
 # ==================
 
 # Image pour frontend
-FROM dhi.io/node:24-alpine3.22 AS builder
+FROM node:24-alpine3.22 AS builder
 
 WORKDIR /app
 
-# Installation des dépendances du projet avec npm
-RUN npm ci
-
 COPY package.json package-lock.json* ./
 
-
-
+# Installation des dépendances du projet avec npm
+RUN  npm ci
 
 # Copie du code source vers le conteneur
 COPY . .
@@ -29,10 +26,10 @@ RUN npm run build
 FROM dhi.io/nginx:1.28.0-alpine3.21-dev AS runner
 
 # Copie de la configuration de nginx
-COPY --chown=nginx:nginx nginx.conf /etc/nginx/nginx.conf
+COPY --chown=root:root --chmod=755 nginx.conf /etc/nginx/nginx.conf
 
 # Copy the static build output from the build stage to Nginx's default HTML serving directory
-COPY --chown=nginx:nginx --from=builder /app/dist/*/browser /usr/share/nginx/html
+COPY --chown=root:root --chmod=755 --from=builder /app/dist/*/browser /usr/share/nginx/html
 
 # Create necessary directories with proper permissions for nginx
 RUN mkdir -p /var/log/nginx /var/cache/nginx && \
