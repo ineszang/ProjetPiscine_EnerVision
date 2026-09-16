@@ -19,3 +19,12 @@ class ReadingRepository:
             .order_by(Reading.site_id, Reading.timestamp.desc())
         )
         return (await self._session.execute(requete)).scalars().all()
+
+    async def latest_for_site(self, site_id: str) -> Reading | None:
+        requete = (
+            select(Reading)
+            .where(Reading.site_id == site_id)
+            .order_by(Reading.timestamp.desc())
+            .limit(1)
+        )
+        return await self._session.scalar(requete)

@@ -142,6 +142,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | POST | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions. `admin` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/sites` | Liste les sites. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/sites/{site_id}` | Décrit un site. `lecteur` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/sites/{site_id}/current` | Dernière mesure d'un site. `lecteur` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/alerts` | Liste les alertes, filtrable par `site_id` et `severity`. `lecteur` | 401, 403, 422, 500 |
 | GET | `/api/v1/recommendations` | Liste les recommandations. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation. `lecteur` | 401, 403, 404, 422, 500 |
@@ -169,7 +170,11 @@ gabarit à la lettre, `recommendation_id` étant un entier plutôt qu'un texte. 
 porte pas `site_id` : elle remonte à un site par sa seule `alert_id`, `alert` n'étant pas encore
 exposée. `GET /stats/summary` agrège deux repositories (`SiteRepository`, `ReadingRepository`)
 dans un service dédié plutôt que d'exposer une table : elle n'entre donc pas dans ce gabarit
-route-par-table. Le contrat détaillé pour le frontend est dans
+route-par-table. `GET /sites/{site_id}/current` reste sur le gabarit `sites`, mais
+`SiteService` gagne la même seconde dépendance (`ReadingRepository`) pour restituer la
+dernière `Reading` du site : un site connu sans lecture rend `200` avec tous les champs de
+mesure à `null` et `data_quality="critical"`, seul un `site_id` absent de la base rend `404`.
+Le contrat détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ### `/health/ready`

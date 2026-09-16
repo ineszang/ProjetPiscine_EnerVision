@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -9,7 +10,9 @@ from app.api.deps import get_current_principal, get_site_service
 from app.core.principal import Principal
 from app.core.roles import AccountKind, Role
 from app.models.energy import Site
-from app.services.site import SiteNotFoundError
+from app.services.site import SiteCurrentReading, SiteNotFoundError
+
+TIMESTAMP = datetime(2026, 9, 16, 12, 0, tzinfo=UTC)
 
 
 def principal(role: Role = Role.LECTEUR) -> Principal:
@@ -33,10 +36,28 @@ def site(site_id: str = "site-1") -> Site:
     )
 
 
+def lecture_actuelle(site_id: str = "site-1") -> SiteCurrentReading:
+    return SiteCurrentReading(
+        timestamp=TIMESTAMP,
+        site_id=site_id,
+        site_type="industriel",
+        consumption_kw=87.34,
+        consumption_kwh=87.34,
+        voltage_v=401.2,
+        current_a=132.5,
+        power_factor=0.923,
+        temperature_celsius=22.1,
+        humidity_percent=58.4,
+        null_reasons=[],
+        data_quality="good",
+    )
+
+
 class FauxService:
     def __init__(self, erreur: Exception | None = None) -> None:
         self._erreur = erreur
         self.site = site()
+        self.actuel = lecture_actuelle()
 
     async def list_all(self) -> list[Site]:
         return [self.site]
@@ -45,6 +66,11 @@ class FauxService:
         if self._erreur is not None:
             raise self._erreur
         return self.site
+
+    async def current(self, site_id: str) -> SiteCurrentReading:
+        if self._erreur is not None:
+            raise self._erreur
+        return self.actuel
 
 
 @pytest.fixture
@@ -105,6 +131,30 @@ async def test_get_site_returns_404_for_an_unknown_site(
     servi(SiteNotFoundError("site-inconnu"))
 
     response = await client.get("/api/v1/sites/site-inconnu")
+
+    assert response.status_code == 404
+
+
+async def test_get_current_returns_the_latest_reading(
+    servi: Callable[..., FauxService], client: AsyncClient
+) -> None:
+    servi()
+
+    response = await client.get("/api/v1/sites/site-1/current")
+
+    assert response.status_code == 200
+    corps = response.json()
+    assert corps["site_id"] == "site-1"
+    assert corps["data_quality"] == "good"
+    assert corps["consumption_kw"] == 87.34
+
+
+async def test_get_current_returns_404_for_an_unknown_site(
+    servi: Callable[..., FauxService], client: AsyncClient
+) -> None:
+    servi(SiteNotFoundError("site-inconnu"))
+
+    response = await client.get("/api/v1/sites/site-inconnu/current")
 
     assert response.status_code == 404
 
