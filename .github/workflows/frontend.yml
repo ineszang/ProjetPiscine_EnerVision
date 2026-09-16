@@ -22,7 +22,6 @@ on:
 
 jobs:
   build:
-    if: ${{ github.event.inputs.job_choice == 'build' || github.event.inputs.job_choice == 'all' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,8 +36,7 @@ jobs:
       - run: npm run build
         working-directory: apps/frontend
 
-  test:
-    if: ${{ always() && (github.event.inputs.job_choice == 'test' || github.event.inputs.job_choice == 'all') }}
+  test:  
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -54,7 +52,6 @@ jobs:
         working-directory: apps/frontend
 
   sonarqube:
-    if: ${{ always() && (github.event.inputs.job_choice == 'sonarqube' || github.event.inputs.job_choice == 'all') }}
     needs: [build, test]
     name: SonarQube
     runs-on: ubuntu-latest
