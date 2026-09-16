@@ -12,11 +12,11 @@ Les quatre couches existent désormais, portées par l'authentification.
 
 ```mermaid
 flowchart TB
-  ep["endpoints<br/>health, auth, users"]
+  ep["endpoints<br/>health, auth, users, sites"]
   sc["schemas<br/>Pydantic"]
-  sv["services<br/>AuthService, UserService"]
-  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log"]
-  md["models<br/>4 tables"]
+  sv["services<br/>AuthService, UserService,<br/>SiteService"]
+  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site"]
+  md["models<br/>10 tables"]
   db[("PostgreSQL")]
 
   ep --> sc
@@ -140,6 +140,8 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | POST | `/api/v1/users` | oui | Crée un compte, rend un mot de passe provisoire. `admin` |
 | PATCH | `/api/v1/users/{id}` | oui | Change le rôle ou l'activation. `admin` |
 | POST | `/api/v1/users/{id}/password-reset` | oui | Réinitialise et ferme les sessions. `admin` |
+| GET | `/api/v1/sites` | oui | Liste les sites. `lecteur` |
+| GET | `/api/v1/sites/{site_id}` | oui | Décrit un site. `lecteur` |
 | GET | `/metrics` | non | Format Prometheus. Jeton requis si `APP_METRICS_TOKEN` est posé |
 | GET | `/docs`, `/redoc`, `/openapi.json` | non | Fermés en `staging` et en `prod` |
 
@@ -148,7 +150,14 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Rendre une route publique impose
 donc de modifier la liste dans ce fichier de test.
 
-Aucune route métier n'existe à ce jour. Le contrat détaillé pour le frontend est dans
+`GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit à réutiliser
+pour les suivantes (`reading`, `dataset`, `prediction`, `alert`, `recommendation`) : les quatre
+couches `endpoints → services → repositories → models` y sont toutes présentes, sur des tables
+déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`,
+contrairement aux routes d'administration qui exigent `admin`. `SiteRepository` lit par
+`AsyncSession.scalar()` (une ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par
+`execute()`, ce qui la rend testable par la fixture `fake_session` au niveau endpoint sans base
+réelle. Le contrat détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ### `/health/ready`
