@@ -920,6 +920,153 @@
           }
         }
       }
+    },
+    "/api/v1/recommendations": {
+      "get": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "Liste les recommandations",
+        "operationId": "list_recommendations_api_v1_recommendations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RecommendationResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Recommendations Api V1 Recommendations Get"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Mot de passe provisoire à changer (`detail` vaut `password_change_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recommendations/{recommendation_id}": {
+      "get": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "Décrit une recommandation",
+        "operationId": "get_recommendation_api_v1_recommendations__recommendation_id__get",
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "recommendation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Recommendation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Mot de passe provisoire à changer (`detail` vaut `password_change_required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps invalide. Le détail nomme le champ fautif et le type d'erreur, jamais la valeur envoyée.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Aucune recommandation ne porte cet identifiant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1110,6 +1257,45 @@
           "timescaledb"
         ],
         "title": "ReadinessStatus"
+      },
+      "RecommendationResponse": {
+        "properties": {
+          "recommendation_id": {
+            "type": "integer",
+            "title": "Recommendation Id"
+          },
+          "alert_id": {
+            "type": "integer",
+            "title": "Alert Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "rule_reference": {
+            "type": "string",
+            "title": "Rule Reference"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recommendation_id",
+          "alert_id",
+          "action",
+          "explanation",
+          "rule_reference",
+          "created_at"
+        ],
+        "title": "RecommendationResponse"
       },
       "Role": {
         "type": "string",
@@ -1395,6 +1581,10 @@
     {
       "name": "sites",
       "description": "Consultation du parc de sites. Accessible à partir du rôle `lecteur`."
+    },
+    {
+      "name": "recommendations",
+      "description": "Consultation des recommandations issues des alertes. Accessible à partir du rôle `lecteur`."
     }
   ]
 }

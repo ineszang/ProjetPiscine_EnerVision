@@ -142,6 +142,8 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | POST | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions. `admin` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/sites` | Liste les sites. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/sites/{site_id}` | Décrit un site. `lecteur` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/recommendations` | Liste les recommandations. `lecteur` | 401, 403, 500 |
+| GET | `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation. `lecteur` | 401, 403, 404, 422, 500 |
 | GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
 | GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
 
@@ -160,7 +162,10 @@ déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le
 contrairement aux routes d'administration qui exigent `admin`. `SiteRepository` lit par
 `AsyncSession.scalar()` (une ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par
 `execute()`, ce qui la rend testable par la fixture `fake_session` au niveau endpoint sans base
-réelle. Le contrat détaillé pour le frontend est dans
+réelle. `GET /recommendations` et `GET /recommendations/{recommendation_id}` reprennent le même
+gabarit à la lettre, `recommendation_id` étant un entier plutôt qu'un texte. Une recommandation ne
+porte pas `site_id` : elle remonte à un site par sa seule `alert_id`, `alert` n'étant pas encore
+exposée. Le contrat détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ### `/health/ready`

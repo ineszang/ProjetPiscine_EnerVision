@@ -54,6 +54,13 @@ TAGS: Final[list[dict[str, Any]]] = [
         "name": "sites",
         "description": "Consultation du parc de sites. Accessible à partir du rôle `lecteur`.",
     },
+    {
+        "name": "recommendations",
+        "description": (
+            "Consultation des recommandations issues des alertes. Accessible à partir du rôle "
+            "`lecteur`."
+        ),
+    },
 ]
 
 cookie_de_rafraichissement = APIKeyCookie(
