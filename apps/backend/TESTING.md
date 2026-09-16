@@ -141,3 +141,35 @@ make check                         # lint + typage + suite unitaire
 uv run pytest tests/api/test_health.py           # un seul fichier
 uv run pytest -k readiness                       # par motif de nom
 ```
+
+## Trois fichiers à connaître avant de toucher à l'authentification
+
+`tests/api/test_route_protection.py` interroge réellement chaque route sans identifiant et
+échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Il n'inspecte pas l'arbre de
+dépendances : celui-ci n'est accessible que par l'API privée de FastAPI, et surtout une route
+peut porter la bonne dépendance tout en répondant quand même. **Rendre une route publique impose
+donc de modifier la liste `ROUTES_PUBLIQUES` de ce fichier**, ce qui apparaît en clair dans la
+diff d'une pull request.
+
+`tests/services/test_auth.py` donne au faux hacheur un **compteur d'appels**. C'est ce qui rend
+possibles les deux assertions qui prouvent la conception, et qu'aucune autre forme de test
+n'atteint :
+
+- adresse inconnue → le compteur vaut 1, donc le haché leurre a bien été vérifié et il n'y a pas
+  d'oracle temporel ;
+- limite de débit atteinte → le compteur vaut 0, donc la limite est évaluée avant Argon2.
+
+`tests/api/test_parcours_authentification.py` joue six parcours complets contre la vraie base,
+sous le marqueur `integration`, sans serveur ni port ouvert. C'est là que se démontrent
+l'atomicité de la rotation, la mort de la famille au rejeu d'un cookie déjà tourné, et la
+révocation immédiate d'un compte désactivé.
+
+## Deux pièges d'écriture de test
+
+**Lire les attributs avant le `rollback`.** Un `session.rollback()` périme les attributs chargés,
+et les relire déclenche une entrée-sortie hors du contexte greenlet, donc un `MissingGreenlet`.
+On capture la valeur dans une variable locale avant d'annuler.
+
+**`audit_log` ne se nettoie pas.** La table est en ajout seul, garanti par déclencheur : un test
+ne peut pas effacer ce qu'il y écrit, et les lignes d'une exécution précédente sont encore là.
+Chaque test filtre donc sur son propre `target_id` plutôt que de supposer une table vide.

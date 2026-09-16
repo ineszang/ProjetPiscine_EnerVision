@@ -27,10 +27,10 @@ async def readiness(session: SessionDep) -> ReadinessStatus:
     try:
         version: str | None = await session.scalar(TIMESCALEDB_VERSION)
     except SQLAlchemyError, OSError:
-        logger.exception("Base de donnees injoignable")
+        logger.exception("Base de données injoignable")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Base de donnees injoignable",
+            detail="Base de données injoignable",
         ) from None
 
     if version is None:
@@ -40,4 +40,5 @@ async def readiness(session: SessionDep) -> ReadinessStatus:
             detail="Extension TimescaleDB absente",
         )
 
-    return ReadinessStatus(status="ready", database="reachable", timescaledb=version)
+    logger.debug("Extension TimescaleDB en version %s", version)
+    return ReadinessStatus(status="ready", database="reachable", timescaledb="loaded")
