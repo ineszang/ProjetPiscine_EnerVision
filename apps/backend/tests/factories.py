@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any
 
 from app.core.config import Settings
@@ -12,6 +13,16 @@ SETTINGS_DE_TEST: dict[str, Any] = {
 }
 
 
+class FakeScalars:
+    """Resultat factice pour `.scalars()` : `.all()` renvoie les lignes fournies."""
+
+    def __init__(self, rows: Sequence[object]) -> None:
+        self._rows = rows
+
+    def all(self) -> Sequence[object]:
+        return self._rows
+
+
 class FakeSession:
     """Session factice : renvoie `result`, ou leve `failure` si elle est fournie."""
 
@@ -24,6 +35,9 @@ class FakeSession:
 
     async def execute(self, *_: object, **__: object) -> object:
         return self._repondre()
+
+    async def scalars(self, *_: object, **__: object) -> FakeScalars:
+        return FakeScalars(self._repondre() or [])
 
     def _repondre(self) -> object:
         if self._failure is not None:

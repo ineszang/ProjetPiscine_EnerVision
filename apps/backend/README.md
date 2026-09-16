@@ -103,6 +103,8 @@ Le sens de dependance est unique : `endpoints` vers `services` vers `repositorie
 | `/api/v1/users` | Liste et crée des comptes | `admin` |
 | `/api/v1/users/{id}` | Change le rôle ou l'activation | `admin` |
 | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions | `admin` |
+| `/api/v1/sites` | Liste les sites | `lecteur` |
+| `/api/v1/sites/{site_id}` | Décrit un site | `lecteur` |
 | `/metrics` | Métriques au format Prometheus | jeton si `APP_METRICS_TOKEN` |
 | `/docs`, `/openapi.json` | Documentation, fermée en `staging` et `prod` | public sinon |
 
