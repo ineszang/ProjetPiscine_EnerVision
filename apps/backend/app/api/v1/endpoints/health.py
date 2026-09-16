@@ -26,7 +26,9 @@ async def liveness(settings: SettingsDep) -> LivenessStatus:
 async def readiness(session: SessionDep) -> ReadinessStatus:
     try:
         version: str | None = await session.scalar(TIMESCALEDB_VERSION)
-    except (SQLAlchemyError, OSError):
+    # `# fmt: skip` contourne un bug de ruff format 0.16.7 : il retire les parenthèses de ce
+    # `except` à deux types, ce qui produit une syntaxe invalide (`except A, B:`).
+    except (SQLAlchemyError, OSError):  # fmt: skip
         logger.exception("Base de données injoignable")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
