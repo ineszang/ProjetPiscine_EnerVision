@@ -1,6 +1,3 @@
-# Pipeline à multiple scénarios
-# pour l'environnement de dev
-
 name: Frontend
 
 on:
@@ -19,11 +16,11 @@ on:
   push:
     paths:
       - "apps/frontend/**"
-      - ".github/workflows/dev-front-pipeline.yml"
+      - ".github/workflows/frontend.yml"
   pull_request:
     paths:
       - "apps/frontend/**"
-      - ".github/workflows/dev-front-pipeline.yml"
+      - ".github/workflows/frontend.yml"
 
 
 jobs:
