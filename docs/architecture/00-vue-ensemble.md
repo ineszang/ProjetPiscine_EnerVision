@@ -63,8 +63,9 @@ flowchart TB
   grafana -.-> prom
 ```
 
-Le lien `front -.-> api` est en pointillé à dessein : le frontend n'appelle aujourd'hui aucune
-API, `provideHttpClient` n'est pas encore installé. Voir [30-frontend.md](30-frontend.md).
+Le lien `front -.-> api` reste en pointillé : le frontend appelle bien une API, mais un
+intercepteur répond à sa place tant que les endpoints n'existent pas. Voir
+[30-frontend.md](30-frontend.md).
 
 Le lien `prom -.-> api` de même : l'API expose bien `/metrics` au format Prometheus, mais aucun
 collecteur ne vient le lire.
@@ -74,7 +75,7 @@ collecteur ne vient le lire.
 | Domaine | Technologie | Emplacement | Statut | Ce qui existe réellement |
 |---|---|---|---|---|
 | Backend | FastAPI, Python 3.14 | `apps/backend` | `En cours` | Factory, configuration, journalisation, 2 sondes de santé, `/metrics`. Aucune couche métier |
-| Frontend | Angular 22, Node 24 | `apps/frontend` | `En cours` | Squelette `ng new` standalone, routes vides, aucun service HTTP |
+| Frontend | Angular 22, Node 24 | `apps/frontend` | `En cours` | Tableau de bord sur route `/dashboard`, deux services HTTP, graphiques Chart.js, données servies par des fixtures |
 | Base | PostgreSQL 17 + TimescaleDB | `db` | `Fait` | Bootstrap de l'extension, base de test, chaîne Alembic. Aucune table applicative |
 | Infra | Terraform, k3s single-node | `infra/terraform` | `En cours` | Module d'installation du cluster. Jamais appliqué, aucune ressource Kubernetes déclarée |
 | Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Cible` | Rien, hors le `/metrics` exposé par l'API |
