@@ -7,6 +7,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.errors import register_error_handlers
 from app.api.middleware import SecurityHeadersMiddleware
+from app.api.openapi import DESCRIPTION, SUMMARY, TAGS
 from app.api.security import require_metrics_token
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
@@ -37,6 +38,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(
         title=resolved.name,
         version=resolved.version,
+        summary=SUMMARY,
+        description=DESCRIPTION,
+        openapi_tags=TAGS,
         debug=resolved.debug,
         lifespan=lifespan,
         docs_url="/docs" if documentee else None,

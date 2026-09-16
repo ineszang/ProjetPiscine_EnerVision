@@ -28,7 +28,7 @@ de demarrer sans elles.
 ## Commandes
 
 Depuis la racine du monorepo, via le `Makefile` : `make install`, `make dev`, `make lint`,
-`make format`, `make typecheck`, `make test`, `make check`, `make docker-build`.
+`make format`, `make typecheck`, `make test`, `make check`, `make openapi`, `make docker-build`.
 
 Directement depuis ce dossier :
 
@@ -39,7 +39,11 @@ uv run ruff format .         # format
 uv run mypy app              # typage strict
 uv run pytest                # tests + couverture
 uv run pytest -m integration # tests exigeant une base joignable
+uv run python -m app.cli export-openapi   # régénère openapi.json
 ```
+
+`openapi.json` est versionné : `tests/api/test_openapi.py` échoue si le fichier ne correspond
+plus aux routes déclarées. Toute PR qui change une route le régénère dans le même commit.
 
 Les conventions de tests, les gabarits et le detail des marqueurs sont dans
 [`TESTING.md`](TESTING.md).
@@ -103,6 +107,8 @@ Le sens de dependance est unique : `endpoints` vers `services` vers `repositorie
 | `/api/v1/users` | Liste et crée des comptes | `admin` |
 | `/api/v1/users/{id}` | Change le rôle ou l'activation | `admin` |
 | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions | `admin` |
+| `/api/v1/sites` | Liste les sites | `lecteur` |
+| `/api/v1/sites/{site_id}` | Décrit un site | `lecteur` |
 | `/metrics` | Métriques au format Prometheus | jeton si `APP_METRICS_TOKEN` |
 | `/docs`, `/openapi.json` | Documentation, fermée en `staging` et `prod` | public sinon |
 
