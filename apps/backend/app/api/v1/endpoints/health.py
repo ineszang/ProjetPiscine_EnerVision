@@ -26,7 +26,7 @@ async def liveness(settings: SettingsDep) -> LivenessStatus:
 async def readiness(session: SessionDep) -> ReadinessStatus:
     try:
         version: str | None = await session.scalar(TIMESCALEDB_VERSION)
-    except SQLAlchemyError, OSError:
+    except (SQLAlchemyError, OSError):
         logger.exception("Base de données injoignable")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
