@@ -32,17 +32,17 @@ describe('ConsumptionGauge', () => {
     expect(() => fixture.detectChanges()).not.toThrow();
   });
   it('met à jour le graphique quand les valeurs changent après initialisation', () => {
-  TestBed.configureTestingModule({ imports: [ConsumptionGauge] });
-  const fixture = TestBed.createComponent(ConsumptionGauge);
-  fixture.componentRef.setInput('consumption', 300);
-  fixture.componentRef.setInput('capacity', 1000);
-  fixture.detectChanges(); // déclenche ngAfterViewInit, this.chart existe désormais
+    TestBed.configureTestingModule({ imports: [ConsumptionGauge] });
+    const fixture = TestBed.createComponent(ConsumptionGauge);
+    fixture.componentRef.setInput('consumption', 300);
+    fixture.componentRef.setInput('capacity', 1000);
+    fixture.detectChanges(); // déclenche ngAfterViewInit, this.chart existe désormais
 
-  fixture.componentRef.setInput('consumption', 500);
-  fixture.detectChanges(); // ré-exécute l'effect, cette fois avec this.chart défini
+    fixture.componentRef.setInput('consumption', 500);
+    fixture.detectChanges(); // ré-exécute l'effect, cette fois avec this.chart défini
 
-  expect(() => fixture.detectChanges()).not.toThrow();
-});
+    expect(() => fixture.detectChanges()).not.toThrow();
+  });
 
   it('détruit le graphique quand le composant est détruit', () => {
     TestBed.configureTestingModule({ imports: [ConsumptionGauge] });

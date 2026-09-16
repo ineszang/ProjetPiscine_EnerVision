@@ -40,9 +40,9 @@ export class Dashboard implements OnInit {
     timer(0, REFRESH_INTERVAL_MS)
       .pipe(
         switchMap(() =>
-          this.statsService.getSummary().pipe(catchError(() => this.reportUnavailable()))
+          this.statsService.getSummary().pipe(catchError(() => this.reportUnavailable())),
         ),
-        takeUntilDestroyed(this.destroyRef)
+        takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((stats) => {
         this.error.set(null);

@@ -37,7 +37,9 @@ export class SiteLoadChart implements AfterViewInit, OnDestroy {
       if (this.chart) {
         this.chart.data.labels = sites.map((s) => s.site_name);
         this.chart.data.datasets[0].data = sites.map((s) => s.load_percent ?? 0);
-        this.chart.data.datasets[0].backgroundColor = sites.map((s) => QUALITY_COLORS[s.data_quality]);
+        this.chart.data.datasets[0].backgroundColor = sites.map(
+          (s) => QUALITY_COLORS[s.data_quality],
+        );
         this.chart.update('none');
       }
     });

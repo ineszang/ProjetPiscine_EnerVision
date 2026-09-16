@@ -43,7 +43,7 @@ describe('Dashboard', () => {
     expect(fixture.componentInstance.error()).toBeNull();
   });
 
-  it('signale l\'indisponibilité puis repart au rafraîchissement suivant', () => {
+  it("signale l'indisponibilité puis repart au rafraîchissement suivant", () => {
     vi.useFakeTimers();
     const statsMock = {
       getSummary: vi

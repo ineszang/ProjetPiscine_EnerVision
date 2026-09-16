@@ -131,9 +131,15 @@ h2 {
   flex-shrink: 0;
 }
 
-.alert-item--high .alert-item__badge { background: var(--color-degraded); }
-.alert-item--medium .alert-item__badge { background: var(--color-partial); }
-.alert-item--low .alert-item__badge { background: var(--color-good); }
+.alert-item--high .alert-item__badge {
+  background: var(--color-degraded);
+}
+.alert-item--medium .alert-item__badge {
+  background: var(--color-partial);
+}
+.alert-item--low .alert-item__badge {
+  background: var(--color-good);
+}
 
 .alert-item__message {
   font-size: 0.9rem;

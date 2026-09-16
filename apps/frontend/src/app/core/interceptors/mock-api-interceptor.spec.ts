@@ -33,7 +33,7 @@ describe('mockApiInterceptor', () => {
 
     httpMock.expectNone(`${environment.apiUrl}/stats/summary`);
     expect((result as typeof STATS_SUMMARY_FIXTURE).total_sites).toBe(
-      STATS_SUMMARY_FIXTURE.total_sites
+      STATS_SUMMARY_FIXTURE.total_sites,
     );
   });
 
@@ -56,12 +56,12 @@ describe('mockApiInterceptor', () => {
   });
 
   it('renvoie la fixture des alertes sans appel réseau quand useMockFixtures est activé', () => {
-  environment.useMockFixtures = true;
-  let result: unknown;
+    environment.useMockFixtures = true;
+    let result: unknown;
 
-  http.get(`${environment.apiUrl}/alerts`).subscribe((r) => (result = r));
+    http.get(`${environment.apiUrl}/alerts`).subscribe((r) => (result = r));
 
-  httpMock.expectNone(`${environment.apiUrl}/alerts`);
-  expect((result as unknown[]).length).toBeGreaterThan(0);
-});
+    httpMock.expectNone(`${environment.apiUrl}/alerts`);
+    expect((result as unknown[]).length).toBeGreaterThan(0);
+  });
 });

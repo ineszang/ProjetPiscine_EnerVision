@@ -18,7 +18,7 @@ export const STATS_SUMMARY_FIXTURE: StatsSummary = {
     {
       site_id: 'SITE002',
       site_name: 'Usine Lyon Vénissieux',
-      current_consumption_kw: 542.10,
+      current_consumption_kw: 542.1,
       capacity_kw: 1000,
       load_percent: 54.2,
       data_quality: 'good',
