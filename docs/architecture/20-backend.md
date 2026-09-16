@@ -142,6 +142,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | POST | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions. `admin` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/sites` | Liste les sites. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/sites/{site_id}` | Décrit un site. `lecteur` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/alerts` | Liste les alertes, filtrable par `site_id` et `severity`. `lecteur` | 401, 403, 422, 500 |
 | GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
 | GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
 
@@ -153,10 +154,10 @@ Les codes de la dernière colonne sont ceux que le schéma **déclare**, et le f
 échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Rendre une route publique impose
 donc de modifier la liste dans ce fichier de test.
 
-`GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit à réutiliser
-pour les suivantes (`reading`, `dataset`, `prediction`, `alert`, `recommendation`) : les quatre
-couches `endpoints → services → repositories → models` y sont toutes présentes, sur des tables
-déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`,
+`GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit repris pour
+`GET /alerts` puis pour les suivantes (`reading`, `dataset`, `prediction`, `recommendation`) : les
+quatre couches `endpoints → services → repositories → models` y sont toutes présentes, sur des
+tables déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`,
 contrairement aux routes d'administration qui exigent `admin`. `SiteRepository` lit par
 `AsyncSession.scalar()` (une ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par
 `execute()`, ce qui la rend testable par la fixture `fake_session` au niveau endpoint sans base
