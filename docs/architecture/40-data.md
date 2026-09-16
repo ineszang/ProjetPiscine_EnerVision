@@ -4,12 +4,12 @@ PostgreSQL 17 avec l'extension TimescaleDB. Le choix, ses alternatives et ses co
 dans l'[ADR 0001](../adr/0001-postgresql-timescaledb.md), qui fait foi. Ce document décrit le
 système qui en découle.
 
-## Avertissement
+## Ce que couvre ce document
 
-**Aucune table applicative n'existe à ce jour.** `Base.metadata` est vide, `app/models/` ne
-contient qu'un commentaire, l'unique révision Alembic ne crée aucune table, et aucune hypertable
-n'a été déclarée. Tout ce qui suit sous le statut `Cible` est une proposition de structure, pas un
-relevé du code. Le modèle sera arrêté au jalon J2.
+**Dix tables applicatives existent** : quatre pour l'authentification, six pour les données
+d'énergie, dont l'hypertable `reading`. Les sections marquées `Fait` relèvent le code. Celles
+marquées `Cible` décrivent ce qui n'est pas écrit, au premier rang desquelles la chaîne
+d'ingestion, les agrégats continus, la compression et la rétention.
 
 ## Trois emplacements, trois rôles
 
@@ -35,7 +35,7 @@ Statut : `Fait`.
 - `db/init/100-extensions.sql` crée l'extension `timescaledb`.
 - `db/init/110-test-database.sql` crée `enervision_test`, dont le nom est attendu en dur par
   `apps/backend/tests/conftest.py`.
-- Quatre révisions Alembic. La première, `5353c0e4f094`, **ne crée aucune table** : elle
+- Cinq révisions Alembic. La première, `5353c0e4f094`, **ne crée aucune table** : elle
   établit `alembic_version` et refuse de s'appliquer si l'extension manque :
 
 ```sql
@@ -48,16 +48,18 @@ Cette garde forme paire avec le 503 de `/api/v1/health/ready`. Un bootstrap saut
 au démarrage de l'API : ces deux gardes le rendent visible tôt, des deux côtés.
 
 Les trois suivantes créent les tables de l'authentification, décrites plus bas : `app_user`,
-puis `login_attempt` et `audit_log`, puis `refresh_token`.
+puis `login_attempt` et `audit_log`, puis `refresh_token`. La cinquième, `e6d2026091501`, crée
+les six tables de données décrites en fin de document et déclare l'hypertable `reading`.
 
 ## Cycle de vie d'une mesure
 
-Statut : `Cible`. Aucun de ces maillons n'existe.
+Statut : `Cible`, sauf l'hypertable `reading` qui existe. Ni l'ingestion, ni les agrégats
+continus, ni la compression, ni la rétention ne sont écrits.
 
 ```mermaid
 flowchart LR
   src["Source de mesures"] -.-> ing["Ingestion Airflow"]
-  ing -.-> hy[("Hypertable mesure")]
+  ing -.-> hy[("Hypertable reading")]
   hy -.-> agg[("Agrégat continu")]
   hy -.-> comp["Compression"]
   hy -.-> ret["Rétention"]
@@ -133,67 +135,46 @@ donc **pas** une hypertable : une politique de rétention émettrait des `DELETE
 refuseraient. `login_attempt`, à l'inverse, est faite pour se purger, puisque son volume est
 piloté par l'attaquant.
 
-## Modèle métier
-
-Statut : `Cible`. Les entités ci-dessous sont des **candidates**, à valider en J2. Elles
-s'appuient sur les gabarits de [`apps/backend/TESTING.md`](../../apps/backend/TESTING.md), qui
-évoquent déjà un modèle `Site`, un `SiteRepository` et un `ConsumptionService` exposant un
-`total_kwh(site_id)`.
-
-```mermaid
-erDiagram
-  SITE ||--o{ POINT_DE_MESURE : porte
-  POINT_DE_MESURE ||--o{ MESURE : produit
-
-  SITE {
-    int id PK
-    string nom
-  }
-  POINT_DE_MESURE {
-    int id PK
-    int site_id FK
-    string libelle
-    string unite
-  }
-  MESURE {
-    timestamptz horodatage PK
-    int point_id PK
-    double valeur
-  }
-```
-
-`MESURE` est la table destinée à devenir une hypertable, partitionnée sur `horodatage`. Sa clé
-primaire doit inclure la colonne de temps : TimescaleDB l'exige, une clé sur le seul identifiant
-de point serait refusée.
-
 ## Gabarit de révision créant une hypertable
 
-Conforme à la règle de l'ADR 0001 : table et hypertable dans la même révision.
+Conforme à la règle de l'ADR 0001 : table et hypertable dans la même révision. La révision
+`e6d2026091501` en est l'exemple réel, réduit ici à l'essentiel.
 
 ```python
 def upgrade() -> None:
     op.create_table(
-        "mesure",
-        sa.Column("horodatage", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("point_id", sa.Integer(), sa.ForeignKey("point_de_mesure.id"), nullable=False),
-        sa.Column("valeur", sa.Float(), nullable=False),
-        sa.PrimaryKeyConstraint("horodatage", "point_id"),
+        "reading",
+        sa.Column("reading_id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("site_id", sa.Text(), nullable=False),
+        sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("reading_id", "timestamp"),
     )
-    op.execute("SELECT create_hypertable('mesure', by_range('horodatage'))")
+    op.execute(
+        "SELECT create_hypertable('reading', by_range('timestamp'), "
+        "create_default_indexes => FALSE)"
+    )
 
 
 def downgrade() -> None:
-    op.drop_table("mesure")
+    op.drop_table("reading")
 ```
+
+La clé primaire inclut la colonne de temps parce que TimescaleDB l'exige : toute contrainte
+unique d'une hypertable doit porter la colonne de partitionnement, et une clé sur le seul
+`reading_id` serait refusée par `create_hypertable`.
+
+`create_default_indexes => FALSE` écarte l'index que TimescaleDB pose d'office sur la seule
+colonne de temps : les index déclarés dans la révision le couvrent déjà.
 
 `drop_table` suffit au retour arrière : supprimer la table supprime l'hypertable et ses partitions.
 
 ## Conventions
 
-- **Noms au singulier**, en minuscules, sans préfixe de table.
+- **Noms au singulier**, en minuscules, sans préfixe de table : `app_user`, `reading`.
 - **Toute colonne de temps en `timestamptz`.** Jamais de `timestamp` nu : une mesure sans fuseau
   devient ininterprétable dès le premier changement d'heure.
-- **La colonne de partitionnement s'appelle `horodatage`** et entre dans la clé primaire.
+- **La colonne de partitionnement entre dans la clé primaire.** Dans `reading` elle s'appelle
+  `timestamp` : c'est un nom de colonne, son type reste `timestamptz`.
 - **Les politiques de rétention et de compression** vont dans `db/migrations/`, pas dans Alembic :
   elles ne découlent pas du schéma applicatif.
 - **Tout modèle doit être importé dans `app/models/__init__.py`**, sans quoi
@@ -201,13 +182,12 @@ def downgrade() -> None:
 
 ## Questions ouvertes
 
-Elles relèvent du jalon J2, « valider le périmètre retenu », et bloquent le modèle définitif.
+Elles relèvent du jalon J2, « valider le périmètre retenu ». Le schéma est livré : ce qui suit
+porte sur son exploitation, plus sur sa forme.
 
-- **Quelles sources de mesures**, et selon quel protocole elles sont collectées.
 - **Quelle granularité** à l'ingestion : la seconde, la minute, le quart d'heure.
 - **Quels agrégats continus**, et sur quelles fenêtres.
 - **Quelle profondeur de rétention** en données brutes, et à partir de quand on compresse.
-- **Quelles unités** sont manipulées, et si une même table les mélange.
 - **Multi-tenant ou non** : un site appartient-il à un client, et faut-il cloisonner les lectures.
 
 ## Modélisation détaillée des données
@@ -220,12 +200,11 @@ jusqu’aux recommandations proposées à l’utilisateur.
 ### Schéma de données
 
 Le diagramme ci-dessous présente les tables et leurs relations.
-Il décrit une structure de conception ; les migrations correspondantes
-restent à implémenter.
+La révision `e6d2026091501` les crée.
 
 ![Schéma de données EnerVision](images/EnerVision-schema-donnees.png)
 
-*Figure — Modélisation des données EnerVision.*
+*Figure : Modélisation des données EnerVision.*
 
 ### Description des tables
 
@@ -234,15 +213,15 @@ des données.
 
 | Table | Rôle | Origine des informations |
 |---|---|---|
-| `datasets` | Identifier les jeux historiques, retrouver leurs fichiers et conserver leurs métadonnées | Archive CSV/JSON et informations ajoutées lors de l’import |
-| `sites` | Regrouper les informations des sites : identifiant, nom, type et caractéristiques disponibles | CSV et API Mock `/api/v1/sites` |
-| `readings` | Stocker les mesures, leur provenance, leur qualité et les éventuelles valeurs imputées | CSV et API Mock `/current` et `/readings` |
-| `predictions` | Conserver les prévisions, leur période cible et la référence du modèle utilisé | Traitements ML d’EnerVision |
-| `alerts` | Enregistrer les alertes, leur type, leur gravité et leur message | API Mock `/alerts` et détections EnerVision |
-| `recommendations` | Proposer des actions et expliquer la règle qui les motive | Règles métier d’EnerVision |
+| `dataset` | Identifier les jeux historiques, retrouver leurs fichiers et conserver leurs métadonnées | Archive CSV/JSON et informations ajoutées lors de l’import |
+| `site` | Regrouper les informations des sites : identifiant, nom, type et caractéristiques disponibles | CSV et API Mock `/api/v1/sites` |
+| `reading` | Stocker les mesures, leur provenance, leur qualité et les éventuelles valeurs imputées | CSV et API Mock `/current` et `/readings` |
+| `prediction` | Conserver les prévisions, leur période cible et la référence du modèle utilisé | Traitements ML d’EnerVision |
+| `alert` | Enregistrer les alertes, leur type, leur gravité et leur message | API Mock `/alerts` et détections EnerVision |
+| `recommendation` | Proposer des actions et expliquer la règle qui les motive | Règles métier d’EnerVision |
 
 Les anomalies historiques décrites dans les JSON sont conservées
-dans `datasets.metadata`. Elles servent à l’analyse des données
+dans `dataset.metadata`. Elles servent à l’analyse des données
 et ne sont pas considérées comme des alertes actuelles.
 
 ### Relations entre les tables

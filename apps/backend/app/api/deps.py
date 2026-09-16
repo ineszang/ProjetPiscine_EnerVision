@@ -24,8 +24,10 @@ from app.db.session import get_session
 from app.repositories.audit_log import AuditLogRepository
 from app.repositories.login_attempt import LoginAttemptRepository
 from app.repositories.refresh_token import RefreshTokenRepository
+from app.repositories.site import SiteRepository
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService, LoginPolicy
+from app.services.site import SiteService
 from app.services.user import UserService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -129,6 +131,13 @@ def get_user_service(
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+
+
+def get_site_service(session: SessionDep) -> SiteService:
+    return SiteService(sites=SiteRepository(session))
+
+
+SiteServiceDep = Annotated[SiteService, Depends(get_site_service)]
 
 
 async def get_current_principal(

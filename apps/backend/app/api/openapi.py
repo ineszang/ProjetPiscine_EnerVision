@@ -50,6 +50,10 @@ TAGS: Final[list[dict[str, Any]]] = [
         "name": "users",
         "description": "Administration des comptes. Réservé au rôle `admin`.",
     },
+    {
+        "name": "sites",
+        "description": "Consultation du parc de sites. Accessible à partir du rôle `lecteur`.",
+    },
 ]
 
 cookie_de_rafraichissement = APIKeyCookie(
@@ -109,6 +113,18 @@ REPONSES_ADMIN: Final[Reponses] = {
         "description": (
             "Droits insuffisants, ou mot de passe provisoire à changer quand `detail` vaut "
             "`password_change_required`."
+        ),
+    },
+}
+
+# `lecteur` est le rôle minimum : `require_role` n'y refuse jamais un 403 pour droits
+# insuffisants, seulement pour le mot de passe provisoire.
+REPONSES_LECTEUR: Final[Reponses] = {
+    **REPONSES_AUTHENTIFIEES,
+    403: {
+        "model": ErrorResponse,
+        "description": (
+            "Mot de passe provisoire à changer (`detail` vaut `password_change_required`)."
         ),
     },
 }

@@ -12,11 +12,11 @@ Les quatre couches existent désormais, portées par l'authentification.
 
 ```mermaid
 flowchart TB
-  ep["endpoints<br/>health, auth, users"]
+  ep["endpoints<br/>health, auth, users, sites"]
   sc["schemas<br/>Pydantic"]
-  sv["services<br/>AuthService, UserService"]
-  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log"]
-  md["models<br/>4 tables"]
+  sv["services<br/>AuthService, UserService,<br/>SiteService"]
+  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site"]
+  md["models<br/>10 tables"]
   db[("PostgreSQL")]
 
   ep --> sc
@@ -140,6 +140,8 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | POST | `/api/v1/users` | Crée un compte, rend un mot de passe provisoire. `admin` | 401, 403, 409, 422, 500 |
 | PATCH | `/api/v1/users/{id}` | Change le rôle ou l'activation. `admin` | 400, 401, 403, 404, 409, 422, 500 |
 | POST | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions. `admin` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/sites` | Liste les sites. `lecteur` | 401, 403, 500 |
+| GET | `/api/v1/sites/{site_id}` | Décrit un site. `lecteur` | 401, 403, 404, 422, 500 |
 | GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
 | GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
 
@@ -151,7 +153,14 @@ Les codes de la dernière colonne sont ceux que le schéma **déclare**, et le f
 échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Rendre une route publique impose
 donc de modifier la liste dans ce fichier de test.
 
-Aucune route métier n'existe à ce jour. Le contrat détaillé pour le frontend est dans
+`GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit à réutiliser
+pour les suivantes (`reading`, `dataset`, `prediction`, `alert`, `recommendation`) : les quatre
+couches `endpoints → services → repositories → models` y sont toutes présentes, sur des tables
+déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`,
+contrairement aux routes d'administration qui exigent `admin`. `SiteRepository` lit par
+`AsyncSession.scalar()` (une ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par
+`execute()`, ce qui la rend testable par la fixture `fake_session` au niveau endpoint sans base
+réelle. Le contrat détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ### `/health/ready`
