@@ -41,12 +41,12 @@ async def data_site(data_connection: AsyncConnection) -> str:
     return site_id
 
 
-async def test_readings_is_a_time_hypertable_when_migrated(
+async def test_reading_is_a_time_hypertable_when_migrated(
     data_connection: AsyncConnection,
 ) -> None:
     query = text(
         "SELECT column_name FROM timescaledb_information.dimensions "
-        "WHERE hypertable_schema = 'public' AND hypertable_name = 'readings'"
+        "WHERE hypertable_schema = 'public' AND hypertable_name = 'reading'"
     )
 
     result = await data_connection.execute(query)
@@ -216,7 +216,7 @@ async def test_alert_rejects_prediction_when_site_differs(
         async with data_connection.begin_nested():
             await data_connection.execute(
                 insert(Alert).values(
-                    alert_id=str(uuid4()),
+                    source_alert_id=str(uuid4()),
                     site_id=other_site,
                     source="enervision",
                     timestamp=MOMENT,
@@ -236,7 +236,7 @@ async def test_recommendation_is_unique_when_alert_and_rule_match(
         await data_connection.execute(
             insert(Alert)
             .values(
-                alert_id=str(uuid4()),
+                source_alert_id=str(uuid4()),
                 site_id=data_site,
                 source="api_mock",
                 timestamp=MOMENT,
@@ -245,7 +245,7 @@ async def test_recommendation_is_unique_when_alert_and_rule_match(
                 message="Test",
                 raw_data={},
             )
-            .returning(Alert.id)
+            .returning(Alert.alert_id)
         )
     ).scalar_one()
     statement = insert(Recommendation).values(

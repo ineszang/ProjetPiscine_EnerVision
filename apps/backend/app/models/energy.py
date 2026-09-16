@@ -28,10 +28,10 @@ from app.db.base import Base
 
 
 class Dataset(Base):
-    __tablename__ = "datasets"
+    __tablename__ = "dataset"
     __table_args__ = (
-        CheckConstraint("dataset_id > 0", name="ck_datasets_positive_id"),
-        UniqueConstraint("archive_sha256", name="uq_datasets_archive_sha256"),
+        CheckConstraint("dataset_id > 0", name="ck_dataset_positive_id"),
+        UniqueConstraint("archive_sha256", name="uq_dataset_archive_sha256"),
     )
 
     dataset_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -44,7 +44,7 @@ class Dataset(Base):
 
 
 class Site(Base):
-    __tablename__ = "sites"
+    __tablename__ = "site"
 
     site_id: Mapped[str] = mapped_column(Text, primary_key=True)
     site_name: Mapped[str] = mapped_column(Text)
@@ -55,38 +55,38 @@ class Site(Base):
 
 
 class Reading(Base):
-    __tablename__ = "readings"
+    __tablename__ = "reading"
     __table_args__ = (
         CheckConstraint(
-            "source IN ('csv', 'api_current', 'api_history')", name="ck_readings_source"
+            "source IN ('csv', 'api_current', 'api_history')", name="ck_reading_source"
         ),
         CheckConstraint(
             "(source = 'csv' AND dataset_id IS NOT NULL) OR "
             "(source IN ('api_current', 'api_history') AND dataset_id IS NULL)",
-            name="ck_readings_dataset_source",
+            name="ck_reading_dataset_source",
         ),
         CheckConstraint(
             "data_quality IS NULL OR data_quality IN ('good', 'partial', 'degraded', 'critical')",
-            name="ck_readings_quality",
+            name="ck_reading_quality",
         ),
         CheckConstraint(
             "(imputed_values IS NULL AND imputation_method IS NULL) OR "
             "(imputed_values IS NOT NULL AND imputation_method IS NOT NULL)",
-            name="ck_readings_imputation",
+            name="ck_reading_imputation",
         ),
-        Index("ix_readings_site_timestamp", "site_id", "timestamp"),
-        Index("ix_readings_dataset_id", "dataset_id"),
+        Index("ix_reading_site_timestamp", "site_id", "timestamp"),
+        Index("ix_reading_dataset_id", "dataset_id"),
     )
 
     reading_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     site_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("sites.site_id", name="fk_readings_site", ondelete="RESTRICT")
+        Text, ForeignKey("site.site_id", name="fk_reading_site", ondelete="RESTRICT")
     )
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
     source: Mapped[str] = mapped_column(Text)
     dataset_id: Mapped[int | None] = mapped_column(
         BigInteger,
-        ForeignKey("datasets.dataset_id", name="fk_readings_dataset", ondelete="RESTRICT"),
+        ForeignKey("dataset.dataset_id", name="fk_reading_dataset", ondelete="RESTRICT"),
     )
     consumption_kw: Mapped[float | None] = mapped_column(Double)
     consumption_kwh: Mapped[float | None] = mapped_column(Double)
@@ -109,7 +109,7 @@ class Reading(Base):
 
 
 Index(
-    "uq_readings_source",
+    "uq_reading_source",
     Reading.site_id,
     Reading.timestamp,
     Reading.source,
@@ -119,32 +119,32 @@ Index(
 
 
 class Prediction(Base):
-    __tablename__ = "predictions"
+    __tablename__ = "prediction"
     __table_args__ = (
-        UniqueConstraint("prediction_id", "site_id", name="uq_predictions_id_site"),
-        Index("ix_predictions_site_target", "site_id", "target_at"),
+        UniqueConstraint("prediction_id", "site_id", name="uq_prediction_id_site"),
+        Index("ix_prediction_site_target", "site_id", "target_at"),
         CheckConstraint(
             "target_metric IN ('consumption_kwh', 'consumption_kw')",
-            name="ck_predictions_metric",
+            name="ck_prediction_metric",
         ),
         CheckConstraint(
-            "period_minutes IS NULL OR period_minutes > 0", name="ck_predictions_period"
+            "period_minutes IS NULL OR period_minutes > 0", name="ck_prediction_period"
         ),
         CheckConstraint(
             "target_metric <> 'consumption_kwh' OR period_minutes IS NOT NULL",
-            name="ck_predictions_energy_period",
+            name="ck_prediction_energy_period",
         ),
         CheckConstraint(
             "(status = 'available' AND predicted_value IS NOT NULL AND failure_reason IS NULL) OR "
             "(status IN ('insufficient_data', 'error') AND predicted_value IS NULL "
             "AND failure_reason IS NOT NULL)",
-            name="ck_predictions_status",
+            name="ck_prediction_status",
         ),
     )
 
     prediction_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     site_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("sites.site_id", name="fk_predictions_site", ondelete="RESTRICT")
+        Text, ForeignKey("site.site_id", name="fk_prediction_site", ondelete="RESTRICT")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     target_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -157,29 +157,31 @@ class Prediction(Base):
 
 
 class Alert(Base):
-    __tablename__ = "alerts"
+    __tablename__ = "alert"
     __table_args__ = (
-        UniqueConstraint("source", "site_id", "alert_id", name="uq_alerts_source_site_id"),
-        Index("ix_alerts_site_timestamp", "site_id", "timestamp"),
+        UniqueConstraint(
+            "source", "site_id", "source_alert_id", name="uq_alert_source_reference"
+        ),
+        Index("ix_alert_site_timestamp", "site_id", "timestamp"),
         ForeignKeyConstraint(
             ["prediction_id", "site_id"],
-            ["predictions.prediction_id", "predictions.site_id"],
-            name="fk_alerts_prediction_site",
+            ["prediction.prediction_id", "prediction.site_id"],
+            name="fk_alert_prediction_site",
             ondelete="RESTRICT",
         ),
-        CheckConstraint("source IN ('api_mock', 'enervision')", name="ck_alerts_source"),
+        CheckConstraint("source IN ('api_mock', 'enervision')", name="ck_alert_source"),
         CheckConstraint(
-            "type IN ('spike', 'threshold', 'anomaly', 'outage', 'sensor')", name="ck_alerts_type"
+            "type IN ('spike', 'threshold', 'anomaly', 'outage', 'sensor')", name="ck_alert_type"
         ),
         CheckConstraint(
-            "severity IN ('low', 'medium', 'high', 'critical')", name="ck_alerts_severity"
+            "severity IN ('low', 'medium', 'high', 'critical')", name="ck_alert_severity"
         ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    alert_id: Mapped[str] = mapped_column(Text)
+    alert_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_alert_id: Mapped[str] = mapped_column(Text)
     site_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("sites.site_id", name="fk_alerts_site", ondelete="RESTRICT")
+        Text, ForeignKey("site.site_id", name="fk_alert_site", ondelete="RESTRICT")
     )
     source: Mapped[str] = mapped_column(Text)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -194,14 +196,15 @@ class Alert(Base):
 
 
 class Recommendation(Base):
-    __tablename__ = "recommendations"
+    __tablename__ = "recommendation"
     __table_args__ = (
-        UniqueConstraint("alert_id", "rule_reference", name="uq_recommendations_alert_rule"),
+        UniqueConstraint("alert_id", "rule_reference", name="uq_recommendation_alert_rule"),
     )
 
     recommendation_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     alert_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("alerts.id", name="fk_recommendations_alert", ondelete="RESTRICT")
+        BigInteger,
+        ForeignKey("alert.alert_id", name="fk_recommendation_alert", ondelete="RESTRICT"),
     )
     action: Mapped[str] = mapped_column(Text)
     explanation: Mapped[str] = mapped_column(Text)
