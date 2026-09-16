@@ -10,6 +10,7 @@ from app.api.deps import get_alert_service, get_current_principal
 from app.core.principal import Principal
 from app.core.roles import AccountKind, Role
 from app.models.energy import Alert
+from app.schemas.alert import AlertSeverity
 
 
 def principal(role: Role = Role.LECTEUR) -> Principal:
@@ -112,7 +113,7 @@ async def test_list_alerts_transmits_the_severity_filter(
 
     await client.get("/api/v1/alerts?severity=critical")
 
-    assert service.appels == [(None, "critical")]
+    assert service.appels == [(None, AlertSeverity.CRITICAL)]
 
 
 async def test_list_alerts_returns_422_for_an_unknown_severity(

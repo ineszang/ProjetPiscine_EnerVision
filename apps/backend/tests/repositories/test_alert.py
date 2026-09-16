@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.energy import Alert
 from app.repositories.alert import AlertRepository
+from app.schemas.alert import AlertSeverity
 from tests.repositories.test_site import creer as creer_site
 from tests.repositories.test_site import identifiant as identifiant_site
 
@@ -73,7 +74,7 @@ async def test_list_all_filters_by_severity(session: AsyncSession) -> None:
     voulue = await creer_alerte(session, site_id=site.site_id, severity="critical")
     await creer_alerte(session, site_id=site.site_id, severity="low")
 
-    alertes = await depot.list_all(severity="critical")
+    alertes = await depot.list_all(severity=AlertSeverity.CRITICAL)
     identifiants = [a.alert_id for a in alertes]
     await session.rollback()
 
