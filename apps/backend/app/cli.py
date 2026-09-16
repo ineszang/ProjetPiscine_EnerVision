@@ -7,18 +7,25 @@
 
 import argparse
 import asyncio
+import json
 import secrets
 import sys
 from getpass import getpass
+from pathlib import Path
+from typing import Any
+
+from pydantic import SecretStr
 
 from app.core.config import Settings, get_settings
 from app.core.hashing import build_hasher
 from app.core.roles import Role
 from app.db.session import get_session_factory
+from app.main import create_app
 from app.repositories.user import UserRepository
 
 LONGUEUR_MOT_DE_PASSE_GENERE = 24
 LONGUEUR_MINIMALE = 12
+CHEMIN_CONTRAT = Path(__file__).resolve().parent.parent / "openapi.json"
 
 
 async def create_admin(
@@ -55,6 +62,35 @@ async def create_admin(
     )
 
 
+# Piège : le schéma ne doit dépendre ni du `.env` du poste ni des variables `APP_*`, sinon le
+# fichier versionné changerait de machine en machine et le test de dérive deviendrait un oracle
+# de configuration locale. Tout ce qui atteint le schéma est donc posé ici, `_env_file` compris.
+def settings_du_contrat() -> Settings:
+    return Settings(
+        _env_file=None,
+        name="EnerVision API",
+        version="0.1.0",
+        env="local",
+        api_prefix="/api/v1",
+        secret_key=SecretStr("contrat-openapi-sans-effet-sur-le-schema"),
+        database_url="postgresql+asyncpg://openapi:contrat@localhost:5432/enervision",
+    )
+
+
+def schema_du_contrat() -> dict[str, Any]:
+    schema: dict[str, Any] = create_app(settings_du_contrat()).openapi()
+    return schema
+
+
+def rend_le_contrat() -> str:
+    return json.dumps(schema_du_contrat(), indent=2, ensure_ascii=False) + "\n"
+
+
+def export_openapi(destination: Path) -> str:
+    destination.write_text(rend_le_contrat(), encoding="utf-8")
+    return f"Contrat OpenAPI écrit dans {destination}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="Outils EnerVision")
     sous_commandes = parser.add_subparsers(dest="commande", required=True)
@@ -67,6 +103,11 @@ def build_parser() -> argparse.ArgumentParser:
     admin.add_argument(
         "--force", action="store_true", help="Crée le compte même si un administrateur existe"
     )
+
+    contrat = sous_commandes.add_parser(
+        "export-openapi", help="Écrit le contrat OpenAPI sur disque"
+    )
+    contrat.add_argument("--output", default=str(CHEMIN_CONTRAT))
     return parser
 
 
@@ -86,6 +127,11 @@ def read_password(*, generate: bool) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
+
+    if arguments.commande == "export-openapi":
+        print(export_openapi(Path(arguments.output)))
+        return 0
+
     mot_de_passe = read_password(generate=arguments.generate)
 
     succes, message = asyncio.run(

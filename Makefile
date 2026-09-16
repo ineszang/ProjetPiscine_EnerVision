@@ -2,7 +2,7 @@ BACKEND := apps/backend
 
 .DEFAULT_GOAL := help
 .PHONY: help install dev lint format typecheck test test-cov test-integration check \
-        docker-build db-up db-down db-reset db-logs db-psql migrate bootstrap-admin
+        openapi docker-build db-up db-down db-reset db-logs db-psql migrate bootstrap-admin
 
 help: ## Liste les cibles disponibles
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -33,6 +33,9 @@ test-integration: ## Exécute les tests exigeant une base joignable
 	cd $(BACKEND) && uv run pytest -m integration
 
 check: lint typecheck test ## Chaîne de vérification complète
+
+openapi: ## Régénère apps/backend/openapi.json depuis les routes déclarées
+	cd $(BACKEND) && uv run python -m app.cli export-openapi
 
 docker-build: ## Construit l'image du backend
 	docker build -t enervision-backend:local $(BACKEND)
