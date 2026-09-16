@@ -12,11 +12,11 @@ Les quatre couches existent désormais, portées par l'authentification.
 
 ```mermaid
 flowchart TB
-  ep["endpoints<br/>health, auth, users"]
+  ep["endpoints<br/>health, auth, users, stats"]
   sc["schemas<br/>Pydantic"]
-  sv["services<br/>AuthService, UserService"]
-  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log"]
-  md["models<br/>4 tables"]
+  sv["services<br/>AuthService, UserService, StatsService"]
+  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site, reading"]
+  md["models<br/>6 tables"]
   db[("PostgreSQL")]
 
   ep --> sc
@@ -140,6 +140,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | POST | `/api/v1/users` | oui | Crée un compte, rend un mot de passe provisoire. `admin` |
 | PATCH | `/api/v1/users/{id}` | oui | Change le rôle ou l'activation. `admin` |
 | POST | `/api/v1/users/{id}/password-reset` | oui | Réinitialise et ferme les sessions. `admin` |
+| GET | `/api/v1/stats/summary` | oui | Résume la consommation instantanée du parc. `lecteur` |
 | GET | `/metrics` | non | Format Prometheus. Jeton requis si `APP_METRICS_TOKEN` est posé |
 | GET | `/docs`, `/redoc`, `/openapi.json` | non | Fermés en `staging` et en `prod` |
 
@@ -148,7 +149,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Rendre une route publique impose
 donc de modifier la liste dans ce fichier de test.
 
-Aucune route métier n'existe à ce jour. Le contrat détaillé pour le frontend est dans
+Le contrat détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ### `/health/ready`

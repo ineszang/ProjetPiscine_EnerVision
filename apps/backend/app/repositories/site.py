@@ -1,0 +1,15 @@
+from collections.abc import Sequence
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.energy import Site
+
+
+class SiteRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_all(self) -> Sequence[Site]:
+        requete = select(Site).order_by(Site.site_id)
+        return (await self._session.execute(requete)).scalars().all()
