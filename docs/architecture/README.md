@@ -10,7 +10,7 @@ contredisent, c'est l'ADR qui fait foi et la vue qui est en retard.
 |---|---|
 | [00-vue-ensemble.md](00-vue-ensemble.md) | Jalons du projet, contexte, conteneurs, sécurité, flux bout en bout |
 | [10-infra.md](10-infra.md) | Poste de développement, cible k3s, décisions figées, ports et noms |
-| [20-backend.md](20-backend.md) | Couches FastAPI, séquence de démarrage, routes, configuration |
+| [20-backend.md](20-backend.md) | Couches FastAPI, séquence de démarrage, routes, configuration, contrat OpenAPI |
 | [30-frontend.md](30-frontend.md) | Angular, arborescence cible, flux HTTP |
 | [31-contrat-authentification.md](31-contrat-authentification.md) | Ce que le frontend doit savoir pour coder la connexion |
 | [40-data.md](40-data.md) | Frontières `db/` et `alembic/`, cycle de vie d'une mesure, modèle |

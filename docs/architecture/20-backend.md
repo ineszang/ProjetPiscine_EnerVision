@@ -126,22 +126,25 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 
 ## Routes exposées
 
-| Méthode | Chemin | Dans l'OpenAPI | Rôle |
+| Méthode | Chemin | Rôle | Erreurs déclarées |
 |---|---|---|---|
-| GET | `/api/v1/health/live` | oui | Le processus répond. Ne touche pas la base |
-| GET | `/api/v1/health/ready` | oui | La base répond **et** l'extension TimescaleDB est chargée |
-| POST | `/api/v1/auth/login` | oui | Ouvre une session. Publique |
-| POST | `/api/v1/auth/refresh` | oui | Fait tourner la session. Cookie seulement |
-| POST | `/api/v1/auth/logout` | oui | Ferme la session courante. Idempotente |
-| POST | `/api/v1/auth/logout-all` | oui | Ferme toutes les sessions du compte |
-| POST | `/api/v1/auth/password` | oui | Change son propre mot de passe |
-| GET | `/api/v1/auth/me` | oui | Décrit le compte connecté |
-| GET | `/api/v1/users` | oui | Liste les comptes. `admin` |
-| POST | `/api/v1/users` | oui | Crée un compte, rend un mot de passe provisoire. `admin` |
-| PATCH | `/api/v1/users/{id}` | oui | Change le rôle ou l'activation. `admin` |
-| POST | `/api/v1/users/{id}/password-reset` | oui | Réinitialise et ferme les sessions. `admin` |
-| GET | `/metrics` | non | Format Prometheus. Jeton requis si `APP_METRICS_TOKEN` est posé |
-| GET | `/docs`, `/redoc`, `/openapi.json` | non | Fermés en `staging` et en `prod` |
+| GET | `/api/v1/health/live` | Le processus répond. Ne touche pas la base | 500 |
+| GET | `/api/v1/health/ready` | La base répond **et** l'extension TimescaleDB est chargée | 503, 500 |
+| POST | `/api/v1/auth/login` | Ouvre une session. Publique | 401, 422, 429, 500 |
+| POST | `/api/v1/auth/refresh` | Fait tourner la session. Cookie seulement | 401, 500 |
+| POST | `/api/v1/auth/logout` | Ferme la session courante. Idempotente | 500 |
+| POST | `/api/v1/auth/logout-all` | Ferme toutes les sessions du compte | 401, 500 |
+| POST | `/api/v1/auth/password` | Change son propre mot de passe | 401, 422, 500 |
+| GET | `/api/v1/auth/me` | Décrit le compte connecté | 401, 500 |
+| GET | `/api/v1/users` | Liste les comptes. `admin` | 401, 403, 500 |
+| POST | `/api/v1/users` | Crée un compte, rend un mot de passe provisoire. `admin` | 401, 403, 409, 422, 500 |
+| PATCH | `/api/v1/users/{id}` | Change le rôle ou l'activation. `admin` | 400, 401, 403, 404, 409, 422, 500 |
+| POST | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions. `admin` | 401, 403, 404, 422, 500 |
+| GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
+| GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
+
+Les codes de la dernière colonne sont ceux que le schéma **déclare**, et le fichier
+`openapi.json` versionné interdit qu'ils divergent de ce que les routes rendent.
 
 **Quatre routes seulement sont publiques** : les deux sondes, `/auth/login` et `/auth/logout`.
 `tests/api/test_route_protection.py` interroge réellement chaque autre route sans identifiant et
@@ -181,6 +184,47 @@ sequenceDiagram
     R-->>C: 200 timescaledb loaded
   end
 ```
+
+## Contrat OpenAPI
+
+Statut : `Fait`.
+
+Le schéma est servi sur `/openapi.json`, `/docs` et `/redoc`, fermés en `staging` et en `prod`.
+Il est aussi **versionné** dans [`apps/backend/openapi.json`](../../apps/backend/openapi.json) :
+
+```bash
+make openapi
+```
+
+Pourquoi un fichier en plus de la route. Une route qui change son contrat public le montre alors
+dans la diff de la pull request, et le frontend dispose d'une référence lisible sans lancer l'API.
+`tests/api/test_openapi.py` compare le fichier au schéma généré et échoue si l'un bouge sans
+l'autre ; le fichier vivant sous `apps/backend/`, le filtre de chemins de `backend.yml` le couvre.
+
+**Le schéma exporté ne dépend pas du poste.** `settings_du_contrat()` pose le nom, la version et
+le préfixe, et coupe la lecture du `.env`. Sans cela, un `APP_API_PREFIX` local suffirait à faire
+diverger le fichier d'une machine à l'autre, et le test deviendrait un oracle de configuration
+plutôt qu'un garde-fou de contrat.
+
+Trois champs sont volontairement absents d'`info`, parce qu'ils poseraient une décision qui n'est
+pas prise :
+
+| Champ | Pourquoi |
+|---|---|
+| `servers` | L'URL publique dépend de l'ingress, question ouverte dans [10-infra.md](10-infra.md) |
+| `license_info` | Aucune licence n'est choisie |
+| `contact` | Aucun canal de support n'existe |
+
+Deux schémas de sécurité sont déclarés : `Jeton d'accès` pour le porteur JWT, et
+`Cookie de rafraîchissement` pour `/auth/refresh` et `/auth/logout`. **Le second est purement
+documentaire** : son `auto_error=False` garantit qu'il ne décide d'aucun refus. Le passer à vrai
+ferait répondre 403 avant d'atteindre `lit_le_cookie()`, et `/auth/refresh` cesserait de rendre le
+401 sur lequel le frontend déclenche sa déconnexion.
+
+Les modèles de `app/schemas/errors.py` décrivent ce que les gestionnaires renvoient réellement.
+`ValidationErrorResponse` remplace le `HTTPValidationError` par défaut de FastAPI, dont la clé
+`loc` n'apparaît dans aucune réponse de cette API : `validation_error_handler()` rend `champ` et
+`type`. Renommer un champ là-bas sans le faire ici rend la documentation fausse en silence.
 
 ## Sécurité
 

@@ -26,7 +26,9 @@ gérer : il suffit d'envoyer les requêtes avec `withCredentials`.
 | PATCH | `/api/v1/users/{id}` | jeton d'accès, `admin` | `200` `UserResponse` |
 | POST | `/api/v1/users/{id}/password-reset` | jeton d'accès, `admin` | `200` `TemporaryPasswordResponse` |
 
-Le schéma exact est dans `/docs` (Swagger), servi en local et en développement.
+Le schéma exact est dans [`apps/backend/openapi.json`](../../apps/backend/openapi.json),
+lisible sans lancer l'API, et servi par `/docs` en local et en développement. La table des
+codes d'erreur ci-dessous reste la référence de comportement, le schéma celle de forme.
 
 ## Charges utiles
 
