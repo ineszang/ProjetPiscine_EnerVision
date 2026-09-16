@@ -1,0 +1,67 @@
+import { StatsSummary } from '../../shared/models/stats.model';
+
+export const STATS_SUMMARY_FIXTURE: StatsSummary = {
+  timestamp: '2026-09-15T11:32:00',
+  total_sites: 7,
+  total_consumption_kw: 1826.44,
+  total_capacity_kw: 3830,
+  average_load_percent: 55.1,
+  sites: [
+    {
+      site_id: 'SITE001',
+      site_name: 'Bureau Paris La Défense',
+      current_consumption_kw: 87.34,
+      capacity_kw: 200,
+      load_percent: 43.7,
+      data_quality: 'good',
+    },
+    {
+      site_id: 'SITE002',
+      site_name: 'Usine Lyon Vénissieux',
+      current_consumption_kw: 542.1,
+      capacity_kw: 1000,
+      load_percent: 54.2,
+      data_quality: 'good',
+    },
+    {
+      site_id: 'SITE003',
+      site_name: 'Data Center Marseille',
+      current_consumption_kw: null,
+      capacity_kw: 800,
+      load_percent: null,
+      data_quality: 'critical',
+    },
+    {
+      site_id: 'SITE004',
+      site_name: 'Bureau Bordeaux',
+      current_consumption_kw: 62.0,
+      capacity_kw: 150,
+      load_percent: 41.3,
+      data_quality: 'partial',
+    },
+    {
+      site_id: 'SITE005',
+      site_name: 'Usine Toulouse',
+      current_consumption_kw: 410.0,
+      capacity_kw: 600,
+      load_percent: 68.3,
+      data_quality: 'good',
+    },
+    {
+      site_id: 'SITE006',
+      site_name: 'Bureau Lille',
+      current_consumption_kw: 95.0,
+      capacity_kw: 180,
+      load_percent: 52.8,
+      data_quality: 'degraded',
+    },
+    {
+      site_id: 'SITE007',
+      site_name: 'Data Center Nantes',
+      current_consumption_kw: 630.0,
+      capacity_kw: 900,
+      load_percent: 70.0,
+      data_quality: 'good',
+    },
+  ],
+};

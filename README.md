@@ -19,7 +19,7 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Domaine    | Technologie                         | Emplacement         | Etat          |
 |------------|-------------------------------------|---------------------|---------------|
 | Backend    | FastAPI, Python 3.14                | `apps/backend`      | Initialise    |
-| Frontend   | Angular 22, Node 24 LTS             | `apps/frontend`     | Squelette     |
+| Frontend   | Angular 22, Node 24 LTS             | `apps/frontend`     | Tableau de bord |
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | Initialise    |
 | ETL        | Apache Airflow                      | `etl/airflow`       | A initialiser |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
@@ -27,8 +27,9 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
 
 Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Le frontend
-porte le squelette Angular, sans code metier : aucune route, aucun appel d'API. Les autres dossiers
-portent l'arborescence et un README de cadrage, leur contenu fait l'objet d'un ticket dedie.
+sert un tableau de bord sur `/dashboard`, dont les données proviennent de fixtures : les endpoints
+correspondants restent à écrire côté API. Les autres dossiers portent l'arborescence et un README
+de cadrage, leur contenu fait l'objet d'un ticket dedie.
 
 L'etat detaille de chaque brique et les vues d'architecture sont dans
 [docs/architecture](docs/architecture/README.md).
