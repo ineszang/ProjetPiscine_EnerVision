@@ -63,16 +63,17 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 
 ## Demarrage
 
-Prerequis : uv, Docker. Le poste doit disposer de Python 3.14, que `uv` installe seul.
+Prerequis : uv, Docker, Node 24 LTS (npm fourni). Le poste doit disposer de Python 3.14, que
+`uv` installe seul.
 
 ```bash
 cp .env.example .env                               # variables de docker-compose
 cp apps/backend/.env.example apps/backend/.env     # variables du backend hors conteneur
 
 make db-up     # PostgreSQL + TimescaleDB, publie sur le port 5433
-make install   # dependances du backend
+make install   # dependances du backend et du frontend
 make migrate   # applique les migrations Alembic
-make dev       # API sur http://localhost:8000, docs sur /docs
+make dev       # backend sur http://localhost:8000 (docs sur /docs), frontend sur http://localhost:4200
 make check     # lint + typage + tests
 ```
 
@@ -83,9 +84,11 @@ Deux fichiers d'environnement, deux usages : `.env` a la racine alimente `docker
 5432, souvent deja pris par une autre base.
 
 La boucle de developpement est `make db-up` puis `make dev` : seule la base tourne en
-conteneur. Le service `backend` du `docker-compose.yml` sert la stack complete et la recette,
-et n'embarque pas le source, donc toute modification y demande un
-`docker compose up -d --build backend`.
+conteneur, le backend et le frontend tournent tous les deux sur le poste, lances ensemble par
+`make dev` (logs entrelaces dans le meme terminal, Ctrl+C arrete les deux). `make dev-backend`
+et `make dev-frontend` restent disponibles pour lancer un seul des deux. Le service `backend`
+du `docker-compose.yml` sert la stack complete et la recette, et n'embarque pas le source, donc
+toute modification y demande un `docker compose up -d --build backend`.
 
 Verifier que la base repond et que l'extension est chargee :
 
