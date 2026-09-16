@@ -15,10 +15,7 @@ on:
             - sonarqube
             - test
             - all # lancer tous les jobs
-  pull_request:
-    paths:
-      - "apps/frontend/**"
-      - ".github/workflows/frontend.yml"
+
 
 # Ordre de lancement des jobs
 # build -> test -> sonarqube -> deploy
