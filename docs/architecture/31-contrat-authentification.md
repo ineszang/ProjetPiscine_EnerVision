@@ -68,6 +68,7 @@ Le secret de rafraîchissement **n'apparaît jamais** dans le corps de la répon
 | `401` sur `/auth/refresh` | session révoquée, expirée ou rejouée | **déconnecter** et renvoyer vers la page de connexion |
 | `403` avec `detail: "password_change_required"` | mot de passe provisoire | rediriger vers l'écran de changement de mot de passe |
 | `403` avec `detail: "Droits insuffisants"` | rôle trop bas | masquer ou griser l'action, ne pas déconnecter |
+| `403` sur `/auth/refresh`, `/logout`, `/logout-all`, `/password` | origine hors liste autorisée (voir « Origines autorisées ») | erreur de configuration réseau, pas un cas à gérer par l'utilisateur |
 | `422` | corps invalide | le détail donne `champ` et `type`, jamais la valeur envoyée |
 
 ## Les quatre règles qui comptent

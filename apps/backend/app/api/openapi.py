@@ -112,3 +112,10 @@ REPONSES_ADMIN: Final[Reponses] = {
         ),
     },
 }
+
+REPONSE_ORIGINE_REFUSEE: Final[Reponses] = {
+    403: {
+        "model": ErrorResponse,
+        "description": "Origine non autorisée (protection CSRF de `require_trusted_origin`).",
+    },
+}

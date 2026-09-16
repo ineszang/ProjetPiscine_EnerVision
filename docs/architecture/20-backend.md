@@ -131,10 +131,10 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | GET | `/api/v1/health/live` | Le processus répond. Ne touche pas la base | 500 |
 | GET | `/api/v1/health/ready` | La base répond **et** l'extension TimescaleDB est chargée | 503, 500 |
 | POST | `/api/v1/auth/login` | Ouvre une session. Publique | 401, 422, 429, 500 |
-| POST | `/api/v1/auth/refresh` | Fait tourner la session. Cookie seulement | 401, 500 |
-| POST | `/api/v1/auth/logout` | Ferme la session courante. Idempotente | 500 |
-| POST | `/api/v1/auth/logout-all` | Ferme toutes les sessions du compte | 401, 500 |
-| POST | `/api/v1/auth/password` | Change son propre mot de passe | 401, 422, 500 |
+| POST | `/api/v1/auth/refresh` | Fait tourner la session. Cookie seulement | 401, 403, 500 |
+| POST | `/api/v1/auth/logout` | Ferme la session courante. Idempotente | 403, 500 |
+| POST | `/api/v1/auth/logout-all` | Ferme toutes les sessions du compte | 401, 403, 500 |
+| POST | `/api/v1/auth/password` | Change son propre mot de passe | 401, 403, 422, 500 |
 | GET | `/api/v1/auth/me` | Décrit le compte connecté | 401, 500 |
 | GET | `/api/v1/users` | Liste les comptes. `admin` | 401, 403, 500 |
 | POST | `/api/v1/users` | Crée un compte, rend un mot de passe provisoire. `admin` | 401, 403, 409, 422, 500 |

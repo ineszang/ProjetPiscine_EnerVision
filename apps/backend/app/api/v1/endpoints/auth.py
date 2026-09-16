@@ -12,6 +12,7 @@ from app.api.deps import (
     require_trusted_origin,
 )
 from app.api.openapi import (
+    REPONSE_ORIGINE_REFUSEE,
     REPONSE_VALIDATION,
     REPONSES_AUTHENTIFIEES,
     Reponses,
@@ -61,6 +62,7 @@ REPONSES_LOGIN: Reponses = {
 }
 
 REPONSES_REFRESH: Reponses = {
+    **REPONSE_ORIGINE_REFUSEE,
     401: {
         "model": ErrorResponse,
         "description": (
@@ -70,8 +72,13 @@ REPONSES_REFRESH: Reponses = {
     },
 }
 
+REPONSES_LOGOUT: Reponses = {**REPONSE_ORIGINE_REFUSEE}
+
+REPONSES_LOGOUT_ALL: Reponses = {**REPONSES_AUTHENTIFIEES, **REPONSE_ORIGINE_REFUSEE}
+
 REPONSES_MOT_DE_PASSE: Reponses = {
     **REPONSE_VALIDATION,
+    **REPONSE_ORIGINE_REFUSEE,
     401: {
         "model": ErrorResponse,
         "description": "Jeton d'accès invalide, ou mot de passe courant faux.",
@@ -186,6 +193,7 @@ async def refresh(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Ferme la session courante",
     dependencies=[Depends(require_trusted_origin), Depends(cookie_de_rafraichissement)],
+    responses=REPONSES_LOGOUT,
 )
 async def logout(
     request: Request, response: Response, settings: SettingsDep, service: AuthServiceDep
@@ -202,7 +210,7 @@ async def logout(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Ferme toutes les sessions du compte",
     dependencies=[Depends(require_trusted_origin)],
-    responses=REPONSES_AUTHENTIFIEES,
+    responses=REPONSES_LOGOUT_ALL,
 )
 async def logout_all(
     principal: CurrentPrincipalDep,

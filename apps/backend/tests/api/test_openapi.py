@@ -15,6 +15,13 @@ METHODES = {"get", "post", "patch", "put", "delete"}
 # documenté y serait faux.
 SANS_REFUS = {("POST", "/api/v1/auth/logout")}
 
+ORIGINE_VERIFIEE = {
+    ("POST", "/api/v1/auth/refresh"),
+    ("POST", "/api/v1/auth/logout"),
+    ("POST", "/api/v1/auth/logout-all"),
+    ("POST", "/api/v1/auth/password"),
+}
+
 
 @pytest.fixture(scope="module")
 def schema() -> dict[str, Any]:
@@ -53,6 +60,16 @@ def test_every_administration_route_documents_the_role_refusal(schema: dict[str,
         (methode, chemin)
         for methode, chemin, operation in operations(schema)
         if "users" in operation.get("tags", []) and "403" not in operation["responses"]
+    ]
+
+    assert sans_403 == []
+
+
+def test_every_origin_checked_route_documents_the_csrf_refusal(schema: dict[str, Any]) -> None:
+    sans_403 = [
+        (methode, chemin)
+        for methode, chemin, operation in operations(schema)
+        if (methode, chemin) in ORIGINE_VERIFIEE and "403" not in operation["responses"]
     ]
 
     assert sans_403 == []

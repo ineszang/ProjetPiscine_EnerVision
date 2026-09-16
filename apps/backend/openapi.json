@@ -186,6 +186,16 @@
               }
             }
           },
+          "403": {
+            "description": "Origine non autorisée (protection CSRF de `require_trusted_origin`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Cookie absent, session expirée, révoquée, ou jeton déjà tourné. Dans ce dernier cas toute la famille de sessions est révoquée et le cookie est effacé avec la réponse.",
             "content": {
@@ -224,6 +234,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Origine non autorisée (protection CSRF de `require_trusted_origin`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -256,6 +276,16 @@
           },
           "401": {
             "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origine non autorisée (protection CSRF de `require_trusted_origin`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -362,6 +392,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origine non autorisée (protection CSRF de `require_trusted_origin`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
