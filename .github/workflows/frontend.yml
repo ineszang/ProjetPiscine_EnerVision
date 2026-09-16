@@ -6,18 +6,15 @@ on:
   workflow_dispatch:
     inputs:
       job_choice:
-        type: choice
+        required: true
         description: "Choix du job"
+        type: choice
+        default: all
         options:
             - build
             - sonarqube
             - test
-            - deploy
             - all # lancer tous les jobs
-  push:
-    paths:
-      - "apps/frontend/**"
-      - ".github/workflows/frontend.yml"
   pull_request:
     paths:
       - "apps/frontend/**"
@@ -36,12 +33,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
       
       - run: npm ci
+        working-directory: apps/frontend
       - run: npm run build
+        working-directory: apps/frontend
 
   test:
-    if: ${{ github.event.inputs.job_choice == 'test' || github.event.inputs.job_choice == 'all' }}
+    if: ${{ always() && (github.event.inputs.job_choice == 'test' || github.event.inputs.job_choice == 'all') }}
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -50,11 +50,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
       - run: npm ci
+        working-directory: apps/frontend
       - run: npm test -- --watch=false
+        working-directory: apps/frontend
 
   sonarqube:
-    if: ${{ github.event.inputs.job_choice == 'sonarqube' || github.event.inputs.job_choice == 'all' }}
+    if: ${{ always() && (github.event.inputs.job_choice == 'sonarqube' || github.event.inputs.job_choice == 'all') }}
     needs: [build, test]
     name: SonarQube
     runs-on: ubuntu-latest
