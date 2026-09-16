@@ -11,6 +11,13 @@ from app.api.deps import (
     get_client_ip,
     require_trusted_origin,
 )
+from app.api.openapi import (
+    REPONSE_ORIGINE_REFUSEE,
+    REPONSE_VALIDATION,
+    REPONSES_AUTHENTIFIEES,
+    Reponses,
+    cookie_de_rafraichissement,
+)
 from app.core.cookies import RefreshCookie, cookie_name
 from app.core.logging import get_logger
 from app.schemas.auth import (
@@ -19,6 +26,7 @@ from app.schemas.auth import (
     PrincipalResponse,
     TokenResponse,
 )
+from app.schemas.errors import ErrorResponse
 from app.services.auth import (
     AuthenticatedSession,
     InvalidCredentialsError,
@@ -31,6 +39,51 @@ logger = get_logger(__name__)
 
 DETAIL_IDENTIFIANTS = "Identifiants invalides"
 DETAIL_SESSION = "Session invalide"
+
+REPONSES_LOGIN: Reponses = {
+    **REPONSE_VALIDATION,
+    401: {
+        "model": ErrorResponse,
+        "description": (
+            "Identifiants faux, compte inconnu ou compte désactivé. Le message est le même dans "
+            "les trois cas, et n'apprend donc rien sur l'existence du compte."
+        ),
+    },
+    429: {
+        "model": ErrorResponse,
+        "description": "Trop de tentatives sur cette fenêtre glissante.",
+        "headers": {
+            "Retry-After": {
+                "description": "Secondes à attendre avant une nouvelle tentative.",
+                "schema": {"type": "integer"},
+            }
+        },
+    },
+}
+
+REPONSES_REFRESH: Reponses = {
+    **REPONSE_ORIGINE_REFUSEE,
+    401: {
+        "model": ErrorResponse,
+        "description": (
+            "Cookie absent, session expirée, révoquée, ou jeton déjà tourné. Dans ce dernier cas "
+            "toute la famille de sessions est révoquée et le cookie est effacé avec la réponse."
+        ),
+    },
+}
+
+REPONSES_LOGOUT: Reponses = {**REPONSE_ORIGINE_REFUSEE}
+
+REPONSES_LOGOUT_ALL: Reponses = {**REPONSES_AUTHENTIFIEES, **REPONSE_ORIGINE_REFUSEE}
+
+REPONSES_MOT_DE_PASSE: Reponses = {
+    **REPONSE_VALIDATION,
+    **REPONSE_ORIGINE_REFUSEE,
+    401: {
+        "model": ErrorResponse,
+        "description": "Jeton d'accès invalide, ou mot de passe courant faux.",
+    },
+}
 
 
 def repond(
@@ -61,7 +114,12 @@ def lit_le_cookie(request: Request, settings: SettingsDep) -> str:
     return secret
 
 
-@router.post("/login", response_model=TokenResponse, summary="Ouvre une session")
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="Ouvre une session",
+    responses=REPONSES_LOGIN,
+)
 async def login(
     payload: LoginRequest,
     request: Request,
@@ -98,7 +156,8 @@ async def login(
     "/refresh",
     response_model=TokenResponse,
     summary="Fait tourner la session",
-    dependencies=[Depends(require_trusted_origin)],
+    dependencies=[Depends(require_trusted_origin), Depends(cookie_de_rafraichissement)],
+    responses=REPONSES_REFRESH,
 )
 async def refresh(
     request: Request,
@@ -133,7 +192,8 @@ async def refresh(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Ferme la session courante",
-    dependencies=[Depends(require_trusted_origin)],
+    dependencies=[Depends(require_trusted_origin), Depends(cookie_de_rafraichissement)],
+    responses=REPONSES_LOGOUT,
 )
 async def logout(
     request: Request, response: Response, settings: SettingsDep, service: AuthServiceDep
@@ -150,6 +210,7 @@ async def logout(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Ferme toutes les sessions du compte",
     dependencies=[Depends(require_trusted_origin)],
+    responses=REPONSES_LOGOUT_ALL,
 )
 async def logout_all(
     principal: CurrentPrincipalDep,
@@ -163,7 +224,12 @@ async def logout_all(
     response.delete_cookie(**RefreshCookie.expired(settings).as_deletion_kwargs())
 
 
-@router.get("/me", response_model=PrincipalResponse, summary="Décrit le compte connecté")
+@router.get(
+    "/me",
+    response_model=PrincipalResponse,
+    summary="Décrit le compte connecté",
+    responses=REPONSES_AUTHENTIFIEES,
+)
 async def me(principal: CurrentPrincipalDep) -> PrincipalResponse:
     return PrincipalResponse.from_principal(principal)
 
@@ -173,6 +239,7 @@ async def me(principal: CurrentPrincipalDep) -> PrincipalResponse:
     response_model=TokenResponse,
     summary="Change son propre mot de passe",
     dependencies=[Depends(require_trusted_origin)],
+    responses=REPONSES_MOT_DE_PASSE,
 )
 async def change_password(
     payload: PasswordChangeRequest,

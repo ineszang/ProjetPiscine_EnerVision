@@ -28,7 +28,7 @@ de demarrer sans elles.
 ## Commandes
 
 Depuis la racine du monorepo, via le `Makefile` : `make install`, `make dev`, `make lint`,
-`make format`, `make typecheck`, `make test`, `make check`, `make docker-build`.
+`make format`, `make typecheck`, `make test`, `make check`, `make openapi`, `make docker-build`.
 
 Directement depuis ce dossier :
 
@@ -39,7 +39,11 @@ uv run ruff format .         # format
 uv run mypy app              # typage strict
 uv run pytest                # tests + couverture
 uv run pytest -m integration # tests exigeant une base joignable
+uv run python -m app.cli export-openapi   # régénère openapi.json
 ```
+
+`openapi.json` est versionné : `tests/api/test_openapi.py` échoue si le fichier ne correspond
+plus aux routes déclarées. Toute PR qui change une route le régénère dans le même commit.
 
 Les conventions de tests, les gabarits et le detail des marqueurs sont dans
 [`TESTING.md`](TESTING.md).

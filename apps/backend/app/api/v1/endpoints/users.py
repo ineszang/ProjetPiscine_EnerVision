@@ -3,7 +3,9 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.deps import AdminDep, UserServiceDep
+from app.api.openapi import REPONSE_VALIDATION, Reponses
 from app.core.logging import get_logger
+from app.schemas.errors import ErrorResponse
 from app.schemas.user import (
     TemporaryPasswordResponse,
     UserCreateRequest,
@@ -14,6 +16,28 @@ from app.services.user import EmailAlreadyUsedError, LastAdminError, UserNotFoun
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+REPONSES_CREATION: Reponses = {
+    **REPONSE_VALIDATION,
+    409: {"model": ErrorResponse, "description": "Adresse déjà portée par un autre compte."},
+}
+
+REPONSES_INTROUVABLE: Reponses = {
+    **REPONSE_VALIDATION,
+    404: {"model": ErrorResponse, "description": "Aucun compte ne porte cet identifiant."},
+}
+
+REPONSES_MODIFICATION: Reponses = {
+    **REPONSES_INTROUVABLE,
+    400: {"model": ErrorResponse, "description": "Corps vide, aucune modification demandée."},
+    409: {
+        "model": ErrorResponse,
+        "description": (
+            "L'opération laisserait la plateforme sans administrateur actif, qu'il s'agisse de "
+            "rétrograder le dernier ou de le désactiver."
+        ),
+    },
+}
 
 
 @router.get("", response_model=list[UserResponse], summary="Liste les comptes")
@@ -27,6 +51,7 @@ async def list_users(_: AdminDep, service: UserServiceDep) -> list[UserResponse]
     response_model=TemporaryPasswordResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Crée un compte avec un mot de passe provisoire",
+    responses=REPONSES_CREATION,
 )
 async def create_user(
     payload: UserCreateRequest,
@@ -55,7 +80,12 @@ async def create_user(
     )
 
 
-@router.patch("/{user_id}", response_model=UserResponse, summary="Change le rôle ou l'activation")
+@router.patch(
+    "/{user_id}",
+    response_model=UserResponse,
+    summary="Change le rôle ou l'activation",
+    responses=REPONSES_MODIFICATION,
+)
 async def update_user(
     user_id: UUID,
     payload: UserUpdateRequest,
@@ -92,6 +122,7 @@ async def update_user(
     "/{user_id}/password-reset",
     response_model=TemporaryPasswordResponse,
     summary="Réinitialise le mot de passe et ferme les sessions",
+    responses=REPONSES_INTROUVABLE,
 )
 async def reset_password(
     user_id: UUID, acteur: AdminDep, service: UserServiceDep, response: Response
