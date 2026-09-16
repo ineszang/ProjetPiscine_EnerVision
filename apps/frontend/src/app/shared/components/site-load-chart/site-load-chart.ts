@@ -1,4 +1,12 @@
-import { Component, ElementRef, ViewChild, input, effect, AfterViewInit } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  ViewChild,
+  input,
+  effect,
+  AfterViewInit,
+  OnDestroy,
+} from '@angular/core';
 import { Chart, registerables } from 'chart.js';
 import { SiteSummary } from '../../models/stats.model';
 
@@ -17,7 +25,7 @@ const QUALITY_COLORS: Record<SiteSummary['data_quality'], string> = {
   templateUrl: './site-load-chart.html',
   styleUrl: './site-load-chart.scss',
 })
-export class SiteLoadChart implements AfterViewInit {
+export class SiteLoadChart implements AfterViewInit, OnDestroy {
   sites = input.required<SiteSummary[]>();
 
   @ViewChild('canvas') private canvasRef!: ElementRef<HTMLCanvasElement>;
@@ -58,5 +66,9 @@ export class SiteLoadChart implements AfterViewInit {
         },
       },
     });
+  }
+
+  ngOnDestroy(): void {
+    this.chart?.destroy();
   }
 }

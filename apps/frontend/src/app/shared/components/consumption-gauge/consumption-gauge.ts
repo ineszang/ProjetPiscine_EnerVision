@@ -1,4 +1,12 @@
-import { Component, ElementRef, ViewChild, input, effect, AfterViewInit } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  ViewChild,
+  input,
+  effect,
+  AfterViewInit,
+  OnDestroy,
+} from '@angular/core';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -9,7 +17,7 @@ Chart.register(...registerables);
   templateUrl: './consumption-gauge.html',
   styleUrl: './consumption-gauge.scss',
 })
-export class ConsumptionGauge implements AfterViewInit {
+export class ConsumptionGauge implements AfterViewInit, OnDestroy {
   consumption = input.required<number>();
   capacity = input.required<number>();
 
@@ -51,5 +59,9 @@ export class ConsumptionGauge implements AfterViewInit {
         plugins: { legend: { display: false } },
       },
     });
+  }
+
+  ngOnDestroy(): void {
+    this.chart?.destroy();
   }
 }
