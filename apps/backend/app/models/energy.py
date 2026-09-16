@@ -159,9 +159,7 @@ class Prediction(Base):
 class Alert(Base):
     __tablename__ = "alert"
     __table_args__ = (
-        UniqueConstraint(
-            "source", "site_id", "source_alert_id", name="uq_alert_source_reference"
-        ),
+        UniqueConstraint("source", "site_id", "source_alert_id", name="uq_alert_source_reference"),
         Index("ix_alert_site_timestamp", "site_id", "timestamp"),
         ForeignKeyConstraint(
             ["prediction_id", "site_id"],
