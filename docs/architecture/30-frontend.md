@@ -108,8 +108,9 @@ déploiement, en même temps que sera tranchée la question de l'ingress dans
 le message d'erreur arrive avant toute compilation. Un poste en 22.21 ou en 24.12 ne peut donc ni
 tester ni construire le frontend.
 
-Le frontend **n'a pas de cible dans le `Makefile` racine** et **aucun service dans
-`docker-compose.yml`** : il se pilote uniquement par `npm`, depuis `apps/frontend`. Le port 4200
+Le frontend a ses cibles dans le `Makefile` racine (`install-frontend`, `dev-frontend`,
+englobées par `install` et `dev`), mais **aucun service dans `docker-compose.yml`** : en
+développement il tourne toujours directement via `npm`, depuis `apps/frontend`. Le port 4200
 n'apparaît dans le compose que comme valeur par défaut d'`APP_CORS_ORIGINS`, côté backend.
 
 Un `Dockerfile` frontend existe sur la branche `feat/pipeline-cd`, mais il est mono-étage et sans

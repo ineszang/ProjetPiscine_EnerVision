@@ -23,6 +23,7 @@ from app.core.security import decode_access_token as decode_token
 from app.db.session import get_session
 from app.repositories.audit_log import AuditLogRepository
 from app.repositories.login_attempt import LoginAttemptRepository
+from app.repositories.reading import ReadingRepository
 from app.repositories.recommendation import RecommendationRepository
 from app.repositories.refresh_token import RefreshTokenRepository
 from app.repositories.site import SiteRepository
@@ -30,6 +31,7 @@ from app.repositories.user import UserRepository
 from app.services.auth import AuthService, LoginPolicy
 from app.services.recommendation import RecommendationService
 from app.services.site import SiteService
+from app.services.stats import StatsService
 from app.services.user import UserService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -147,6 +149,13 @@ def get_recommendation_service(session: SessionDep) -> RecommendationService:
 
 
 RecommendationServiceDep = Annotated[RecommendationService, Depends(get_recommendation_service)]
+
+
+def get_stats_service(session: SessionDep) -> StatsService:
+    return StatsService(sites=SiteRepository(session), readings=ReadingRepository(session))
+
+
+StatsServiceDep = Annotated[StatsService, Depends(get_stats_service)]
 
 
 async def get_current_principal(
