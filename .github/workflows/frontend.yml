@@ -1,4 +1,5 @@
 name: Frontend
+# Pipeline à choix multiple
 
 on:
   # workflow_dispatch -> lancement manuel des jobs
@@ -12,7 +13,7 @@ on:
             - sonarqube
             - test
             - deploy
-            - all
+            - all # lancer tous les jobs
   push:
     paths:
       - "apps/frontend/**"
@@ -22,34 +23,11 @@ on:
       - "apps/frontend/**"
       - ".github/workflows/frontend.yml"
 
+# Ordre de lancement des jobs
+# build -> test -> sonarqube -> deploy
 
 jobs:
-  sonarqube:
-    name: SonarQube
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-  test:
-    if: ${{ github.event.inputs.job_choice == 'test' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm test -- --watch=false
-
   build:
-    # si l'utilisateur a choise le job 'build' ou l'ensemble des jobs avec l'option 'all'
     if: ${{ github.event.inputs.job_choice == 'build' || github.event.inputs.job_choice == 'all' }}
     runs-on: ubuntu-latest
     steps:
@@ -61,9 +39,36 @@ jobs:
       
       - run: npm ci
       - run: npm run build
+
+  test:
+    if: ${{ github.event.inputs.job_choice == 'test' || github.event.inputs.job_choice == 'all' }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --watch=false
+
+  sonarqube:
+    if: ${{ github.event.inputs.job_choice == 'sonarqube' || github.event.inputs.job_choice == 'all' }}
+    needs: [build, test]
+    name: SonarQube
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
     
   # deploy:
-    # if: ${{ github.event.inputs.job_choice == 'deploy' }}
   #   runs-on: ubuntu-latest
   #   steps:
   #   - run: echo "DEPLOY job is running"
