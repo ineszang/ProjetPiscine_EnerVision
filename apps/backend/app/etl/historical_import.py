@@ -39,7 +39,7 @@ MEASURE_COLUMNS = [
     "solar_irradiance_wm2",
 ]
 
-SOURCE_NAME = "historical_csv"
+SOURCE_NAME = "csv"
 
 
 def compute_sha256(path: Path) -> str:
@@ -435,11 +435,10 @@ def build_reading_batch(
                 "data_quality": quality,
                 "null_reasons": reasons,
 
-                # Aucune imputation pendant
-                # l'ingestion RAW.
-                "imputed_values": json.dumps(
-                    {}
-                ),
+                # Aucune imputation pendant l'ingestion RAW.
+                # Les valeurs manquantes sont conservées telles quelles
+                # afin de préserver la donnée source.
+                "imputed_values": None,
                 "imputation_method": None,
 
                 # Conservation de la donnée source
