@@ -55,6 +55,11 @@ TAGS: Final[list[dict[str, Any]]] = [
         "description": "Consultation du parc de sites. Accessible à partir du rôle `lecteur`.",
     },
     {
+        "name": "alerts",
+        "description": "Consultation des alertes de consommation. Accessible à partir du rôle "
+        "`lecteur`.",
+    },
+    {
         "name": "recommendations",
         "description": (
             "Consultation des recommandations issues des alertes. Accessible à partir du rôle "

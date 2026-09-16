@@ -142,6 +142,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | POST | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions. `admin` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/sites` | Liste les sites. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/sites/{site_id}` | Décrit un site. `lecteur` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/alerts` | Liste les alertes, filtrable par `site_id` et `severity`. `lecteur` | 401, 403, 422, 500 |
 | GET | `/api/v1/recommendations` | Liste les recommandations. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation. `lecteur` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/stats/summary` | Résume la consommation instantanée du parc. `lecteur` | 401, 403, 500 |
@@ -156,10 +157,10 @@ Les codes de la dernière colonne sont ceux que le schéma **déclare**, et le f
 échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Rendre une route publique impose
 donc de modifier la liste dans ce fichier de test.
 
-`GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit à réutiliser
-pour les suivantes (`reading`, `dataset`, `prediction`, `alert`, `recommendation`) : les quatre
-couches `endpoints → services → repositories → models` y sont toutes présentes, sur des tables
-déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`,
+`GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit repris pour
+`GET /alerts` puis pour les suivantes (`reading`, `dataset`, `prediction`, `recommendation`) : les
+quatre couches `endpoints → services → repositories → models` y sont toutes présentes, sur des
+tables déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`,
 contrairement aux routes d'administration qui exigent `admin`. `SiteRepository` lit par
 `AsyncSession.scalar()` (une ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par
 `execute()`, ce qui la rend testable par la fixture `fake_session` au niveau endpoint sans base
@@ -245,8 +246,8 @@ Les modèles de `app/schemas/errors.py` décrivent ce que les gestionnaires renv
 
 ### Ajouter une route métier
 
-Checklist pour toute nouvelle route sur le gabarit `sites`/`recommendations`/`stats`
-(`reading`, `dataset`, `prediction`, `alert`) :
+Checklist pour toute nouvelle route sur le gabarit `sites`/`alerts`/`recommendations`/`stats`
+(`reading`, `dataset`, `prediction`) :
 
 1. Composer ses `responses=` depuis `app/api/openapi.py` : `REPONSES_LECTEUR`/`REPONSES_ADMIN`
    au niveau de l'`include_router()` du routeur, `REPONSE_VALIDATION` et les codes locaux
