@@ -12,10 +12,10 @@ Les quatre couches existent désormais, portées par l'authentification.
 
 ```mermaid
 flowchart TB
-  ep["endpoints<br/>health, auth, users, sites"]
+  ep["endpoints<br/>health, auth, users, sites, stats"]
   sc["schemas<br/>Pydantic"]
-  sv["services<br/>AuthService, UserService,<br/>SiteService"]
-  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site"]
+  sv["services<br/>AuthService, UserService,<br/>SiteService, StatsService"]
+  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site, reading"]
   md["models<br/>10 tables"]
   db[("PostgreSQL")]
 
@@ -142,6 +142,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | POST | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions. `admin` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/sites` | Liste les sites. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/sites/{site_id}` | Décrit un site. `lecteur` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/stats/summary` | Résume la consommation instantanée du parc. `lecteur` | 401, 403, 500 |
 | GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
 | GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
 
@@ -160,7 +161,9 @@ déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le
 contrairement aux routes d'administration qui exigent `admin`. `SiteRepository` lit par
 `AsyncSession.scalar()` (une ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par
 `execute()`, ce qui la rend testable par la fixture `fake_session` au niveau endpoint sans base
-réelle. Le contrat détaillé pour le frontend est dans
+réelle. `GET /stats/summary` agrège ces deux repositories (`SiteRepository`, `ReadingRepository`)
+dans un service dédié plutôt que d'exposer une table : elle n'entre donc pas dans ce gabarit
+route-par-table. Le contrat détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ### `/health/ready`
@@ -234,6 +237,21 @@ Les modèles de `app/schemas/errors.py` décrivent ce que les gestionnaires renv
 `ValidationErrorResponse` remplace le `HTTPValidationError` par défaut de FastAPI, dont la clé
 `loc` n'apparaît dans aucune réponse de cette API : `validation_error_handler()` rend `champ` et
 `type`. Renommer un champ là-bas sans le faire ici rend la documentation fausse en silence.
+
+### Ajouter une route métier
+
+Checklist pour toute nouvelle route sur le gabarit `sites`/`stats` (`reading`, `dataset`,
+`prediction`, `alert`, `recommendation`) :
+
+1. Composer ses `responses=` depuis `app/api/openapi.py` : `REPONSES_LECTEUR`/`REPONSES_ADMIN`
+   au niveau de l'`include_router()` du routeur, `REPONSE_VALIDATION` et les codes locaux
+   (404, 409, ...) directement sur l'endpoint qui les rend.
+2. Décrire son tag dans `TAGS`.
+3. Si elle passe par `require_role` (`LecteurDep`/`OperateurDep`/`AdminDep`), l'ajouter à
+   `ROUTES_A_ROLE` dans `tests/api/test_openapi.py`. Si elle passe par `require_trusted_origin`,
+   l'ajouter à `ORIGINE_VERIFIEE`. **Ces deux listes sont maintenues à la main, pas dérivées** :
+   une route oubliée n'y est pas détectée automatiquement.
+4. `make openapi`, puis `uv run pytest tests/api/test_openapi.py`.
 
 ## Sécurité
 
