@@ -8,6 +8,7 @@ Environment = Literal["local", "dev", "staging", "prod"]
 SameSite = Literal["lax", "strict", "none"]
 
 SECRET_KEY_MIN_LENGTH = 32
+REFRESH_COOKIE_DEFAUT = "ev_refresh"
 SENTINELLES_INTERDITES = frozenset(
     {"change_me", "changeme", "secret", "secret-de-test", "changez-moi", "todo"}
 )
@@ -38,7 +39,7 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     refresh_token_ttl_seconds: int = Field(default=604800, ge=3600, le=2592000)
 
-    refresh_cookie_name: str = "ev_refresh"
+    refresh_cookie_name: str = REFRESH_COOKIE_DEFAUT
     cookie_path: str = "/api/v1/auth"
     cookie_samesite: SameSite = "strict"
     cookie_secure: bool | None = None
