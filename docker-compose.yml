@@ -43,5 +43,12 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
 
+  frontend:
+    build: ./apps/frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    restart: unless-stopped
+        
+
 volumes:
   pgdata:
