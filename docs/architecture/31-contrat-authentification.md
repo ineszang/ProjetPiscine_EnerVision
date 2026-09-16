@@ -26,7 +26,9 @@ gérer : il suffit d'envoyer les requêtes avec `withCredentials`.
 | PATCH | `/api/v1/users/{id}` | jeton d'accès, `admin` | `200` `UserResponse` |
 | POST | `/api/v1/users/{id}/password-reset` | jeton d'accès, `admin` | `200` `TemporaryPasswordResponse` |
 
-Le schéma exact est dans `/docs` (Swagger), servi en local et en développement.
+Le schéma exact est dans [`apps/backend/openapi.json`](../../apps/backend/openapi.json),
+lisible sans lancer l'API, et servi par `/docs` en local et en développement. La table des
+codes d'erreur ci-dessous reste la référence de comportement, le schéma celle de forme.
 
 ## Charges utiles
 
@@ -66,6 +68,7 @@ Le secret de rafraîchissement **n'apparaît jamais** dans le corps de la répon
 | `401` sur `/auth/refresh` | session révoquée, expirée ou rejouée | **déconnecter** et renvoyer vers la page de connexion |
 | `403` avec `detail: "password_change_required"` | mot de passe provisoire | rediriger vers l'écran de changement de mot de passe |
 | `403` avec `detail: "Droits insuffisants"` | rôle trop bas | masquer ou griser l'action, ne pas déconnecter |
+| `403` sur `/auth/refresh`, `/logout`, `/logout-all`, `/password` | origine hors liste autorisée (voir « Origines autorisées ») | erreur de configuration réseau, pas un cas à gérer par l'utilisateur |
 | `422` | corps invalide | le détail donne `champ` et `type`, jamais la valeur envoyée |
 
 ## Les quatre règles qui comptent

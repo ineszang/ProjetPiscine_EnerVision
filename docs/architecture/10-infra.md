@@ -35,9 +35,10 @@ flowchart TB
 | `backend` | Construite depuis `apps/backend` | `depends_on: db, condition: service_healthy`. **N'embarque pas le source** : toute modification impose `docker compose up -d --build backend` |
 
 **La boucle de développement n'utilise pas le service `backend`.** `make db-up` puis `make dev` :
-seule la base tourne en conteneur, l'API tourne sur le poste avec le rechargement à chaud. Le
-service `backend` sert la stack complète et la recette. Les deux occupent le port 8000, ils ne se
-lancent donc pas ensemble.
+seule la base tourne en conteneur, l'API et `ng serve` tournent sur le poste avec le rechargement
+à chaud, lancés ensemble par `make dev` (`make dev-backend`/`make dev-frontend` pour lancer l'un
+des deux seul). Le service `backend` sert la stack complète et la recette. Les deux occupent le
+port 8000, ils ne se lancent donc pas ensemble.
 
 Deux pièges sont documentés en tête du `docker-compose.yml`, ils ne se devinent pas :
 

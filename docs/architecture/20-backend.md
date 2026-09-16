@@ -12,11 +12,11 @@ Les quatre couches existent désormais, portées par l'authentification.
 
 ```mermaid
 flowchart TB
-  ep["endpoints<br/>health, auth, users, stats"]
+  ep["endpoints<br/>health, auth, users, sites, stats"]
   sc["schemas<br/>Pydantic"]
-  sv["services<br/>AuthService, UserService, StatsService"]
+  sv["services<br/>AuthService, UserService,<br/>SiteService, StatsService"]
   rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site, reading"]
-  md["models<br/>6 tables"]
+  md["models<br/>10 tables"]
   db[("PostgreSQL")]
 
   ep --> sc
@@ -126,30 +126,44 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 
 ## Routes exposées
 
-| Méthode | Chemin | Dans l'OpenAPI | Rôle |
+| Méthode | Chemin | Rôle | Erreurs déclarées |
 |---|---|---|---|
-| GET | `/api/v1/health/live` | oui | Le processus répond. Ne touche pas la base |
-| GET | `/api/v1/health/ready` | oui | La base répond **et** l'extension TimescaleDB est chargée |
-| POST | `/api/v1/auth/login` | oui | Ouvre une session. Publique |
-| POST | `/api/v1/auth/refresh` | oui | Fait tourner la session. Cookie seulement |
-| POST | `/api/v1/auth/logout` | oui | Ferme la session courante. Idempotente |
-| POST | `/api/v1/auth/logout-all` | oui | Ferme toutes les sessions du compte |
-| POST | `/api/v1/auth/password` | oui | Change son propre mot de passe |
-| GET | `/api/v1/auth/me` | oui | Décrit le compte connecté |
-| GET | `/api/v1/users` | oui | Liste les comptes. `admin` |
-| POST | `/api/v1/users` | oui | Crée un compte, rend un mot de passe provisoire. `admin` |
-| PATCH | `/api/v1/users/{id}` | oui | Change le rôle ou l'activation. `admin` |
-| POST | `/api/v1/users/{id}/password-reset` | oui | Réinitialise et ferme les sessions. `admin` |
-| GET | `/api/v1/stats/summary` | oui | Résume la consommation instantanée du parc. `lecteur` |
-| GET | `/metrics` | non | Format Prometheus. Jeton requis si `APP_METRICS_TOKEN` est posé |
-| GET | `/docs`, `/redoc`, `/openapi.json` | non | Fermés en `staging` et en `prod` |
+| GET | `/api/v1/health/live` | Le processus répond. Ne touche pas la base | 500 |
+| GET | `/api/v1/health/ready` | La base répond **et** l'extension TimescaleDB est chargée | 503, 500 |
+| POST | `/api/v1/auth/login` | Ouvre une session. Publique | 401, 422, 429, 500 |
+| POST | `/api/v1/auth/refresh` | Fait tourner la session. Cookie seulement | 401, 403, 500 |
+| POST | `/api/v1/auth/logout` | Ferme la session courante. Idempotente | 403, 500 |
+| POST | `/api/v1/auth/logout-all` | Ferme toutes les sessions du compte | 401, 403, 500 |
+| POST | `/api/v1/auth/password` | Change son propre mot de passe | 401, 403, 422, 500 |
+| GET | `/api/v1/auth/me` | Décrit le compte connecté | 401, 500 |
+| GET | `/api/v1/users` | Liste les comptes. `admin` | 401, 403, 500 |
+| POST | `/api/v1/users` | Crée un compte, rend un mot de passe provisoire. `admin` | 401, 403, 409, 422, 500 |
+| PATCH | `/api/v1/users/{id}` | Change le rôle ou l'activation. `admin` | 400, 401, 403, 404, 409, 422, 500 |
+| POST | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions. `admin` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/sites` | Liste les sites. `lecteur` | 401, 403, 500 |
+| GET | `/api/v1/sites/{site_id}` | Décrit un site. `lecteur` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/stats/summary` | Résume la consommation instantanée du parc. `lecteur` | 401, 403, 500 |
+| GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
+| GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
+
+Les codes de la dernière colonne sont ceux que le schéma **déclare**, et le fichier
+`openapi.json` versionné interdit qu'ils divergent de ce que les routes rendent.
 
 **Quatre routes seulement sont publiques** : les deux sondes, `/auth/login` et `/auth/logout`.
 `tests/api/test_route_protection.py` interroge réellement chaque autre route sans identifiant et
 échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Rendre une route publique impose
 donc de modifier la liste dans ce fichier de test.
 
-Le contrat détaillé pour le frontend est dans
+`GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit à réutiliser
+pour les suivantes (`reading`, `dataset`, `prediction`, `alert`, `recommendation`) : les quatre
+couches `endpoints → services → repositories → models` y sont toutes présentes, sur des tables
+déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`,
+contrairement aux routes d'administration qui exigent `admin`. `SiteRepository` lit par
+`AsyncSession.scalar()` (une ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par
+`execute()`, ce qui la rend testable par la fixture `fake_session` au niveau endpoint sans base
+réelle. `GET /stats/summary` agrège ces deux repositories (`SiteRepository`, `ReadingRepository`)
+dans un service dédié plutôt que d'exposer une table : elle n'entre donc pas dans ce gabarit
+route-par-table. Le contrat détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ### `/health/ready`
@@ -182,6 +196,62 @@ sequenceDiagram
     R-->>C: 200 timescaledb loaded
   end
 ```
+
+## Contrat OpenAPI
+
+Statut : `Fait`.
+
+Le schéma est servi sur `/openapi.json`, `/docs` et `/redoc`, fermés en `staging` et en `prod`.
+Il est aussi **versionné** dans [`apps/backend/openapi.json`](../../apps/backend/openapi.json) :
+
+```bash
+make openapi
+```
+
+Pourquoi un fichier en plus de la route. Une route qui change son contrat public le montre alors
+dans la diff de la pull request, et le frontend dispose d'une référence lisible sans lancer l'API.
+`tests/api/test_openapi.py` compare le fichier au schéma généré et échoue si l'un bouge sans
+l'autre ; le fichier vivant sous `apps/backend/`, le filtre de chemins de `backend.yml` le couvre.
+
+**Le schéma exporté ne dépend pas du poste.** `settings_du_contrat()` pose le nom, la version et
+le préfixe, et coupe la lecture du `.env`. Sans cela, un `APP_API_PREFIX` local suffirait à faire
+diverger le fichier d'une machine à l'autre, et le test deviendrait un oracle de configuration
+plutôt qu'un garde-fou de contrat.
+
+Trois champs sont volontairement absents d'`info`, parce qu'ils poseraient une décision qui n'est
+pas prise :
+
+| Champ | Pourquoi |
+|---|---|
+| `servers` | L'URL publique dépend de l'ingress, question ouverte dans [10-infra.md](10-infra.md) |
+| `license_info` | Aucune licence n'est choisie |
+| `contact` | Aucun canal de support n'existe |
+
+Deux schémas de sécurité sont déclarés : `Jeton d'accès` pour le porteur JWT, et
+`Cookie de rafraîchissement` pour `/auth/refresh` et `/auth/logout`. **Le second est purement
+documentaire** : son `auto_error=False` garantit qu'il ne décide d'aucun refus. Le passer à vrai
+ferait répondre 403 avant d'atteindre `lit_le_cookie()`, et `/auth/refresh` cesserait de rendre le
+401 sur lequel le frontend déclenche sa déconnexion.
+
+Les modèles de `app/schemas/errors.py` décrivent ce que les gestionnaires renvoient réellement.
+`ValidationErrorResponse` remplace le `HTTPValidationError` par défaut de FastAPI, dont la clé
+`loc` n'apparaît dans aucune réponse de cette API : `validation_error_handler()` rend `champ` et
+`type`. Renommer un champ là-bas sans le faire ici rend la documentation fausse en silence.
+
+### Ajouter une route métier
+
+Checklist pour toute nouvelle route sur le gabarit `sites`/`stats` (`reading`, `dataset`,
+`prediction`, `alert`, `recommendation`) :
+
+1. Composer ses `responses=` depuis `app/api/openapi.py` : `REPONSES_LECTEUR`/`REPONSES_ADMIN`
+   au niveau de l'`include_router()` du routeur, `REPONSE_VALIDATION` et les codes locaux
+   (404, 409, ...) directement sur l'endpoint qui les rend.
+2. Décrire son tag dans `TAGS`.
+3. Si elle passe par `require_role` (`LecteurDep`/`OperateurDep`/`AdminDep`), l'ajouter à
+   `ROUTES_A_ROLE` dans `tests/api/test_openapi.py`. Si elle passe par `require_trusted_origin`,
+   l'ajouter à `ORIGINE_VERIFIEE`. **Ces deux listes sont maintenues à la main, pas dérivées** :
+   une route oubliée n'y est pas détectée automatiquement.
+4. `make openapi`, puis `uv run pytest tests/api/test_openapi.py`.
 
 ## Sécurité
 

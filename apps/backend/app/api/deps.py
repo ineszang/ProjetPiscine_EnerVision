@@ -28,6 +28,7 @@ from app.repositories.refresh_token import RefreshTokenRepository
 from app.repositories.site import SiteRepository
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService, LoginPolicy
+from app.services.site import SiteService
 from app.services.stats import StatsService
 from app.services.user import UserService
 
@@ -132,6 +133,13 @@ def get_user_service(
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+
+
+def get_site_service(session: SessionDep) -> SiteService:
+    return SiteService(sites=SiteRepository(session))
+
+
+SiteServiceDep = Annotated[SiteService, Depends(get_site_service)]
 
 
 def get_stats_service(session: SessionDep) -> StatsService:

@@ -8,8 +8,9 @@ de réponse honnête.
 Ce qui est défendable, c'est une ligne par contrôle réellement implémenté, l'item qu'il adresse,
 et une section qui dit ce qui n'est pas couvert et pourquoi.
 
-Statut : `Fait` pour le périmètre authentification et autorisation. Les endpoints métier
-n'existent pas encore, donc plusieurs lignes resteront à compléter.
+Statut : `Fait` pour le périmètre authentification et autorisation. `GET /sites` et
+`GET /sites/{site_id}` sont les premiers endpoints métier, en lecture seule ; plusieurs lignes
+resteront à compléter une fois les endpoints d'écriture posés.
 
 ## Contrôles en place
 
@@ -48,7 +49,7 @@ règles Bandit. Ajouter Bandit à la CI serait redondant, contrairement à ce qu
 
 | Item | État | Raison |
 |---|---|---|
-| **API1 Broken Object Level Authorization** | **ouvert** | Les rôles sont globaux, il n'y a pas de portée par site. Un opérateur du site A pourra agir sur le site B dès que les endpoints métier existeront. Correctif prévu : table d'affectation compte-site, contrôle d'appartenance dans la même dépendance que le contrôle de rôle. |
+| **API1 Broken Object Level Authorization** | **ouvert** | Les rôles sont globaux, il n'y a pas de portée par site : `GET /sites/{site_id}` répond à tout compte `lecteur` pour n'importe quel site, sans vérifier une affectation compte-site qui n'existe pas encore. Un opérateur du site A pourra agir sur le site B dès que les endpoints d'écriture métier existeront. Correctif prévu : table d'affectation compte-site, contrôle d'appartenance dans la même dépendance que le contrôle de rôle. |
 | **API4, lectures de séries temporelles** | **ouvert** | Pas encore d'endpoint métier, donc ni pagination plafonnée, ni fenêtre temporelle maximale, ni `statement_timeout`. C'est la façon la plus probable dont la démonstration tombera : une requête sur dix ans d'historique suffit. |
 | **API8 Security Misconfiguration, transport** | **ouvert** | Pas de TLS, donc ni HSTS, ni cookie `Secure` réellement posé en production. Ils appartiennent au terminateur TLS, qui n'existe pas. |
 | **API10 Unsafe Consumption of APIs** | **ouvert, et spécifique à ce projet** | L'API Mock de l'école n'a aucune authentification, tourne en HTTP clair sur le réseau de l'école, et expose un endpoint mutatif à quiconque. Sa réponse doit être traitée comme une entrée hostile : bornes physiques, taille de tableau plafonnée, timeout, et frontière d'anti-corruption. La conséquence la plus sérieuse n'est pas la fausse alerte, c'est l'empoisonnement du jeu d'entraînement du modèle de prédiction. |
