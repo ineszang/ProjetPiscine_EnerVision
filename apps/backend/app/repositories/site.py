@@ -16,4 +16,5 @@ class SiteRepository:
 
     async def get_by_id(self, site_id: str) -> Site | None:
         requete = select(Site).where(Site.site_id == site_id)
-        return await self._session.scalar(requete)
+        site: Site | None = await self._session.scalar(requete)
+        return site
