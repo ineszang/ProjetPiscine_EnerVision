@@ -19,14 +19,16 @@ install-frontend: ## Installe les dépendances du frontend
 
 dev: ## Lance toute la stack (backend + frontend) en rechargement à chaud
 	@trap 'kill 0' EXIT INT TERM; \
-	$(MAKE) dev-backend & \
-	$(MAKE) dev-frontend & \
+	$(MAKE) --no-print-directory dev-backend & \
+	$(MAKE) --no-print-directory dev-frontend & \
 	wait
 
 dev-backend: ## Lance l'API seule en rechargement à chaud
+	@echo "backend  -> http://localhost:8000 (docs sur /docs)"
 	cd $(BACKEND) && uv run uvicorn app.main:create_app --factory --reload --host 0.0.0.0 --port 8000
 
 dev-frontend: ## Lance le frontend seul en rechargement à chaud
+	@echo "frontend -> http://localhost:4200"
 	cd $(FRONTEND) && npm start
 
 lint: ## Analyse statique du backend
