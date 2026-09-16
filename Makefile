@@ -1,17 +1,33 @@
 BACKEND := apps/backend
+FRONTEND := apps/frontend
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev lint format typecheck test test-cov test-integration check \
+.PHONY: help install install-backend install-frontend dev dev-backend dev-frontend \
+        lint format typecheck test test-cov test-integration check \
         docker-build db-up db-down db-reset db-logs db-psql migrate bootstrap-admin
 
 help: ## Liste les cibles disponibles
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-install: ## Installe les dépendances du backend
+install: install-backend install-frontend ## Installe les dépendances backend et frontend
+
+install-backend: ## Installe les dépendances du backend
 	cd $(BACKEND) && uv sync --all-groups
 
-dev: ## Lance l'API en rechargement à chaud
+install-frontend: ## Installe les dépendances du frontend
+	cd $(FRONTEND) && npm ci
+
+dev: ## Lance toute la stack (backend + frontend) en rechargement à chaud
+	@trap 'kill 0' EXIT INT TERM; \
+	$(MAKE) dev-backend & \
+	$(MAKE) dev-frontend & \
+	wait
+
+dev-backend: ## Lance l'API seule en rechargement à chaud
 	cd $(BACKEND) && uv run uvicorn app.main:create_app --factory --reload --host 0.0.0.0 --port 8000
+
+dev-frontend: ## Lance le frontend seul en rechargement à chaud
+	cd $(FRONTEND) && npm start
 
 lint: ## Analyse statique du backend
 	cd $(BACKEND) && uv run ruff check .
