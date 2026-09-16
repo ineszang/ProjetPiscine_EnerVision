@@ -22,6 +22,17 @@ ORIGINE_VERIFIEE = {
     ("POST", "/api/v1/auth/password"),
 }
 
+# Toute route derrière `require_role` (LecteurDep, OperateurDep, AdminDep) peut rendre 403 pour
+# `password_change_required`, pas seulement les routes `admin`.
+ROUTES_A_ROLE = {
+    ("GET", "/api/v1/users"),
+    ("POST", "/api/v1/users"),
+    ("PATCH", "/api/v1/users/{id}"),
+    ("POST", "/api/v1/users/{id}/password-reset"),
+    ("GET", "/api/v1/sites"),
+    ("GET", "/api/v1/sites/{site_id}"),
+}
+
 
 @pytest.fixture(scope="module")
 def schema() -> dict[str, Any]:
@@ -55,11 +66,11 @@ def test_every_route_demanding_an_identity_says_how_it_refuses(schema: dict[str,
     assert muettes == []
 
 
-def test_every_administration_route_documents_the_role_refusal(schema: dict[str, Any]) -> None:
+def test_every_role_guarded_route_documents_the_role_refusal(schema: dict[str, Any]) -> None:
     sans_403 = [
         (methode, chemin)
         for methode, chemin, operation in operations(schema)
-        if "users" in operation.get("tags", []) and "403" not in operation["responses"]
+        if (methode, chemin) in ROUTES_A_ROLE and "403" not in operation["responses"]
     ]
 
     assert sans_403 == []

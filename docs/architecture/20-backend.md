@@ -235,6 +235,20 @@ Les modèles de `app/schemas/errors.py` décrivent ce que les gestionnaires renv
 `loc` n'apparaît dans aucune réponse de cette API : `validation_error_handler()` rend `champ` et
 `type`. Renommer un champ là-bas sans le faire ici rend la documentation fausse en silence.
 
+**Ajouter une route métier** (`sites` est le gabarit, `reading`/`dataset`/`prediction`/`alert`/
+`recommendation` suivront) :
+
+1. Composer ses `responses=` depuis `app/api/openapi.py` : `REPONSES_LECTEUR` ou `REPONSES_ADMIN`
+   au niveau de l'`include_router` dans `app/api/v1/router.py` (401 et le 403 propre au rôle),
+   `REPONSE_VALIDATION` et les codes locaux (404, 409, ...) sur l'endpoint lui-même s'il a un
+   corps, un paramètre ou peut échouer par identifiant.
+2. Décrire son tag dans `TAGS` (`app/api/openapi.py`).
+3. Si elle passe par `require_role`, l'ajouter à `ROUTES_A_ROLE`
+   (`tests/api/test_openapi.py`) ; si elle passe par `require_trusted_origin`, l'ajouter à
+   `ORIGINE_VERIFIEE`. Ces deux listes sont maintenues à la main, pas déduites automatiquement du
+   code : une route protégée qui n'y figure pas ne sera pas détectée par les tests.
+4. `make openapi`, puis `pytest tests/api/test_openapi.py`.
+
 ## Sécurité
 
 Voir la vue consolidée dans [00-vue-ensemble.md](00-vue-ensemble.md) et les décisions dans les
