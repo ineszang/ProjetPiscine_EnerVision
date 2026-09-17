@@ -2,19 +2,6 @@ name: Frontend
 # Pipeline à choix multiple
 
 on:
-  # workflow_dispatch -> lancement manuel des jobs
-  workflow_dispatch:
-    inputs:
-      job_choice:
-        required: true
-        description: "Choix du job"
-        type: choice
-        default: all
-        options:
-            - build
-            - sonarqube
-            - test
-            - all # lancer tous les jobs
   push:
     paths:
       - "apps/frontend/**"
@@ -23,6 +10,7 @@ on:
     paths:
       - "apps/frontend/**"
       - ".github/workflows/frontend.yml"
+      
 # Ordre de lancement des jobs
 # build -> test -> sonarqube -> deploy
 
