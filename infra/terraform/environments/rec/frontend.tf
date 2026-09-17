@@ -1,8 +1,8 @@
 locals {
   frontend_environments = {
-    dev = {
-      source_dir = "${path.root}/../../../apps/frontend/dist/frontend-dev/browser"
-      domain     = "dev.enervision"
+    rec = {
+      source_dir = "${path.root}/../../../apps/frontend/dist/frontend-rec/browser"
+      domain     = "rec.enervision"
     }
   }
 
