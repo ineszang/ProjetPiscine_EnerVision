@@ -231,3 +231,73 @@ et ne sont pas considérées comme des alertes actuelles.
 - Les mesures API ne sont pas rattachées à un dataset historique.
 - Une alerte peut être associée à une prévision du même site.
 - Une alerte peut donner lieu à plusieurs recommandations.
+
+## Ingestion des données historiques
+
+Le MVP EnerVision initialise les données énergétiques à partir du dataset fourni dans le cadre du projet.
+
+Le dataset de référence contient 122 647 mesures issues de 7 sites et couvre la période du 1er janvier 2023 au 31 décembre 2024.
+
+Les fichiers sources CSV et JSON sont nécessaires uniquement pour l'initialisation des données. Ils ne sont pas versionnés dans Git et sont placés localement dans `data/raw/`.
+
+### Architecture du flux
+
+```text
+Dataset CSV + métadonnées JSON
+              |
+              v
+     historical_import.py
+              |
+       +------+------+
+       |             |
+       v             v
+   Validation     SHA-256
+       |          Traçabilité
+       +------+------+
+              |
+              v
+      Normalisation
+      + qualité data
+              |
+              v
+    Chargement par batches
+              |
+              v
+ PostgreSQL / TimescaleDB
+       |      |       |
+       v      v       v
+    dataset  site   reading
+```
+
+Le pipeline est développé en Python.
+
+Pandas est utilisé pour l'extraction, la validation et la préparation des données. SQLAlchemy Async assure le chargement transactionnel dans PostgreSQL/TimescaleDB.
+
+Une empreinte SHA-256 permet d'identifier le dataset utilisé et d'assurer sa traçabilité.
+
+Les valeurs manquantes sont conservées pendant l'ingestion afin de préserver les données sources. Aucune imputation n'est réalisée à cette étape.
+
+Le chargement des mesures est effectué par batches de 1 000 lignes.
+
+Les données provenant du dataset CSV sont identifiées par `source = "csv"` et associées à leur `dataset_id`.
+
+### Résultats validés
+
+Le chargement de référence a permis d'obtenir :
+
+- 1 dataset ;
+- 7 sites ;
+- 122 647 mesures ;
+- 0 doublon détecté dans le dataset source.
+
+L'idempotence a également été vérifiée par une deuxième exécution du pipeline : aucune nouvelle mesure n'a été créée et le nombre de `reading` est resté à 122 647.
+
+La procédure détaillée d'installation, d'exécution, de validation et de contrôle du pipeline est disponible dans `etl/README.md`.
+
+### Évolution prévue
+
+L'étape suivante consiste à orchestrer les traitements Data avec Apache Airflow.
+
+L'orchestration réutilisera la logique ETL existante afin de séparer la logique de traitement de la planification, du suivi des exécutions et de la gestion des erreurs.
+
+Le pipeline servira ensuite de base à la préparation des données nécessaires au modèle de Machine Learning.

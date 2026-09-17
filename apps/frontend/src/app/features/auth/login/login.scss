@@ -36,3 +36,13 @@ ev-button {
   display: block;
   margin-top: 1.75rem;
 }
+
+.auth-link {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  text-align: center;
+
+  a {
+    color: #3b82f6;
+  }
+}

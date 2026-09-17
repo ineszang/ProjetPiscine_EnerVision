@@ -72,6 +72,14 @@ TAGS: Final[list[dict[str, Any]]] = [
         "`lecteur`.",
     },
     {
+        "name": "readings",
+        "description": (
+            "Historique des lectures de consommation. Fenêtre temporelle plafonnée à 90 jours, "
+            "24 dernières heures par défaut si `start`/`end` sont omis. Accessible à partir du "
+            "rôle `lecteur`."
+        ),
+    },
+    {
         "name": "sensors",
         "description": "État de santé des capteurs par site. Réservé au rôle `admin`.",
     },
@@ -154,5 +162,18 @@ REPONSE_ORIGINE_REFUSEE: Final[Reponses] = {
     403: {
         "model": ErrorResponse,
         "description": "Origine non autorisée (protection CSRF de `require_trusted_origin`).",
+    },
+}
+
+REPONSE_LIMITE: Final[Reponses] = {
+    429: {
+        "model": ErrorResponse,
+        "description": "Trop de demandes sur cette fenêtre glissante.",
+        "headers": {
+            "Retry-After": {
+                "description": "Secondes à attendre avant une nouvelle tentative.",
+                "schema": {"type": "integer"},
+            }
+        },
     },
 }

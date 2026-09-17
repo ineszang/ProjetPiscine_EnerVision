@@ -36,6 +36,8 @@
       <ev-button type="submit" [disabled]="form.invalid || isLoading()">
         {{ isLoading() ? 'Connexion...' : 'Se connecter' }}
       </ev-button>
+
+      <p class="auth-link"><a routerLink="/forgot-password">Mot de passe oublié ?</a></p>
     </ev-card>
   </form>
 </div>

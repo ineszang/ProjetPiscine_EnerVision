@@ -11,6 +11,16 @@ function parseAuthError(response: HttpErrorResponse): string | null {
   return match ? match[1] : null;
 }
 
+const ROUTES_INVITEES = ['/login', '/forgot-password', '/reset-password'];
+
+// Piège : le rafraîchissement de session lancé au démarrage de l'app (provideAppInitializer)
+// échoue silencieusement sans cookie valide. `window.location.pathname` (pas `router.url`,
+// pas encore fiable à ce stade) évite qu'un 401 de fond écrase la navigation vers le lien de
+// reset reçu par email.
+function surRouteInvitee(): boolean {
+  return ROUTES_INVITEES.some((chemin) => window.location.pathname.startsWith(chemin));
+}
+
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
@@ -43,7 +53,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
       if (req.url.endsWith('/auth/refresh')) {
         auth.clearSession();
-        router.navigate(['/login']);
+        if (!surRouteInvitee()) {
+          router.navigate(['/login']);
+        }
         return throwError(() => error);
       }
 
@@ -51,7 +63,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
       if (kind === 'invalid_token') {
         auth.clearSession();
-        router.navigate(['/login']);
+        if (!surRouteInvitee()) {
+          router.navigate(['/login']);
+        }
         return throwError(() => error);
       }
 
@@ -65,7 +79,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
           }),
           catchError((refreshError) => {
             auth.clearSession();
-            router.navigate(['/login']);
+            if (!surRouteInvitee()) {
+              router.navigate(['/login']);
+            }
             return throwError(() => refreshError);
           })
         );

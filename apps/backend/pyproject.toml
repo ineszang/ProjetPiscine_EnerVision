@@ -16,6 +16,8 @@ dependencies = [
     "pyjwt>=2.10",
     "argon2-cffi>=23.1",
     "anyio>=4.0",
+    "aiosmtplib>=5.1.3",
+    "pandas>=3.0.5",
 ]
 
 [dependency-groups]
@@ -26,6 +28,7 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "httpx>=0.28.1",
+    "pandas-stubs>=3.0.5.260914",
 ]
 
 [build-system]
