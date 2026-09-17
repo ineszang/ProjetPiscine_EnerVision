@@ -22,6 +22,9 @@ ROUTES_PUBLIQUES = frozenset(
         # Protégée par le jeton dans le corps de la requête, pas par un `Principal` : aucune
         # authentification préalable ne s'applique, c'est la validité du jeton qui tranche.
         ("POST", "/api/v1/auth/reset-password"),
+        # Même raison : lecture seule, protégée par le jeton passé en paramètre, pas par un
+        # `Principal`. Le jeton est un secret de 256 bits, non brute-forçable.
+        ("GET", "/api/v1/auth/reset-password/validate"),
         ("GET", "/metrics"),
     }
 )

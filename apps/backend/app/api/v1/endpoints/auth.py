@@ -325,6 +325,7 @@ async def forgot_password(
     "/reset-password/validate",
     response_model=ResetTokenValidationResponse,
     summary="Vérifie sans le consommer si un lien de réinitialisation est encore valide",
+    responses=REPONSE_VALIDATION,
 )
 async def validate_reset_token(token: str, service: AuthServiceDep) -> ResetTokenValidationResponse:
     return ResetTokenValidationResponse(valid=await service.is_reset_token_valid(token=token))
