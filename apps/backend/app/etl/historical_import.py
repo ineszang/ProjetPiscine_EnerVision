@@ -5,7 +5,7 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 from sqlalchemy import text
@@ -56,7 +56,12 @@ def compute_sha256(path: Path) -> str:
 def load_metadata(path: Path) -> dict[str, Any]:
     """Charge les métadonnées fournies avec le dataset."""
     with path.open("r", encoding="utf-8") as source:
-        return json.load(source)
+        metadata = json.load(source)
+
+    if not isinstance(metadata, dict):
+        raise ValueError("Le fichier de métadonnées doit contenir un objet JSON.")
+
+    return cast(dict[str, Any], metadata)
 
 
 def classify_quality(
@@ -260,7 +265,8 @@ async def upsert_sites(
     frame: pd.DataFrame,
 ) -> None:
     """Insère ou met à jour les sites du dataset."""
-    sites = (
+    sites = cast(
+        list[dict[str, Any]],
         frame[
             [
                 "site_id",
@@ -269,7 +275,7 @@ async def upsert_sites(
             ]
         ]
         .drop_duplicates(subset=["site_id"])
-        .to_dict(orient="records")
+        .to_dict(orient="records"),
     )
 
     await connection.execute(
@@ -305,7 +311,12 @@ def build_reading_batch(
     """
     rows: list[dict[str, Any]] = []
 
-    for record in chunk.to_dict(orient="records"):
+    records = cast(
+        list[dict[str, Any]],
+        chunk.to_dict(orient="records"),
+    )
+
+    for record in records:
         quality, reasons = classify_quality(record)
 
         raw_data = {

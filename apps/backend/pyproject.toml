@@ -27,6 +27,7 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "httpx>=0.28.1",
+    "pandas-stubs>=3.0.5.260914",
 ]
 
 [build-system]
