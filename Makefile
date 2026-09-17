@@ -1,21 +1,26 @@
 BACKEND := apps/backend
 FRONTEND := apps/frontend
+ML := ml
 
 .DEFAULT_GOAL := help
-.PHONY: help install install-backend install-frontend dev dev-backend dev-frontend \
+.PHONY: help install install-backend install-frontend install-ml dev dev-backend dev-frontend \
         lint format typecheck test test-cov test-integration check \
-        openapi docker-build db-up db-down db-reset db-logs db-psql migrate bootstrap-admin
+        openapi docker-build db-up db-down db-reset db-logs db-psql migrate bootstrap-admin \
+        ml-lint ml-typecheck ml-test ml-check ml-train
 
 help: ## Liste les cibles disponibles
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-install: install-backend install-frontend ## Installe les dépendances backend et frontend
+install: install-backend install-frontend install-ml ## Installe les dépendances backend, frontend et ML
 
 install-backend: ## Installe les dépendances du backend
 	cd $(BACKEND) && uv sync --all-groups
 
 install-frontend: ## Installe les dépendances du frontend
 	cd $(FRONTEND) && npm ci
+
+install-ml: ## Installe les dépendances du pipeline ML
+	cd $(ML) && uv sync --all-groups
 
 dev: ## Lance toute la stack (backend + frontend) en rechargement à chaud
 	@trap 'kill 0' EXIT INT TERM; \
@@ -54,6 +59,20 @@ check: lint typecheck test ## Chaîne de vérification complète
 
 openapi: ## Régénère apps/backend/openapi.json depuis les routes déclarées
 	cd $(BACKEND) && uv run python -m app.cli export-openapi
+
+ml-lint: ## Analyse statique du pipeline ML
+	cd $(ML) && uv run ruff check .
+
+ml-typecheck: ## Vérifie le typage du pipeline ML
+	cd $(ML) && uv run mypy enervision_ml tests
+
+ml-test: ## Exécute les tests du pipeline ML (donnees synthetiques, sans base ni serveur MLflow)
+	cd $(ML) && uv run pytest
+
+ml-check: ml-lint ml-typecheck ml-test ## Chaîne de vérification complète du pipeline ML
+
+ml-train: ## Entraine le modele LightGBM. CSV=chemin optionnel, sinon lit ML_DATABASE_URL
+	cd $(ML) && uv run python -m enervision_ml.train $(if $(CSV),--csv $(CSV),)
 
 docker-build: ## Construit l'image du backend
 	docker build -t enervision-backend:local $(BACKEND)
