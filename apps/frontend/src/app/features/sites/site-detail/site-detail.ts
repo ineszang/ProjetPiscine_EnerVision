@@ -1,7 +1,7 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { catchError, EMPTY, map, Observable, switchMap } from 'rxjs';
+import { catchError, EMPTY, filter, map, Observable, switchMap } from 'rxjs';
 import { SitesService } from '../../../core/services/sites.service';
 import { ReadingsService } from '../../../core/services/readings.service';
 import { Site } from '../../../shared/models/site.model';
@@ -83,6 +83,7 @@ export class SiteDetail {
   private route = inject(ActivatedRoute);
   private sitesService = inject(SitesService);
   private readingsService = inject(ReadingsService);
+  private destroyRef = inject(DestroyRef);
 
   siteId = toSignal(this.route.paramMap.pipe(map((params) => params.get('siteId') ?? '')));
 
@@ -105,38 +106,13 @@ export class SiteDetail {
   });
 
   constructor() {
-    effect(() => {
-      const siteId = this.siteId();
-      if (siteId) {
-        this.load(siteId);
-      }
-    });
-  }
-
-  badgeToneForStatus(status: string | null): BadgeTone {
-    return status ? (TON_PAR_STATUT[status] ?? 'neutral') : 'neutral';
-  }
-
-  private load(siteId: string): void {
-    this.sitesService
-      .getSite(siteId)
+    toObservable(this.siteId)
       .pipe(
-        switchMap((site) =>
-          this.readingsService.getLatest(siteId).pipe(map((latest) => ({ site, latest }))),
-        ),
-        switchMap(({ site, latest }) => {
-          // Piège : le dataset historique se termine bien avant « maintenant ». Ancrer la
-          // fenêtre sur la dernière mesure connue plutôt que sur l'horloge évite un historique
-          // vide dès que le jeu de données n'est plus récent.
-          const end = latest?.timestamp;
-          const start = end
-            ? new Date(new Date(end).getTime() - HISTORY_WINDOW_MS).toISOString()
-            : undefined;
-          return this.readingsService
-            .getHistory(siteId, start, end)
-            .pipe(map((history) => ({ site, latest, history })));
-        }),
-        catchError(() => this.reportUnavailable()),
+        filter((siteId): siteId is string => !!siteId),
+        // Piège : switchMap sur le flux externe annule le chargement en cours dès qu'un
+        // nouveau siteId arrive, sinon une réponse en retard peut écraser le site affiché.
+        switchMap((siteId) => this.load(siteId)),
+        takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((result) => {
         this.error.set(null);
@@ -144,6 +120,31 @@ export class SiteDetail {
         this.latestReading.set(result.latest);
         this.history.set(result.history);
       });
+  }
+
+  badgeToneForStatus(status: string | null): BadgeTone {
+    return status ? (TON_PAR_STATUT[status] ?? 'neutral') : 'neutral';
+  }
+
+  private load(siteId: string) {
+    return this.sitesService.getSite(siteId).pipe(
+      switchMap((site) =>
+        this.readingsService.getLatest(siteId).pipe(map((latest) => ({ site, latest }))),
+      ),
+      switchMap(({ site, latest }) => {
+        // Piège : le dataset historique se termine bien avant « maintenant ». Ancrer la
+        // fenêtre sur la dernière mesure connue plutôt que sur l'horloge évite un historique
+        // vide dès que le jeu de données n'est plus récent.
+        const end = latest?.timestamp;
+        const start = end
+          ? new Date(new Date(end).getTime() - HISTORY_WINDOW_MS).toISOString()
+          : undefined;
+        return this.readingsService
+          .getHistory(siteId, start, end)
+          .pipe(map((history) => ({ site, latest, history })));
+      }),
+      catchError(() => this.reportUnavailable()),
+    );
   }
 
   private reasonFor(field: MetricKey, reading: Reading | null): string {
