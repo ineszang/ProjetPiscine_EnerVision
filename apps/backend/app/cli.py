@@ -136,9 +136,7 @@ def read_password(*, generate: bool) -> str:
 
     mot_de_passe = getpass("Mot de passe : ")
     if len(mot_de_passe) < PASSWORD_MIN_LENGTH:
-        raise SystemExit(
-            f"Le mot de passe doit faire au moins {PASSWORD_MIN_LENGTH} caractères"
-        )
+        raise SystemExit(f"Le mot de passe doit faire au moins {PASSWORD_MIN_LENGTH} caractères")
     try:
         valide_complexite(mot_de_passe)
     except ValueError as erreur:
