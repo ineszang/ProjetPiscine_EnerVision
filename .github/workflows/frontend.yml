@@ -43,6 +43,7 @@ jobs:
         working-directory: apps/frontend
       - run: npm test --watch=false --code-coverage --coverageReporters=lcov
         working-directory: apps/frontend
+        
   sonarqube:
     needs: [build, test]
     name: SonarQube
