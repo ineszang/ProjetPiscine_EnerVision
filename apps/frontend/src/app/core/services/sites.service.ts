@@ -10,4 +10,8 @@ export class SitesService {
   getSites() {
     return this.http.get<Site[]>(`${environment.apiUrl}/sites`);
   }
+
+  getSite(siteId: string) {
+    return this.http.get<Site>(`${environment.apiUrl}/sites/${siteId}`);
+  }
 }

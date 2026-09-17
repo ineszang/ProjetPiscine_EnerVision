@@ -88,6 +88,31 @@ async def test_latest_by_site_returns_one_row_per_site(session: AsyncSession) ->
     assert identifiants == {premier, second}
 
 
+async def test_latest_for_site_ignores_how_old_the_reading_is(session: AsyncSession) -> None:
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    await creer_lecture(session, site_id=site.site_id, timestamp=datetime(2024, 1, 1, tzinfo=UTC))
+    recente = await creer_lecture(
+        session, site_id=site.site_id, timestamp=datetime(2024, 12, 31, tzinfo=UTC)
+    )
+
+    resultat = await depot.latest_for_site(site.site_id)
+    await session.rollback()
+
+    assert resultat is not None
+    assert resultat.reading_id == recente.reading_id
+
+
+async def test_latest_for_site_returns_none_when_the_site_has_no_reading(
+    session: AsyncSession,
+) -> None:
+    depot = ReadingRepository(session)
+
+    resultat = await depot.latest_for_site(identifiant_site())
+
+    assert resultat is None
+
+
 async def test_list_history_orders_the_readings_by_timestamp_descending(
     session: AsyncSession,
 ) -> None:

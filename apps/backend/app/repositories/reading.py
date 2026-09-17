@@ -21,6 +21,15 @@ class ReadingRepository:
         )
         return (await self._session.execute(requete)).scalars().all()
 
+    async def latest_for_site(self, site_id: str) -> Reading | None:
+        requete = (
+            select(Reading)
+            .where(Reading.site_id == site_id)
+            .order_by(Reading.timestamp.desc(), Reading.reading_id.desc())
+            .limit(1)
+        )
+        return (await self._session.scalars(requete)).first()
+
     async def list_history(
         self,
         *,

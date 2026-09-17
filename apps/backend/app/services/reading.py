@@ -20,6 +20,9 @@ class ReadingService:
     def __init__(self, *, readings: ReadingRepository) -> None:
         self._readings = readings
 
+    async def get_latest(self, site_id: str) -> Reading | None:
+        return await self._readings.latest_for_site(site_id)
+
     async def list_history(
         self,
         *,
