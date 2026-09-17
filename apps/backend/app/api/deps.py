@@ -34,6 +34,7 @@ from app.repositories.site import SiteRepository
 from app.repositories.user import UserRepository
 from app.services.alert import AlertService
 from app.services.auth import AuthService, LoginPolicy, PasswordResetPolicy
+from app.services.reading import ReadingService
 from app.services.recommendation import RecommendationService
 from app.services.sensor import SensorService
 from app.services.site import SiteService
@@ -195,6 +196,13 @@ def get_stats_service(session: SessionDep) -> StatsService:
 
 
 StatsServiceDep = Annotated[StatsService, Depends(get_stats_service)]
+
+
+def get_reading_service(session: SessionDep) -> ReadingService:
+    return ReadingService(readings=ReadingRepository(session))
+
+
+ReadingServiceDep = Annotated[ReadingService, Depends(get_reading_service)]
 
 
 def get_sensor_service(session: SessionDep) -> SensorService:

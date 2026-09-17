@@ -72,6 +72,14 @@ TAGS: Final[list[dict[str, Any]]] = [
         "`lecteur`.",
     },
     {
+        "name": "readings",
+        "description": (
+            "Historique des lectures de consommation. Fenêtre temporelle plafonnée à 90 jours, "
+            "24 dernières heures par défaut si `start`/`end` sont omis. Accessible à partir du "
+            "rôle `lecteur`."
+        ),
+    },
+    {
         "name": "sensors",
         "description": "État de santé des capteurs par site. Réservé au rôle `admin`.",
     },
