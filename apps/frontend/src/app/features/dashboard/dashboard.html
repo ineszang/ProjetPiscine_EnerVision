@@ -1,19 +1,22 @@
 <div class="dashboard">
   <header class="dashboard__header">
-    <div>
-      <h1>Vue d'ensemble</h1>
-      <p class="dashboard__subtitle">Consommation instantanée du parc</p>
+    <div class="dashboard__brand">
+      <img src="logo.png" alt="EnerVision" class="dashboard__logo" />
+      <div>
+        <h1>Vue d'ensemble</h1>
+        <p class="dashboard__subtitle">Consommation instantanée du parc</p>
+      </div>
     </div>
     <button type="button" class="logout-button" (click)="onLogout()">Déconnexion</button>
   </header>
 
   @if (error(); as message) {
-    <p class="banner-error" role="alert">{{ message }}</p>
+    <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
   }
 
   @if (stats(); as s) {
     <section class="overview">
-      <div class="card card--gauge">
+      <ev-card class="card card--gauge">
         <span class="card__label">Consommation vs capacité</span>
         <app-consumption-gauge
           [consumption]="s.total_consumption_kw"
@@ -23,20 +26,20 @@
           >{{ s.total_consumption_kw | number: '1.0-1' }} /
           {{ s.total_capacity_kw | number }} kW</span
         >
-      </div>
+      </ev-card>
 
-      <div class="card">
+      <ev-card class="card">
         <span class="card__label">Charge moyenne du parc</span>
         <span class="card__value">{{ s.average_load_percent }} %</span>
         <div class="progress-bar">
           <div class="progress-bar__fill" [style.width.%]="s.average_load_percent"></div>
         </div>
-      </div>
+      </ev-card>
 
-      <div class="card">
+      <ev-card class="card">
         <span class="card__label">Sites suivis</span>
         <span class="card__value">{{ s.total_sites }}</span>
-      </div>
+      </ev-card>
     </section>
 
     <section class="chart-section">
@@ -50,8 +53,8 @@
       <h2>Alertes actives</h2>
       <ul class="alerts-list">
         @for (alert of alerts(); track alert.alert_id) {
-          <li class="alert-item" [class]="'alert-item--' + alert.severity">
-            <span class="alert-item__badge">{{ alert.severity }}</span>
+          <li class="alert-item">
+            <ev-badge [tone]="badgeToneForSeverity(alert.severity)">{{ alert.severity }}</ev-badge>
             <span class="alert-item__message">{{ alert.message }}</span>
           </li>
         }

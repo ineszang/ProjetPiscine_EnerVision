@@ -1,1 +1,8 @@
-/* You can add global styles to this file, and also import other style files */
+@use 'styles/tokens';
+@use 'styles/forms';
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  color: var(--color-text);
+}

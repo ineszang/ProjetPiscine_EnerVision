@@ -9,16 +9,26 @@ import { SiteLoadChart } from '../../shared/components/site-load-chart/site-load
 import { AlertsService } from '../../core/services/alerts.service';
 import { AuthService } from '../../core/services/auth.service';
 import { StatsSummary } from '../../shared/models/stats.model';
-import { Alert } from '../../shared/models/alert.model';
+import { Alert, AlertSeverity } from '../../shared/models/alert.model';
+import { Card } from '../../shared/components/ui/card/card';
+import { Alert as EvAlert } from '../../shared/components/ui/alert/alert';
+import { Badge, BadgeTone } from '../../shared/components/ui/badge/badge';
 
 const REFRESH_INTERVAL_MS = 10000;
 const UNAVAILABLE_MESSAGE =
   'Données indisponibles, les valeurs affichées datent du dernier relevé.';
 
+const TON_PAR_SEVERITE: Record<AlertSeverity, BadgeTone> = {
+  low: 'success',
+  medium: 'warning',
+  high: 'danger',
+  critical: 'danger',
+};
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DecimalPipe, ConsumptionGauge, SiteLoadChart],
+  imports: [DecimalPipe, ConsumptionGauge, SiteLoadChart, Card, EvAlert, Badge],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
 })
@@ -52,6 +62,10 @@ export class Dashboard implements OnInit {
         this.error.set(null);
         this.stats.set(stats);
       });
+  }
+
+  badgeToneForSeverity(severity: AlertSeverity): BadgeTone {
+    return TON_PAR_SEVERITE[severity];
   }
 
   onLogout(): void {

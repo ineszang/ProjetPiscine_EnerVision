@@ -3,11 +3,14 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../../core/services/auth.service';
+import { Button } from '../../../shared/components/ui/button/button';
+import { Card } from '../../../shared/components/ui/card/card';
+import { Alert } from '../../../shared/components/ui/alert/alert';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, Button, Card, Alert],
   templateUrl: './login.html',
   styleUrl: './login.scss',
 })
