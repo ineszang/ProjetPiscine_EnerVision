@@ -27,6 +27,7 @@ from app.schemas.auth import (
     PasswordChangeRequest,
     PrincipalResponse,
     ResetPasswordRequest,
+    ResetTokenValidationResponse,
     TokenResponse,
 )
 from app.schemas.errors import ErrorResponse
@@ -318,6 +319,15 @@ async def forgot_password(
             detail="Trop de demandes, réessayez plus tard",
             headers={"Retry-After": str(erreur.retry_after)},
         ) from erreur
+
+
+@router.get(
+    "/reset-password/validate",
+    response_model=ResetTokenValidationResponse,
+    summary="Vérifie sans le consommer si un lien de réinitialisation est encore valide",
+)
+async def validate_reset_token(token: str, service: AuthServiceDep) -> ResetTokenValidationResponse:
+    return ResetTokenValidationResponse(valid=await service.is_reset_token_valid(token=token))
 
 
 @router.post(

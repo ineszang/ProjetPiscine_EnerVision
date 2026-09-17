@@ -83,4 +83,10 @@ export class AuthService {
       .post<TokenResponse>(`${environment.apiUrl}/auth/reset-password`, payload, { withCredentials: true })
       .pipe(tap((response) => this.setSession(response)));
   }
+
+  validateResetToken(token: string): Observable<{ valid: boolean }> {
+    return this.http.get<{ valid: boolean }>(`${environment.apiUrl}/auth/reset-password/validate`, {
+      params: { token },
+    });
+  }
 }

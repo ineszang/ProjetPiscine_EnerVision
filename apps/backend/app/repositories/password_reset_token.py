@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.password_reset_token import PasswordResetToken
@@ -57,6 +57,16 @@ class PasswordResetTokenRepository:
         if ligne is None:
             return None
         return ConsumedResetToken(id=ligne.id, user_id=ligne.user_id)
+
+    # Piège : simple SELECT, volontairement pas atomique avec la consommation. Sert seulement
+    # au feedback UX (jeton encore valide ?) ; `consume()` reste la seule source de vérité.
+    async def exists_valid(self, token_hash: bytes) -> bool:
+        requete = select(PasswordResetToken.id).where(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.consumed_at.is_(None),
+            PasswordResetToken.expires_at > func.clock_timestamp(),
+        )
+        return (await self._session.execute(requete)).first() is not None
 
     async def invalidate_all_for_user(self, user_id: UUID) -> int:
         resultat = await self._session.execute(

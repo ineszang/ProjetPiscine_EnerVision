@@ -12,7 +12,13 @@ function configure(token: string | null) {
   return TestBed.configureTestingModule({
     imports: [ResetPassword, ReactiveFormsModule],
     providers: [
-      { provide: AuthService, useValue: { resetPassword: vi.fn() } },
+      {
+        provide: AuthService,
+        useValue: {
+          resetPassword: vi.fn(),
+          validateResetToken: vi.fn().mockReturnValue(of({ valid: true })),
+        },
+      },
       { provide: Router, useValue: { navigate: vi.fn() } },
       {
         provide: ActivatedRoute,
@@ -31,6 +37,32 @@ describe('ResetPassword', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance.hasToken).toBe(false);
+    expect(router.navigate).toHaveBeenCalledWith(['/login'], {
+      queryParams: { motif: MOTIF_LIEN_RESET_INVALIDE },
+    });
+  });
+
+  it('vérifie le jeton sans le consommer dès le chargement de la page', async () => {
+    await configure('un-secret-opaque');
+    const fixture = TestBed.createComponent(ResetPassword);
+    const auth = TestBed.inject(AuthService) as unknown as { validateResetToken: ReturnType<typeof vi.fn> };
+
+    fixture.detectChanges();
+
+    expect(auth.validateResetToken).toHaveBeenCalledWith('un-secret-opaque');
+    expect(fixture.componentInstance.isCheckingToken()).toBe(false);
+  });
+
+  it('redirige immédiatement vers /login si la vérification signale un jeton invalide', async () => {
+    await configure('un-secret-perime');
+    TestBed.overrideProvider(AuthService, {
+      useValue: { resetPassword: vi.fn(), validateResetToken: vi.fn().mockReturnValue(of({ valid: false })) },
+    });
+    const fixture = TestBed.createComponent(ResetPassword);
+    const router = TestBed.inject(Router) as unknown as { navigate: ReturnType<typeof vi.fn> };
+
+    fixture.detectChanges();
+
     expect(router.navigate).toHaveBeenCalledWith(['/login'], {
       queryParams: { motif: MOTIF_LIEN_RESET_INVALIDE },
     });

@@ -89,6 +89,34 @@ async def test_invalidate_all_for_user_only_touches_living_tokens(
     assert second_passage == 0
 
 
+async def test_exists_valid_is_true_for_a_living_token(session: AsyncSession) -> None:
+    depot = PasswordResetTokenRepository(session)
+    secret = await un_jeton(depot, await un_compte(session))
+
+    assert await depot.exists_valid(fingerprint_refresh(secret)) is True
+
+
+async def test_exists_valid_is_false_for_an_expired_token(session: AsyncSession) -> None:
+    depot = PasswordResetTokenRepository(session)
+    secret = await un_jeton(depot, await un_compte(session), duree=-timedelta(minutes=1))
+
+    assert await depot.exists_valid(fingerprint_refresh(secret)) is False
+
+
+async def test_exists_valid_is_false_once_the_token_is_consumed(session: AsyncSession) -> None:
+    depot = PasswordResetTokenRepository(session)
+    secret = await un_jeton(depot, await un_compte(session))
+    await depot.consume(fingerprint_refresh(secret))
+
+    assert await depot.exists_valid(fingerprint_refresh(secret)) is False
+
+
+async def test_exists_valid_is_false_for_an_unknown_fingerprint(session: AsyncSession) -> None:
+    depot = PasswordResetTokenRepository(session)
+
+    assert await depot.exists_valid(fingerprint_refresh(generate_refresh_secret())) is False
+
+
 async def test_the_database_refuses_two_tokens_sharing_a_fingerprint(
     session: AsyncSession,
 ) -> None:

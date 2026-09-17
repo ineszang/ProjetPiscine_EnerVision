@@ -280,6 +280,13 @@ class AuthService:
         except Exception:
             logger.exception("auth.password_reset.mail_failed")
 
+    # Piège : lecture seule, pas d'appel à `consume()`. Aucune limitation de débit n'est
+    # nécessaire ici : le jeton est un secret de 256 bits (`generate_refresh_secret`), donc
+    # non brute-forçable, et cette route n'apprend rien sur l'existence d'un compte ou d'un
+    # email, seulement si le lien déjà en main du visiteur est encore valide.
+    async def is_reset_token_valid(self, token: str) -> bool:
+        return await self._reset_tokens.exists_valid(fingerprint_refresh(token))
+
     async def confirm_password_reset(
         self, *, token: str, new_password: str, client_ip: str | None, user_agent: str | None
     ) -> AuthenticatedSession:

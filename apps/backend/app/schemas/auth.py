@@ -84,6 +84,10 @@ class PrincipalResponse(BaseModel):
         return cls.model_validate(principal)
 
 
+class ResetTokenValidationResponse(BaseModel):
+    valid: bool
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"  # noqa: S105

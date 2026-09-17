@@ -28,11 +28,15 @@ PRINCIPAL = Principal(
 
 
 class FauxService:
-    def __init__(self, erreur: Exception | None = None) -> None:
+    def __init__(self, erreur: Exception | None = None, *, jeton_valide: bool = True) -> None:
         self._erreur = erreur
+        self._jeton_valide = jeton_valide
 
     async def refresh(self, **_: object) -> AuthenticatedSession:
         return await self.authenticate()
+
+    async def is_reset_token_valid(self, **_: object) -> bool:
+        return self._jeton_valide
 
     async def logout(self, **_: object) -> None:
         return None
@@ -257,6 +261,38 @@ async def test_forgot_password_rejects_a_malformed_email(
     response = await client.post("/api/v1/auth/forgot-password", json={"email": "pas-un-email"})
 
     assert response.status_code == 422
+
+
+@pytest.fixture
+def fake_auth_service_reset_validity(app: FastAPI) -> Iterator[list[bool]]:
+    programme = [True]
+    app.dependency_overrides[get_auth_service] = lambda: FauxService(jeton_valide=programme[0])
+    yield programme
+    app.dependency_overrides.pop(get_auth_service, None)
+
+
+async def test_validate_reset_token_reports_a_living_token(
+    fake_auth_service_reset_validity: list[bool], client: AsyncClient
+) -> None:
+    response = await client.get(
+        "/api/v1/auth/reset-password/validate", params={"token": "un-secret-opaque"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"valid": True}
+
+
+async def test_validate_reset_token_reports_an_invalid_or_expired_token(
+    fake_auth_service_reset_validity: list[bool], client: AsyncClient
+) -> None:
+    fake_auth_service_reset_validity[0] = False
+
+    response = await client.get(
+        "/api/v1/auth/reset-password/validate", params={"token": "un-secret-perime"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"valid": False}
 
 
 async def test_reset_password_returns_the_token_and_the_cookie_on_success(

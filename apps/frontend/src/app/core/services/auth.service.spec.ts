@@ -83,4 +83,17 @@ describe('AuthService', () => {
 
   expect(result).toEqual(tokenResponse.principal);
 });
+
+  it('vérifie la validité du jeton de reset via GET /auth/reset-password/validate', () => {
+    let result: { valid: boolean } | undefined;
+    service.validateResetToken('un-secret-opaque').subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(
+      `${environment.apiUrl}/auth/reset-password/validate?token=un-secret-opaque`
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush({ valid: true });
+
+    expect(result).toEqual({ valid: true });
+  });
 });

@@ -181,8 +181,11 @@ class FausseTransaction:
 
 
 class FauxDepotJetonsReset:
-    def __init__(self, revendique: ConsumedResetToken | None = None) -> None:
+    def __init__(
+        self, revendique: ConsumedResetToken | None = None, *, valide: bool = False
+    ) -> None:
         self.revendique = revendique
+        self.valide = valide
         self.crees: list[UUID] = []
         self.invalidations: list[UUID] = []
 
@@ -191,6 +194,9 @@ class FauxDepotJetonsReset:
 
     async def consume(self, token_hash: bytes) -> ConsumedResetToken | None:
         return self.revendique
+
+    async def exists_valid(self, token_hash: bytes) -> bool:
+        return self.valide
 
     async def invalidate_all_for_user(self, user_id: UUID) -> int:
         self.invalidations.append(user_id)
@@ -668,6 +674,14 @@ async def test_confirm_password_reset_revokes_every_session_then_reopens_the_cur
     assert len(attirail.jetons.crees) == 1
     assert session.refresh_secret
     assert "auth.password_reset_self_service" in attirail.audit.lignes[0][0]
+
+
+async def test_is_reset_token_valid_reflects_the_repository() -> None:
+    attirail_valide = fabrique_service(jetons_reset=FauxDepotJetonsReset(valide=True))
+    attirail_invalide = fabrique_service(jetons_reset=FauxDepotJetonsReset(valide=False))
+
+    assert await attirail_valide.service.is_reset_token_valid("un-secret-opaque") is True
+    assert await attirail_invalide.service.is_reset_token_valid("un-secret-opaque") is False
 
 
 async def test_confirm_password_reset_rejects_a_token_for_an_account_disabled_since() -> None:

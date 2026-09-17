@@ -33,11 +33,23 @@ export class ResetPassword implements OnInit {
   });
 
   password = toSignal(this.form.controls.new_password.valueChanges, { initialValue: '' });
+  isCheckingToken = signal(this.hasToken);
 
   ngOnInit(): void {
     if (!this.hasToken) {
       this.redirigeVersLoginLienInvalide();
+      return;
     }
+
+    this.auth.validateResetToken(this.token).subscribe({
+      next: ({ valid }) => {
+        this.isCheckingToken.set(false);
+        if (!valid) {
+          this.redirigeVersLoginLienInvalide();
+        }
+      },
+      error: () => this.isCheckingToken.set(false),
+    });
   }
 
   onSubmit(): void {
