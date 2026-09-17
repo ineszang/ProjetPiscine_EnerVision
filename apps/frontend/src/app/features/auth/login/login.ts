@@ -7,7 +7,10 @@ import { Button } from '../../../shared/components/ui/button/button';
 import { Card } from '../../../shared/components/ui/card/card';
 import { Alert } from '../../../shared/components/ui/alert/alert';
 import { Brand } from '../../../shared/components/ui/brand/brand';
-import { MESSAGE_LIEN_RESET_INVALIDE, MOTIF_LIEN_RESET_INVALIDE } from '../../../shared/models/auth-redirect-reason';
+import {
+  MESSAGE_LIEN_RESET_INVALIDE,
+  MOTIF_LIEN_RESET_INVALIDE,
+} from '../../../shared/models/auth-redirect-reason';
 
 @Component({
   selector: 'app-login',

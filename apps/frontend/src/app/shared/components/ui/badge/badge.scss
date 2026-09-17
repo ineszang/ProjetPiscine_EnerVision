@@ -1,3 +1,8 @@
+:host {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
 .ev-badge {
   display: inline-block;
   font-size: 0.7rem;
@@ -6,8 +11,7 @@
   letter-spacing: 0.02em;
   padding: 0.2rem 0.55rem;
   border-radius: var(--radius-pill);
-  color: #fff;
-  flex-shrink: 0;
+  color: var(--color-text-inverse);
 }
 
 .ev-badge--success {
@@ -20,6 +24,10 @@
 
 .ev-badge--danger {
   background: var(--color-danger);
+}
+
+.ev-badge--critical {
+  background: var(--color-critical);
 }
 
 .ev-badge--neutral {

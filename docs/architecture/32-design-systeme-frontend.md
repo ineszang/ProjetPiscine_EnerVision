@@ -17,17 +17,19 @@ seule fois dans `src/styles.scss`. Disponibles partout sans import supplémentai
 | `--color-border`, `--color-border-light` | Bordures d'inputs et de cartes |
 | `--color-bg`, `--color-surface` | Fond de page vs fond des cartes/panneaux |
 | `--color-disabled` | Éléments désactivés |
-| `--color-success` / `-bg`, `--color-warning` / `-bg`, `--color-danger` / `-bg` / `-border` | États sémantiques (alertes, badges) |
+| `--color-success` / `-bg`, `--color-warning` / `-bg` / `-text`, `--color-danger` / `-hover` / `-bg` / `-border`, `--color-critical` | États sémantiques (alertes, badges) |
+| `--color-text-inverse` | Texte sur fond coloré plein (boutons/badges) |
 | `--font-family` | Police unique de l'application |
 | `--radius-sm`, `--radius-md`, `--radius-pill` | Rayons de bordure (input/bouton, carte, pastille) |
 | `--shadow-card` | Ombre portée des cartes |
 | `--space-1` à `--space-5` | Échelle d'espacement (0.35rem à 2.5rem) |
 
-Les classes de formulaire partagées (`.form-label`, `.form-input`, `.form-hint`, `.form-error`)
-sont dans `apps/frontend/src/styles/_forms.scss`, importées globalement de la même façon. Elles
+Les classes de formulaire partagées (`.form-label`, `.form-input`, `.form-hint`) sont dans
+`apps/frontend/src/styles/_forms.scss`, importées globalement de la même façon. Elles
 s'appliquent directement à des `<label>`/`<input>` natifs liés par `formControlName` : pas de
 composant `ControlValueAccessor` dédié, le gain n'en vaut pas la complexité pour des formulaires
-aussi simples que ceux de ce projet.
+aussi simples que ceux de ce projet. Les erreurs de formulaire, elles, s'affichent via
+`<ev-alert severity="danger">`, pas une classe dédiée.
 
 La classe `.auth-page` (`apps/frontend/src/styles/_auth-page.scss`, importée globalement) porte
 le fond dégradé et le centrage commun aux pages d'authentification (`login`, `change-password`,
@@ -40,9 +42,12 @@ Dans `apps/frontend/src/app/shared/components/ui/`, chacun standalone, à import
 dans le tableau `imports` du composant qui l'utilise.
 
 - **`<ev-button>`** (`button/`) : `variant` (`primary` / `secondary` / `danger`, défaut
-  `primary`), `type` (`button` / `submit`, défaut `button`), `disabled`.
+  `primary`), `type` (`button` / `submit`, défaut `button`), `disabled`, `fullWidth` (défaut
+  `true` ; passer `false` pour un bouton qui ne doit pas occuper toute la largeur de son
+  conteneur, ex. une action isolée dans un en-tête).
   ```html
   <ev-button type="submit" [disabled]="form.invalid">Valider</ev-button>
+  <ev-button variant="secondary" [fullWidth]="false">Déconnexion</ev-button>
   ```
 - **`<ev-card>`** (`card/`) : conteneur à padding/rayon/ombre standard, sans input, tout est le
   contenu projeté (`<ng-content>`). Le style vit sur `:host` : une classe externe passée par le
@@ -55,8 +60,10 @@ dans le tableau `imports` du composant qui l'utilise.
   ```html
   <ev-alert severity="danger">Erreur : {{ message }}</ev-alert>
   ```
-- **`<ev-badge>`** (`badge/`) : `tone` (`success` / `warning` / `danger` / `neutral`, défaut
-  `neutral`), pastille à bord arrondi pour un statut court.
+- **`<ev-badge>`** (`badge/`) : `tone` (`success` / `warning` / `danger` / `critical` /
+  `neutral`, défaut `neutral`), pastille à bord arrondi pour un statut court. `danger` et
+  `critical` sont deux rouges distincts (`--color-danger` vs `--color-critical`, plus sombre) :
+  une sévérité `critical` ne doit pas se confondre visuellement avec une `high`.
   ```html
   <ev-badge tone="danger">critique</ev-badge>
   ```

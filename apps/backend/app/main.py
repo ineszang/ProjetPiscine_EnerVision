@@ -5,7 +5,6 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
-from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.requests import Request
@@ -61,20 +60,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         # ReDoc supporte nativement `info.x-logo` (extension Redocly) pour afficher un logo
         # en en-tête ; Swagger UI n'a pas d'equivalent, il ne reprend que le favicon.
+        openapi_original = application.openapi
+
         def openapi_avec_logo() -> dict[str, object]:
-            if application.openapi_schema:
-                return application.openapi_schema
-            schema = get_openapi(
-                title=application.title,
-                version=application.version,
-                summary=application.summary,
-                description=application.description,
-                routes=application.routes,
-                tags=application.openapi_tags,
-            )
+            schema = openapi_original()
             schema["info"]["x-logo"] = {"url": LOGO_URL, "altText": "EnerVision"}
-            application.openapi_schema = schema
-            return application.openapi_schema
+            return schema
 
         application.openapi = openapi_avec_logo  # type: ignore[method-assign]
 

@@ -40,7 +40,9 @@ export class ChangePassword {
       },
       error: () => {
         this.isLoading.set(false);
-        this.errorMessage.set(`Mot de passe actuel incorrect, ou nouveau mot de passe invalide (${this.passwordHint}).`);
+        this.errorMessage.set(
+          `Mot de passe actuel incorrect, ou nouveau mot de passe invalide (${this.passwordHint}).`,
+        );
       },
     });
   }

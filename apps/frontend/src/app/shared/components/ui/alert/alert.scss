@@ -17,7 +17,7 @@
 :host.ev-alert--warning {
   background: var(--color-warning-bg);
   border-color: var(--color-warning);
-  color: #92400e;
+  color: var(--color-warning-text);
 }
 
 :host.ev-alert--danger {
