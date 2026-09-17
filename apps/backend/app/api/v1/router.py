@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     health,
     readings,
     recommendations,
+    sensors,
     sites,
     stats,
     users,
@@ -29,4 +30,7 @@ api_router.include_router(
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"], responses=REPONSES_LECTEUR)
 api_router.include_router(
     readings.router, prefix="/readings", tags=["readings"], responses=REPONSES_LECTEUR
+)
+api_router.include_router(
+    sensors.router, prefix="/sensors", tags=["sensors"], responses=REPONSES_ADMIN
 )

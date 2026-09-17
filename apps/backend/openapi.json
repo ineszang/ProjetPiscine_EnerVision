@@ -1382,6 +1382,62 @@
           }
         }
       }
+    },
+    "/api/v1/sensors/status": {
+      "get": {
+        "tags": [
+          "sensors"
+        ],
+        "summary": "État de santé des capteurs par site",
+        "operationId": "get_status_api_v1_sensors_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorStatusResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droits insuffisants, ou mot de passe provisoire à changer quand `detail` vaut `password_change_required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1946,6 +2002,59 @@
         ],
         "title": "Role"
       },
+      "SensorDiagnosticResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "failing"
+            ],
+            "title": "Status"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since",
+            "description": "Horodatage de la dernière lecture reçue pour ce site. Ce n'est pas le début de la panne : l'historique ne permet pas de le dater sans requête supplémentaire."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "since"
+        ],
+        "title": "SensorDiagnosticResponse"
+      },
+      "SensorStatusResponse": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/SiteSensorStatusResponse"
+            },
+            "type": "array",
+            "title": "Sites"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "sites"
+        ],
+        "title": "SensorStatusResponse"
+      },
       "SiteResponse": {
         "properties": {
           "site_id": {
@@ -2004,6 +2113,66 @@
           "status"
         ],
         "title": "SiteResponse"
+      },
+      "SiteSensorStatusResponse": {
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "title": "Site Id"
+          },
+          "site_name": {
+            "type": "string",
+            "title": "Site Name"
+          },
+          "sensors": {
+            "$ref": "#/components/schemas/SiteSensorsResponse"
+          },
+          "overall": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "critical"
+            ],
+            "title": "Overall"
+          }
+        },
+        "type": "object",
+        "required": [
+          "site_id",
+          "site_name",
+          "sensors",
+          "overall"
+        ],
+        "title": "SiteSensorStatusResponse"
+      },
+      "SiteSensorsResponse": {
+        "properties": {
+          "consumption": {
+            "$ref": "#/components/schemas/SensorDiagnosticResponse"
+          },
+          "electrical": {
+            "$ref": "#/components/schemas/SensorDiagnosticResponse"
+          },
+          "temperature": {
+            "$ref": "#/components/schemas/SensorDiagnosticResponse"
+          },
+          "humidity": {
+            "$ref": "#/components/schemas/SensorDiagnosticResponse"
+          },
+          "network": {
+            "$ref": "#/components/schemas/SensorDiagnosticResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "consumption",
+          "electrical",
+          "temperature",
+          "humidity",
+          "network"
+        ],
+        "title": "SiteSensorsResponse"
       },
       "SiteSummaryResponse": {
         "properties": {
@@ -2337,6 +2506,10 @@
     {
       "name": "readings",
       "description": "Historique des lectures de consommation. Fenêtre temporelle plafonnée à 90 jours, 24 dernières heures par défaut si `start`/`end` sont omis. Accessible à partir du rôle `lecteur`."
+    },
+    {
+      "name": "sensors",
+      "description": "État de santé des capteurs par site. Réservé au rôle `admin`."
     }
   ]
 }

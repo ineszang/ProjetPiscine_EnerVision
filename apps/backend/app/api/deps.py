@@ -33,6 +33,7 @@ from app.services.alert import AlertService
 from app.services.auth import AuthService, LoginPolicy
 from app.services.reading import ReadingService
 from app.services.recommendation import RecommendationService
+from app.services.sensor import SensorService
 from app.services.site import SiteService
 from app.services.stats import StatsService
 from app.services.user import UserService
@@ -173,6 +174,13 @@ def get_reading_service(session: SessionDep) -> ReadingService:
 
 
 ReadingServiceDep = Annotated[ReadingService, Depends(get_reading_service)]
+
+
+def get_sensor_service(session: SessionDep) -> SensorService:
+    return SensorService(sites=SiteRepository(session), readings=ReadingRepository(session))
+
+
+SensorServiceDep = Annotated[SensorService, Depends(get_sensor_service)]
 
 
 async def get_current_principal(
