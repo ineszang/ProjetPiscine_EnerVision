@@ -1,5 +1,19 @@
 <div class="site-detail-placeholder">
+  <nav class="ev-breadcrumb">
+    <a routerLink="/dashboard">Tableau de bord</a>
+    <span>/</span>
+    <a routerLink="/sites">Sites</a>
+  </nav>
+
+  <header class="site-detail-placeholder__header">
+    <a routerLink="/dashboard" class="ev-brand-link">
+      <ev-brand class="site-detail-placeholder__logo" />
+    </a>
+    <h1>Site {{ siteId }}</h1>
+  </header>
+
   <ev-card>
-    <p>Détail du site {{ siteId }} : à venir (voir issue #51).</p>
+    <p>Le détail de ce site est à venir (voir issue #51).</p>
+    <a routerLink="/sites" class="ev-link">Retour aux sites</a>
   </ev-card>
 </div>

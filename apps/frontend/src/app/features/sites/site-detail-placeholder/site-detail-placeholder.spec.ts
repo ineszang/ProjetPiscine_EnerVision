@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { SiteDetailPlaceholder } from './site-detail-placeholder';
 
 describe('SiteDetailPlaceholder', () => {
@@ -7,6 +7,7 @@ describe('SiteDetailPlaceholder', () => {
     TestBed.configureTestingModule({
       imports: [SiteDetailPlaceholder],
       providers: [
+        provideRouter([]),
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { paramMap: convertToParamMap({ siteId: 'SITE001' }) } },
