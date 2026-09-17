@@ -56,3 +56,6 @@ jobs:
       # Le marqueur `integration` est exclu par défaut, donc aucune base n'est nécessaire ici.
       - name: Tests et couverture
         run: uv run pytest --cov-fail-under=85
+
+      - name: Audit de sécurité des dépendances
+        run: uv run --with pip-audit pip-audit
