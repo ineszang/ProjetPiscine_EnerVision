@@ -6,11 +6,12 @@ import { AuthService } from '../../../core/services/auth.service';
 import { Button } from '../../../shared/components/ui/button/button';
 import { Card } from '../../../shared/components/ui/card/card';
 import { Alert } from '../../../shared/components/ui/alert/alert';
+import { Brand } from '../../../shared/components/ui/brand/brand';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule, Button, Card, Alert],
+  imports: [ReactiveFormsModule, Button, Card, Alert, Brand],
   templateUrl: './login.html',
   styleUrl: './login.scss',
 })

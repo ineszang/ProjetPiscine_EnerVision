@@ -60,19 +60,27 @@ dans le tableau `imports` du composant qui l'utilise.
   ```html
   <ev-badge tone="danger">critique</ev-badge>
   ```
+- **`<ev-brand>`** (`brand/`) : lockup icône + « EnerVision », sans input. La taille se pilote
+  entièrement via `font-size` (l'icône et le texte sont exprimés en `em`, donc ils grossissent
+  ensemble en gardant le même écart proportionnel) : une page l'agrandit simplement avec
+  `ev-brand { font-size: 2.1rem; }`. Ne pas recomposer icône + texte en une seule image bitmap :
+  un essai en ce sens (recadrage pixel de l'asset source) a produit un rendu bruité et un espacement
+  figé, impossible à ajuster proprement.
+  ```html
+  <ev-brand />
+  ```
 
 ## Logo
 
-`apps/frontend/public/logo.png` (192×128, recadré et compressé depuis l'asset source du projet)
-est affiché en en-tête des pages d'authentification et du tableau de bord :
-```html
-<img src="logo.png" alt="EnerVision" class="auth-logo" />
-```
-Le favicon reste `apps/frontend/public/favicon.ico` (non remplacé par ce chantier).
+L'icône seule (sans le mot-symbole), recadrée depuis l'asset source du projet, vit à deux
+endroits qui doivent rester synchronisés si le logo change un jour :
+`apps/frontend/public/logo-icon.png` (utilisée par `<ev-brand>`) et
+`apps/backend/app/static/logo-icon.png` (référencée par `/docs`, favicon Swagger, et `/redoc` via
+l'extension `x-logo` du schéma OpenAPI, voir `app/main.py`). Le mot-symbole « EnerVision » n'est
+jamais une image : c'est le texte du composant `<ev-brand>`, en police système.
 
-Côté backend, l'icône seule (sans le mot-symbole) est servie depuis
-`apps/backend/app/static/logo-icon.png` et référencée par `/docs` (favicon Swagger) et `/redoc`
-(logo natif via l'extension `x-logo` du schéma OpenAPI, voir `app/main.py`).
+Le favicon `apps/frontend/public/favicon.ico` est généré depuis la même icône (multi-tailles
+16 à 256px).
 
 ## Règle pour toute nouvelle page
 

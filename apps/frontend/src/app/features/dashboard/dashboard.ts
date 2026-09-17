@@ -13,6 +13,7 @@ import { Alert, AlertSeverity } from '../../shared/models/alert.model';
 import { Card } from '../../shared/components/ui/card/card';
 import { Alert as EvAlert } from '../../shared/components/ui/alert/alert';
 import { Badge, BadgeTone } from '../../shared/components/ui/badge/badge';
+import { Brand } from '../../shared/components/ui/brand/brand';
 
 const REFRESH_INTERVAL_MS = 10000;
 const UNAVAILABLE_MESSAGE =
@@ -28,7 +29,7 @@ const TON_PAR_SEVERITE: Record<AlertSeverity, BadgeTone> = {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DecimalPipe, ConsumptionGauge, SiteLoadChart, Card, EvAlert, Badge],
+  imports: [DecimalPipe, ConsumptionGauge, SiteLoadChart, Card, EvAlert, Badge, Brand],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
 })
