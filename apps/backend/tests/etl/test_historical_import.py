@@ -104,9 +104,7 @@ def test_validate_source_accepts_valid_dataset():
 
 
 def test_validate_source_rejects_missing_column():
-    frame = make_dataframe().drop(
-        columns=["consumption_kwh"]
-    )
+    frame = make_dataframe().drop(columns=["consumption_kwh"])
 
     with pytest.raises(
         ValueError,
@@ -234,10 +232,7 @@ def test_build_reading_batch_keeps_missing_values():
 
     assert row["temperature_celsius"] is None
 
-    assert (
-        "missing:temperature_celsius"
-        in row["null_reasons"]
-    )
+    assert "missing:temperature_celsius" in row["null_reasons"]
 
     # RAW ingestion : aucune imputation.
     assert row["imputed_values"] is None

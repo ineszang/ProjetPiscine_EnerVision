@@ -68,11 +68,7 @@ def classify_quality(
     Les valeurs NULL sont conservées. On ne cherche pas ici à
     déterminer la cause physique exacte de leur absence.
     """
-    missing = [
-        column
-        for column in MEASURE_COLUMNS
-        if pd.isna(row.get(column))
-    ]
+    missing = [column for column in MEASURE_COLUMNS if pd.isna(row.get(column))]
 
     if not missing:
         quality = "good"
@@ -83,10 +79,7 @@ def classify_quality(
     else:
         quality = "partial"
 
-    reasons = [
-        f"missing:{column}"
-        for column in missing
-    ]
+    reasons = [f"missing:{column}" for column in missing]
 
     return quality, reasons
 
@@ -96,57 +89,33 @@ def validate_source(
     metadata: dict[str, Any],
 ) -> None:
     """Valide le dataset avant tout chargement en base."""
-    missing_columns = REQUIRED_COLUMNS.difference(
-        frame.columns
-    )
+    missing_columns = REQUIRED_COLUMNS.difference(frame.columns)
 
     if missing_columns:
-        raise ValueError(
-            "Colonnes obligatoires absentes : "
-            f"{sorted(missing_columns)}"
-        )
+        raise ValueError(f"Colonnes obligatoires absentes : {sorted(missing_columns)}")
 
     expected_records = int(metadata["total_records"])
 
     if len(frame) != expected_records:
-        raise ValueError(
-            "Nombre de lignes inattendu : "
-            f"{len(frame)} au lieu de "
-            f"{expected_records}"
-        )
+        raise ValueError(f"Nombre de lignes inattendu : {len(frame)} au lieu de {expected_records}")
 
     expected_sites = set(metadata["sites"].keys())
     actual_sites = set(frame["site_id"].unique())
 
     if actual_sites != expected_sites:
         raise ValueError(
-            "Sites incohérents. "
-            f"Attendus={sorted(expected_sites)}, "
-            f"trouvés={sorted(actual_sites)}"
+            f"Sites incohérents. Attendus={sorted(expected_sites)}, trouvés={sorted(actual_sites)}"
         )
 
-    duplicated = frame.duplicated(
-        subset=["site_id", "timestamp"]
-    ).sum()
+    duplicated = frame.duplicated(subset=["site_id", "timestamp"]).sum()
 
     if duplicated:
-        raise ValueError(
-            f"{duplicated} doublons "
-            "(site_id, timestamp) détectés"
-        )
+        raise ValueError(f"{duplicated} doublons (site_id, timestamp) détectés")
 
-    static_variants = (
-        frame.groupby("site_id")[
-            ["site_type", "site_name"]
-        ]
-        .nunique()
-    )
+    static_variants = frame.groupby("site_id")[["site_type", "site_name"]].nunique()
 
     if (static_variants > 1).any().any():
-        raise ValueError(
-            "Un site possède plusieurs valeurs "
-            "de site_type ou site_name."
-        )
+        raise ValueError("Un site possède plusieurs valeurs de site_type ou site_name.")
 
     # Vérifie également que tous les timestamps
     # peuvent être interprétés correctement.
@@ -168,9 +137,7 @@ def normalize_timestamps(
     """
     normalized = frame.copy()
 
-    normalized["_source_timestamp"] = (
-        normalized["timestamp"]
-    )
+    normalized["_source_timestamp"] = normalized["timestamp"]
 
     timestamps = pd.to_datetime(
         normalized["timestamp"],
@@ -178,13 +145,9 @@ def normalize_timestamps(
     )
 
     if timestamps.dt.tz is None:
-        timestamps = timestamps.dt.tz_localize(
-            source_timezone
-        )
+        timestamps = timestamps.dt.tz_localize(source_timezone)
     else:
-        timestamps = timestamps.dt.tz_convert(
-            source_timezone
-        )
+        timestamps = timestamps.dt.tz_convert(source_timezone)
 
     normalized["timestamp"] = timestamps
 
@@ -202,7 +165,7 @@ def to_json_value(value: Any) -> Any:
     try:
         if pd.isna(value):
             return None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         pass
 
     if isinstance(value, pd.Timestamp):
@@ -247,27 +210,13 @@ async def ensure_dataset(
         return int(existing)
 
     metadata_summary = {
-        "generator_version": metadata.get(
-            "generator_version"
-        ),
-        "total_sites": metadata.get(
-            "total_sites"
-        ),
-        "total_records": metadata.get(
-            "total_records"
-        ),
-        "date_range": metadata.get(
-            "date_range"
-        ),
-        "frequency": metadata.get(
-            "frequency"
-        ),
-        "null_injection_enabled": metadata.get(
-            "null_injection_enabled"
-        ),
-        "null_strategies": metadata.get(
-            "null_strategies"
-        ),
+        "generator_version": metadata.get("generator_version"),
+        "total_sites": metadata.get("total_sites"),
+        "total_records": metadata.get("total_records"),
+        "date_range": metadata.get("date_range"),
+        "frequency": metadata.get("frequency"),
+        "null_injection_enabled": metadata.get("null_injection_enabled"),
+        "null_strategies": metadata.get("null_strategies"),
         "importer": "historical_import_v1",
     }
 
@@ -292,10 +241,7 @@ async def ensure_dataset(
             """
         ),
         {
-            "dataset_name": (
-                "EnerVision historical dataset "
-                "2023-2024"
-            ),
+            "dataset_name": ("EnerVision historical dataset 2023-2024"),
             "archive_sha256": sha256,
             "storage_uri": storage_uri,
             "source_timezone": source_timezone,
@@ -322,12 +268,8 @@ async def upsert_sites(
                 "site_name",
             ]
         ]
-        .drop_duplicates(
-            subset=["site_id"]
-        )
-        .to_dict(
-            orient="records"
-        )
+        .drop_duplicates(subset=["site_id"])
+        .to_dict(orient="records")
     )
 
     await connection.execute(
@@ -363,12 +305,8 @@ def build_reading_batch(
     """
     rows: list[dict[str, Any]] = []
 
-    for record in chunk.to_dict(
-        orient="records"
-    ):
-        quality, reasons = classify_quality(
-            record
-        )
+    for record in chunk.to_dict(orient="records"):
+        quality, reasons = classify_quality(record)
 
         raw_data = {
             column: to_json_value(value)
@@ -378,9 +316,7 @@ def build_reading_batch(
 
         # Dans raw_data, on conserve le timestamp
         # exactement tel qu'il était dans le CSV.
-        raw_data["timestamp"] = to_json_value(
-            record["_source_timestamp"]
-        )
+        raw_data["timestamp"] = to_json_value(record["_source_timestamp"])
 
         rows.append(
             {
@@ -388,59 +324,25 @@ def build_reading_batch(
                 "timestamp": record["timestamp"],
                 "source": SOURCE_NAME,
                 "dataset_id": dataset_id,
-
                 # Non fourni par le dataset historique.
                 "consumption_kw": None,
-
-                "consumption_kwh": to_json_value(
-                    record["consumption_kwh"]
-                ),
-                "consumption_euros": to_json_value(
-                    record["consumption_euros"]
-                ),
-
+                "consumption_kwh": to_json_value(record["consumption_kwh"]),
+                "consumption_euros": to_json_value(record["consumption_euros"]),
                 # Non fournis par le CSV historique.
                 "voltage_v": None,
                 "current_a": None,
                 "power_factor": None,
-
-                "temperature_celsius": (
-                    to_json_value(
-                        record[
-                            "temperature_celsius"
-                        ]
-                    )
-                ),
-                "humidity_percent": (
-                    to_json_value(
-                        record[
-                            "humidity_percent"
-                        ]
-                    )
-                ),
-                "solar_irradiance_wm2": (
-                    to_json_value(
-                        record[
-                            "solar_irradiance_wm2"
-                        ]
-                    )
-                ),
-
-                "is_working_hours": bool(
-                    record[
-                        "is_working_hours"
-                    ]
-                ),
-
+                "temperature_celsius": (to_json_value(record["temperature_celsius"])),
+                "humidity_percent": (to_json_value(record["humidity_percent"])),
+                "solar_irradiance_wm2": (to_json_value(record["solar_irradiance_wm2"])),
+                "is_working_hours": bool(record["is_working_hours"]),
                 "data_quality": quality,
                 "null_reasons": reasons,
-
                 # Aucune imputation pendant l'ingestion RAW.
                 # Les valeurs manquantes sont conservées telles quelles
                 # afin de préserver la donnée source.
                 "imputed_values": None,
                 "imputation_method": None,
-
                 # Conservation de la donnée source
                 # pour la traçabilité.
                 "raw_data": json.dumps(
@@ -519,56 +421,29 @@ async def import_historical(
     3. Transform
     4. Load
     """
-    metadata = load_metadata(
-        metadata_path
-    )
+    metadata = load_metadata(metadata_path)
 
-    frame = pd.read_csv(
-        csv_path
-    )
+    frame = pd.read_csv(csv_path)
 
     validate_source(
         frame,
         metadata,
     )
 
-    print(
-        f"Lignes             : {len(frame)}"
-    )
-    print(
-        "Sites              : "
-        f"{frame['site_id'].nunique()}"
-    )
-    print(
-        "Période            : "
-        f"{frame['timestamp'].min()} -> "
-        f"{frame['timestamp'].max()}"
-    )
-    print(
-        "Doublons           : "
-        f"{frame.duplicated(['site_id', 'timestamp']).sum()}"
-    )
+    print(f"Lignes             : {len(frame)}")
+    print(f"Sites              : {frame['site_id'].nunique()}")
+    print(f"Période            : {frame['timestamp'].min()} -> {frame['timestamp'].max()}")
+    print(f"Doublons           : {frame.duplicated(['site_id', 'timestamp']).sum()}")
 
     print("\nValeurs NULL :")
-    print(
-        frame[
-            MEASURE_COLUMNS
-        ].isna().sum()
-    )
+    print(frame[MEASURE_COLUMNS].isna().sum())
 
-    sha256 = compute_sha256(
-        csv_path
-    )
+    sha256 = compute_sha256(csv_path)
 
-    print(
-        f"\nSHA-256            : {sha256}"
-    )
+    print(f"\nSHA-256            : {sha256}")
 
     if dry_run:
-        print(
-            "\nDry-run terminé : "
-            "aucune donnée écrite."
-        )
+        print("\nDry-run terminé : aucune donnée écrite.")
         return
 
     normalized = normalize_timestamps(
@@ -613,18 +488,14 @@ async def import_historical(
                 },
             )
 
-            before = int(
-                result.scalar_one()
-            )
+            before = int(result.scalar_one())
 
             for start in range(
                 0,
                 len(normalized),
                 batch_size,
             ):
-                chunk = normalized.iloc[
-                    start : start + batch_size
-                ]
+                chunk = normalized.iloc[start : start + batch_size]
 
                 rows = build_reading_batch(
                     chunk,
@@ -641,11 +512,7 @@ async def import_historical(
                     len(normalized),
                 )
 
-                print(
-                    "Chargement : "
-                    f"{loaded}/"
-                    f"{len(normalized)}"
-                )
+                print(f"Chargement : {loaded}/{len(normalized)}")
 
             result = await connection.execute(
                 text(
@@ -662,29 +529,13 @@ async def import_historical(
                 },
             )
 
-            after = int(
-                result.scalar_one()
-            )
+            after = int(result.scalar_one())
 
-            print(
-                "\nImport terminé."
-            )
-            print(
-                "dataset_id         : "
-                f"{dataset_id}"
-            )
-            print(
-                "lectures avant     : "
-                f"{before}"
-            )
-            print(
-                "lectures après     : "
-                f"{after}"
-            )
-            print(
-                "nouvelles lectures : "
-                f"{after - before}"
-            )
+            print("\nImport terminé.")
+            print(f"dataset_id         : {dataset_id}")
+            print(f"lectures avant     : {before}")
+            print(f"lectures après     : {after}")
+            print(f"nouvelles lectures : {after - before}")
 
     finally:
         await engine.dispose()
@@ -692,11 +543,7 @@ async def import_historical(
 
 def parse_args() -> argparse.Namespace:
     """Définit les arguments CLI de l'import."""
-    parser = argparse.ArgumentParser(
-        description=(
-            "Import historique EnerVision"
-        )
-    )
+    parser = argparse.ArgumentParser(description=("Import historique EnerVision"))
 
     parser.add_argument(
         "--csv",
@@ -709,38 +556,26 @@ def parse_args() -> argparse.Namespace:
         "--metadata",
         type=Path,
         required=True,
-        help=(
-            "Chemin vers le fichier "
-            "dataset_metadata.json."
-        ),
+        help=("Chemin vers le fichier dataset_metadata.json."),
     )
 
     parser.add_argument(
         "--source-timezone",
         default="UTC",
-        help=(
-            "Timezone associée aux timestamps "
-            "du dataset. Défaut : UTC."
-        ),
+        help=("Timezone associée aux timestamps du dataset. Défaut : UTC."),
     )
 
     parser.add_argument(
         "--batch-size",
         type=int,
         default=1000,
-        help=(
-            "Nombre de lignes insérées "
-            "par batch. Défaut : 1000."
-        ),
+        help=("Nombre de lignes insérées par batch. Défaut : 1000."),
     )
 
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help=(
-            "Valide les données sans "
-            "écrire en base."
-        ),
+        help=("Valide les données sans écrire en base."),
     )
 
     return parser.parse_args()
@@ -751,26 +586,19 @@ def main() -> None:
     args = parse_args()
 
     if args.batch_size <= 0:
-        raise ValueError(
-            "--batch-size doit être "
-            "strictement supérieur à 0."
-        )
+        raise ValueError("--batch-size doit être strictement supérieur à 0.")
 
     # resolve() est volontairement exécuté ici,
     # dans la partie synchrone du programme.
     # Cela évite une opération filesystem bloquante
     # à l'intérieur d'une fonction async.
-    storage_uri = (
-        args.csv.resolve().as_uri()
-    )
+    storage_uri = args.csv.resolve().as_uri()
 
     asyncio.run(
         import_historical(
             csv_path=args.csv,
             metadata_path=args.metadata,
-            source_timezone=(
-                args.source_timezone
-            ),
+            source_timezone=(args.source_timezone),
             batch_size=args.batch_size,
             dry_run=args.dry_run,
             storage_uri=storage_uri,
