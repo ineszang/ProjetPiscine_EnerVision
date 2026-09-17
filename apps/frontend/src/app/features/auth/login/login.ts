@@ -1,8 +1,9 @@
 import { Component, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../../core/services/auth.service';
+import { MESSAGE_LIEN_RESET_INVALIDE, MOTIF_LIEN_RESET_INVALIDE } from '../../../shared/models/auth-redirect-reason';
 
 @Component({
   selector: 'app-login',
@@ -15,8 +16,13 @@ export class Login {
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
-  errorMessage = signal<string | null>(null);
+  errorMessage = signal<string | null>(
+    this.route.snapshot.queryParamMap.get('motif') === MOTIF_LIEN_RESET_INVALIDE
+      ? MESSAGE_LIEN_RESET_INVALIDE
+      : null,
+  );
   retryAfterSeconds = signal<number | null>(null);
   isLoading = signal(false);
 

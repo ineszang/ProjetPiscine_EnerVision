@@ -1,9 +1,10 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../../core/services/auth.service';
 import { passwordValidators, PASSWORD_HINT } from '../../../shared/validators/password.validator';
+import { MOTIF_LIEN_RESET_INVALIDE } from '../../../shared/models/auth-redirect-reason';
 
 @Component({
   selector: 'app-reset-password',
@@ -12,7 +13,7 @@ import { passwordValidators, PASSWORD_HINT } from '../../../shared/validators/pa
   templateUrl: './reset-password.html',
   styleUrl: './reset-password.scss',
 })
-export class ResetPassword {
+export class ResetPassword implements OnInit {
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
   private router = inject(Router);
@@ -29,6 +30,12 @@ export class ResetPassword {
     new_password: ['', passwordValidators],
   });
 
+  ngOnInit(): void {
+    if (!this.hasToken) {
+      this.redirigeVersLoginLienInvalide();
+    }
+  }
+
   onSubmit(): void {
     if (this.form.invalid || !this.hasToken) return;
 
@@ -42,11 +49,15 @@ export class ResetPassword {
       error: (error: HttpErrorResponse) => {
         this.isLoading.set(false);
         if (error.status === 400) {
-          this.errorMessage.set('Ce lien est invalide, déjà utilisé, ou a expiré. Redemandez-en un.');
+          this.redirigeVersLoginLienInvalide();
           return;
         }
         this.errorMessage.set(`Nouveau mot de passe invalide (${this.passwordHint}).`);
       },
     });
+  }
+
+  private redirigeVersLoginLienInvalide(): void {
+    this.router.navigate(['/login'], { queryParams: { motif: MOTIF_LIEN_RESET_INVALIDE } });
   }
 }

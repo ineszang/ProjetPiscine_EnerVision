@@ -6,6 +6,7 @@ import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { ResetPassword } from './reset-password';
 import { AuthService } from '../../../core/services/auth.service';
+import { MOTIF_LIEN_RESET_INVALIDE } from '../../../shared/models/auth-redirect-reason';
 
 function configure(token: string | null) {
   return TestBed.configureTestingModule({
@@ -22,11 +23,17 @@ function configure(token: string | null) {
 }
 
 describe('ResetPassword', () => {
-  it("signale un lien incomplet quand le jeton est absent de l'URL", async () => {
+  it("redirige vers /login avec le motif standard quand le jeton est absent de l'URL", async () => {
     await configure(null);
     const fixture = TestBed.createComponent(ResetPassword);
+    const router = TestBed.inject(Router) as unknown as { navigate: ReturnType<typeof vi.fn> };
+
+    fixture.detectChanges();
 
     expect(fixture.componentInstance.hasToken).toBe(false);
+    expect(router.navigate).toHaveBeenCalledWith(['/login'], {
+      queryParams: { motif: MOTIF_LIEN_RESET_INVALIDE },
+    });
   });
 
   it('ne soumet pas si le mot de passe ne respecte pas la politique de complexité', async () => {
@@ -59,13 +66,29 @@ describe('ResetPassword', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
   });
 
-  it('affiche un message dédié quand le lien est invalide ou expiré', async () => {
+  it('redirige vers /login avec le motif standard quand le lien est invalide ou expiré', async () => {
     await configure('un-secret-perime');
     const fixture = TestBed.createComponent(ResetPassword);
     const component = fixture.componentInstance;
     const auth = TestBed.inject(AuthService) as unknown as { resetPassword: ReturnType<typeof vi.fn> };
+    const router = TestBed.inject(Router) as unknown as { navigate: ReturnType<typeof vi.fn> };
     component.form.setValue({ new_password: 'Un-nouveau-mot-de-passe1!' });
     auth.resetPassword.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400 })));
+
+    component.onSubmit();
+
+    expect(router.navigate).toHaveBeenCalledWith(['/login'], {
+      queryParams: { motif: MOTIF_LIEN_RESET_INVALIDE },
+    });
+  });
+
+  it('affiche un message générique sur une erreur inattendue (pas 400)', async () => {
+    await configure('un-secret-opaque');
+    const fixture = TestBed.createComponent(ResetPassword);
+    const component = fixture.componentInstance;
+    const auth = TestBed.inject(AuthService) as unknown as { resetPassword: ReturnType<typeof vi.fn> };
+    component.form.setValue({ new_password: 'Un-nouveau-mot-de-passe1!' });
+    auth.resetPassword.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
 
     component.onSubmit();
 
