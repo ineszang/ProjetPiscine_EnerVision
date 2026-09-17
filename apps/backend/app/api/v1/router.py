@@ -1,7 +1,16 @@
 from fastapi import APIRouter
 
 from app.api.openapi import REPONSE_SERVEUR, REPONSES_ADMIN, REPONSES_LECTEUR
-from app.api.v1.endpoints import alerts, auth, health, recommendations, sites, stats, users
+from app.api.v1.endpoints import (
+    alerts,
+    auth,
+    health,
+    readings,
+    recommendations,
+    sites,
+    stats,
+    users,
+)
 
 api_router = APIRouter(responses=REPONSE_SERVEUR)
 api_router.include_router(health.router, prefix="/health", tags=["health"])
@@ -18,3 +27,6 @@ api_router.include_router(
     responses=REPONSES_LECTEUR,
 )
 api_router.include_router(stats.router, prefix="/stats", tags=["stats"], responses=REPONSES_LECTEUR)
+api_router.include_router(
+    readings.router, prefix="/readings", tags=["readings"], responses=REPONSES_LECTEUR
+)

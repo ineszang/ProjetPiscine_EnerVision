@@ -71,6 +71,14 @@ TAGS: Final[list[dict[str, Any]]] = [
         "description": "Statistiques agrégées de consommation. Accessible à partir du rôle "
         "`lecteur`.",
     },
+    {
+        "name": "readings",
+        "description": (
+            "Historique des lectures de consommation. Fenêtre temporelle plafonnée à 90 jours, "
+            "24 dernières heures par défaut si `start`/`end` sont omis. Accessible à partir du "
+            "rôle `lecteur`."
+        ),
+    },
 ]
 
 cookie_de_rafraichissement = APIKeyCookie(

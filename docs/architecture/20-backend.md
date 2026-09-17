@@ -146,6 +146,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | GET | `/api/v1/recommendations` | Liste les recommandations. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation. `lecteur` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/stats/summary` | Résume la consommation instantanée du parc. `lecteur` | 401, 403, 500 |
+| GET | `/api/v1/readings` | Historique des lectures, filtrable par `site_id`, fenêtre `start`/`end` (24h par défaut, 90 jours maximum) et paginé par `limit`/`offset`. `lecteur` | 400, 401, 403, 422, 500 |
 | GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
 | GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
 
@@ -158,19 +159,32 @@ Les codes de la dernière colonne sont ceux que le schéma **déclare**, et le f
 donc de modifier la liste dans ce fichier de test.
 
 `GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit repris pour
-`GET /alerts` puis pour les suivantes (`reading`, `dataset`, `prediction`, `recommendation`) : les
-quatre couches `endpoints → services → repositories → models` y sont toutes présentes, sur des
-tables déjà créées par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`,
-contrairement aux routes d'administration qui exigent `admin`. `SiteRepository` lit par
-`AsyncSession.scalar()` (une ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par
-`execute()`, ce qui la rend testable par la fixture `fake_session` au niveau endpoint sans base
-réelle. `GET /recommendations` et `GET /recommendations/{recommendation_id}` reprennent le même
-gabarit à la lettre, `recommendation_id` étant un entier plutôt qu'un texte. Une recommandation ne
-porte pas `site_id` : elle remonte à un site par sa seule `alert_id`, `alert` n'étant pas encore
-exposée. `GET /stats/summary` agrège deux repositories (`SiteRepository`, `ReadingRepository`)
-dans un service dédié plutôt que d'exposer une table : elle n'entre donc pas dans ce gabarit
-route-par-table. Le contrat détaillé pour le frontend est dans
+`GET /alerts` puis pour les suivantes (`dataset`, `prediction`) : les quatre couches
+`endpoints → services → repositories → models` y sont toutes présentes, sur des tables déjà créées
+par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`, contrairement aux
+routes d'administration qui exigent `admin`. `SiteRepository` lit par `AsyncSession.scalar()` (une
+ligne) et `AsyncSession.scalars()` (plusieurs lignes) plutôt que par `execute()`, ce qui la rend
+testable par la fixture `fake_session` au niveau endpoint sans base réelle. `GET /recommendations`
+et `GET /recommendations/{recommendation_id}` reprennent le même gabarit à la lettre,
+`recommendation_id` étant un entier plutôt qu'un texte. Une recommandation ne porte pas `site_id` :
+elle remonte à un site par sa seule `alert_id`, `alert` n'étant pas encore exposée. `GET
+/stats/summary` agrège deux repositories (`SiteRepository`, `ReadingRepository`) dans un service
+dédié plutôt que d'exposer une table : elle n'entre donc pas dans ce gabarit route-par-table. Le
+contrat détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
+
+`GET /readings` reprend le même gabarit mais s'en écarte sur un point : `reading` est l'hypertable,
+donc la seule table métier pouvant porter des années d'historique, ce que `docs/architecture/
+owasp-traceabilite.md` documentait comme un risque ouvert (API4, aucune pagination plafonnée ni
+fenêtre temporelle maximale). `ReadingService` porte donc une couche de validation absente des
+autres routes de lecture : `start`/`end` sont optionnels (24 dernières heures par défaut si les
+deux sont omis, l'un défaut par rapport à l'autre sinon), l'écart entre les deux est plafonné à 90
+jours (`FENETRE_MAXIMALE`), et `limit`/`offset` (défaut 500, plafond 2000) empêchent qu'une fenêtre
+large mais peu dense reste malgré tout coûteuse. Un dépassement de plafond répond `400` (règle
+métier, portée par le service) plutôt que `422` (réservé à la validation structurelle de FastAPI,
+par exemple `limit` hors bornes). Un datetime sans fuseau dans `start`/`end` est traité comme de
+l'UTC plutôt que rejeté : le comparer tel quel à `reading.timestamp` (`timestamptz`) échouerait
+côté pilote, en `500` plutôt qu'un refus propre.
 
 ### `/health/ready`
 
@@ -246,8 +260,8 @@ Les modèles de `app/schemas/errors.py` décrivent ce que les gestionnaires renv
 
 ### Ajouter une route métier
 
-Checklist pour toute nouvelle route sur le gabarit `sites`/`alerts`/`recommendations`/`stats`
-(`reading`, `dataset`, `prediction`) :
+Checklist pour toute nouvelle route sur le gabarit `sites`/`alerts`/`recommendations`/`stats`/
+`readings` (`dataset`, `prediction`) :
 
 1. Composer ses `responses=` depuis `app/api/openapi.py` : `REPONSES_LECTEUR`/`REPONSES_ADMIN`
    au niveau de l'`include_router()` du routeur, `REPONSE_VALIDATION` et les codes locaux
@@ -324,7 +338,9 @@ Trois fichiers méritent d'être connus avant de toucher à l'authentification :
   agir sur le site B. C'est la limite connue du modèle, et le risque BOLA du top 10 API.
 - **Rôles PostgreSQL cantonnés** pour l'ETL et le travail d'apprentissage, plus le `REVOKE` sur
   `audit_log`. Dette assumée, décrite dans les ADR 0003 et 0004.
-- **Pagination et fenêtrage** des lectures de séries temporelles, qui conditionnent la forme des
-  endpoints métier. Sans plafond dur, une requête sur dix ans d'historique suffit à faire tomber
-  l'API.
+- **Pagination et fenêtrage** : posés sur `GET /readings` (fenêtre plafonnée à 90 jours,
+  `limit`/`offset` plafonné à 2000), mais toujours en `limit`/`offset` simple — pas de curseur ni
+  de plan de secours si un `offset` élevé sur une fenêtre dense devient lent en pratique.
+  `statement_timeout` reste absent au niveau de la connexion, donc rien n'empêche une requête
+  individuelle de tourner longtemps si les plafonds au-dessus d'elle s'avéraient insuffisants.
 - **Politique de versionnement de l'API** au-delà du préfixe `/api/v1`.
