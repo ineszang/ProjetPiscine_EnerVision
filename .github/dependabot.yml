@@ -33,3 +33,8 @@ updates:
     directory: "/apps/backend"
     schedule:
       interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/frontend"
+    schedule:
+      interval: "weekly"
