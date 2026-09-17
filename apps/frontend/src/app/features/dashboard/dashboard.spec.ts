@@ -4,6 +4,8 @@ import { of, throwError } from 'rxjs';
 import { Dashboard } from './dashboard';
 import { StatsService } from '../../core/services/stats.service';
 import { AlertsService } from '../../core/services/alerts.service';
+import {AuthService} from '../../core/services/auth.service';
+import {Router} from '@angular/router';
 
 vi.mock('chart.js', () => {
   class ChartMock {
@@ -92,4 +94,58 @@ describe('Dashboard', () => {
 
     expect(fixture.componentInstance.alerts().length).toBe(0);
   });
+
+  it('appelle logout et redirige vers /login au clic sur le bouton de déconnexion', () => {
+  const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
+  const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
+  const authMock = { logout: vi.fn().mockReturnValue(of(undefined)), clearSession: vi.fn() };
+  const routerMock = { navigate: vi.fn() };
+
+  TestBed.configureTestingModule({
+    imports: [Dashboard],
+    providers: [
+      { provide: StatsService, useValue: statsMock },
+      { provide: AlertsService, useValue: alertsMock },
+      { provide: AuthService, useValue: authMock },
+      { provide: Router, useValue: routerMock },
+    ],
+  });
+
+  const fixture = TestBed.createComponent(Dashboard);
+  fixture.detectChanges();
+
+  const button = fixture.nativeElement.querySelector('.logout-button');
+  button.click();
+
+  expect(authMock.logout).toHaveBeenCalled();
+  expect(routerMock.navigate).toHaveBeenCalledWith(['/login']);
+  });
+  it('déconnecte localement et redirige vers /login même si logout échoue côté réseau', () => {
+  const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
+  const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
+  const authMock = {
+    logout: vi.fn().mockReturnValue(throwError(() => new Error('réseau indisponible'))),
+    clearSession: vi.fn(),
+  };
+  const routerMock = { navigate: vi.fn() };
+
+  TestBed.configureTestingModule({
+    imports: [Dashboard],
+    providers: [
+      { provide: StatsService, useValue: statsMock },
+      { provide: AlertsService, useValue: alertsMock },
+      { provide: AuthService, useValue: authMock },
+      { provide: Router, useValue: routerMock },
+    ],
+  });
+
+  const fixture = TestBed.createComponent(Dashboard);
+  fixture.detectChanges();
+
+  const button = fixture.nativeElement.querySelector('.logout-button');
+  button.click();
+
+  expect(authMock.clearSession).toHaveBeenCalled();
+  expect(routerMock.navigate).toHaveBeenCalledWith(['/login']);
+});
 });
