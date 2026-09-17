@@ -43,12 +43,6 @@ jobs:
         working-directory: apps/frontend
       - run: npm test --watch=false --code-coverage --coverageReporters=lcov
         working-directory: apps/frontend
-      - name: Download frontend coverage
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-coverage
-          path: apps/frontend/coverage
-
   sonarqube:
     needs: [build, test]
     name: SonarQube
