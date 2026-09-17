@@ -18,6 +18,10 @@ ROUTES_PUBLIQUES = frozenset(
         ("POST", "/api/v1/auth/login"),
         # Sans cookie, la déconnexion ne fait rien et répond 204 : elle est idempotente.
         ("POST", "/api/v1/auth/logout"),
+        ("POST", "/api/v1/auth/forgot-password"),
+        # Protégée par le jeton dans le corps de la requête, pas par un `Principal` : aucune
+        # authentification préalable ne s'applique, c'est la validité du jeton qui tranche.
+        ("POST", "/api/v1/auth/reset-password"),
         ("GET", "/metrics"),
     }
 )

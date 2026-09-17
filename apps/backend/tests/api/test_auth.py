@@ -11,6 +11,7 @@ from app.core.roles import AccountKind, Role
 from app.services.auth import (
     AuthenticatedSession,
     InvalidCredentialsError,
+    InvalidOrExpiredResetTokenError,
     RateLimitedError,
     SessionRejectedError,
 )
@@ -35,6 +36,14 @@ class FauxService:
 
     async def logout(self, **_: object) -> None:
         return None
+
+    async def request_password_reset(self, **_: object) -> None:
+        if self._erreur is not None:
+            raise self._erreur
+        return None
+
+    async def confirm_password_reset(self, **_: object) -> AuthenticatedSession:
+        return await self.authenticate()
 
     async def authenticate(self, **_: object) -> AuthenticatedSession:
         if self._erreur is not None:
@@ -206,3 +215,94 @@ async def test_a_cookie_bearing_route_accepts_a_request_without_origin(
     response = await client.post("/api/v1/auth/logout")
 
     assert response.status_code != 403
+
+
+async def test_forgot_password_answers_202_when_the_account_exists(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/forgot-password", json={"email": "operateur@enervision.fr"}
+    )
+
+    assert response.status_code == 202
+    assert response.headers["cache-control"] == "no-store"
+
+
+async def test_forgot_password_answers_202_identically_when_the_account_is_unknown(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/forgot-password", json={"email": "inconnu@enervision.fr"}
+    )
+
+    assert response.status_code == 202
+
+
+async def test_forgot_password_returns_429_with_a_retry_after_when_the_rate_limit_is_reached(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    fake_auth_service[0] = RateLimitedError(900)
+
+    response = await client.post(
+        "/api/v1/auth/forgot-password", json={"email": "operateur@enervision.fr"}
+    )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "900"
+
+
+async def test_forgot_password_rejects_a_malformed_email(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post("/api/v1/auth/forgot-password", json={"email": "pas-un-email"})
+
+    assert response.status_code == 422
+
+
+async def test_reset_password_returns_the_token_and_the_cookie_on_success(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": "un-secret-opaque", "new_password": "Un-nouveau-mot-de-passe1!"},
+    )
+
+    assert response.status_code == 200
+    assert response.cookies.get("ev_refresh") is not None
+    assert "refresh_secret" not in response.text
+
+
+async def test_reset_password_rejects_an_invalid_or_expired_token(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    fake_auth_service[0] = InvalidOrExpiredResetTokenError("Lien invalide ou expiré")
+
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": "un-secret-perime", "new_password": "Un-nouveau-mot-de-passe1!"},
+    )
+
+    assert response.status_code == 400
+
+
+async def test_reset_password_rejects_a_weak_password(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": "un-secret-opaque", "new_password": "trop-simple"},
+    )
+
+    assert response.status_code == 422
+
+
+async def test_reset_password_refuses_a_foreign_origin(
+    fake_auth_service: list[Exception | None], client: AsyncClient
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": "un-secret-opaque", "new_password": "Un-nouveau-mot-de-passe1!"},
+        headers={"Origin": "https://malveillant.example"},
+    )
+
+    assert response.status_code == 403

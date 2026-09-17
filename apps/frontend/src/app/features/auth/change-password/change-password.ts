@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { passwordValidators, PASSWORD_HINT } from '../../../shared/validators/password.validator';
 
 @Component({
   selector: 'app-change-password',
@@ -17,10 +18,11 @@ export class ChangePassword {
 
   errorMessage = signal<string | null>(null);
   isLoading = signal(false);
+  passwordHint = PASSWORD_HINT;
 
   form = this.fb.nonNullable.group({
     current_password: ['', Validators.required],
-    new_password: ['', [Validators.required, Validators.minLength(12), Validators.maxLength(128)]],
+    new_password: ['', passwordValidators],
   });
 
   onSubmit(): void {
@@ -34,7 +36,7 @@ export class ChangePassword {
       },
       error: () => {
         this.isLoading.set(false);
-        this.errorMessage.set('Mot de passe actuel incorrect, ou nouveau mot de passe invalide (12 à 128 caractères).');
+        this.errorMessage.set(`Mot de passe actuel incorrect, ou nouveau mot de passe invalide (${this.passwordHint}).`);
       },
     });
   }

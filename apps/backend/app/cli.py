@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import secrets
+import string
 import sys
 from getpass import getpass
 from pathlib import Path
@@ -22,9 +23,10 @@ from app.core.roles import Role
 from app.db.session import get_session_factory
 from app.main import create_app
 from app.repositories.user import UserRepository
+from app.schemas.auth import PASSWORD_MIN_LENGTH, valide_complexite
 
 LONGUEUR_MOT_DE_PASSE_GENERE = 24
-LONGUEUR_MINIMALE = 12
+CARACTERES_SPECIAUX = "!@#$%^&*()-_=+[]{};:,.?"
 CHEMIN_CONTRAT = Path(__file__).resolve().parent.parent / "openapi.json"
 
 
@@ -111,15 +113,36 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def genere_mot_de_passe() -> str:
+    tirage = secrets.SystemRandom()
+    classes = [
+        string.ascii_uppercase,
+        string.ascii_lowercase,
+        string.digits,
+        CARACTERES_SPECIAUX,
+    ]
+    reste = LONGUEUR_MOT_DE_PASSE_GENERE - len(classes)
+    caracteres = [tirage.choice(classe) for classe in classes]
+    caracteres += [tirage.choice("".join(classes)) for _ in range(reste)]
+    tirage.shuffle(caracteres)
+    return "".join(caracteres)
+
+
 def read_password(*, generate: bool) -> str:
     if generate:
-        mot_de_passe = secrets.token_urlsafe(LONGUEUR_MOT_DE_PASSE_GENERE)
+        mot_de_passe = genere_mot_de_passe()
         print(f"Mot de passe généré, il ne sera plus affiché : {mot_de_passe}")
         return mot_de_passe
 
     mot_de_passe = getpass("Mot de passe : ")
-    if len(mot_de_passe) < LONGUEUR_MINIMALE:
-        raise SystemExit(f"Le mot de passe doit faire au moins {LONGUEUR_MINIMALE} caractères")
+    if len(mot_de_passe) < PASSWORD_MIN_LENGTH:
+        raise SystemExit(
+            f"Le mot de passe doit faire au moins {PASSWORD_MIN_LENGTH} caractères"
+        )
+    try:
+        valide_complexite(mot_de_passe)
+    except ValueError as erreur:
+        raise SystemExit(str(erreur)) from erreur
     if mot_de_passe != getpass("Confirmation : "):
         raise SystemExit("Les deux saisies diffèrent")
     return mot_de_passe

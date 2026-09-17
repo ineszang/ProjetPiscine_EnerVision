@@ -156,3 +156,16 @@ REPONSE_ORIGINE_REFUSEE: Final[Reponses] = {
         "description": "Origine non autorisée (protection CSRF de `require_trusted_origin`).",
     },
 }
+
+REPONSE_LIMITE: Final[Reponses] = {
+    429: {
+        "model": ErrorResponse,
+        "description": "Trop de demandes sur cette fenêtre glissante.",
+        "headers": {
+            "Retry-After": {
+                "description": "Secondes à attendre avant une nouvelle tentative.",
+                "schema": {"type": "integer"},
+            }
+        },
+    },
+}

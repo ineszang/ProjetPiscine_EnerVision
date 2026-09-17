@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
@@ -20,6 +20,7 @@ describe('Login', () => {
       providers: [
         { provide: AuthService, useValue: authMock },
         { provide: Router, useValue: routerMock },
+        { provide: ActivatedRoute, useValue: {} },
       ],
     }).compileComponents();
   });

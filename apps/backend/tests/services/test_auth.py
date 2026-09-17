@@ -16,11 +16,15 @@ from app.core.security import (
 from app.models.login_attempt import LoginOutcome
 from app.models.refresh_token import RevocationReason
 from app.repositories.login_attempt import FailureCounts
+from app.repositories.password_reset_attempt import ResetRequestCounts
+from app.repositories.password_reset_token import ConsumedResetToken
 from app.repositories.refresh_token import ClaimedToken
 from app.services.auth import (
     AuthService,
     InvalidCredentialsError,
+    InvalidOrExpiredResetTokenError,
     LoginPolicy,
+    PasswordResetPolicy,
     RateLimitedError,
     SessionRejectedError,
 )
@@ -36,6 +40,13 @@ POLITIQUE_CONNEXION = LoginPolicy(
     max_failures_per_identifier_and_ip=5,
     max_failures_per_ip=20,
     max_failures_per_identifier=50,
+)
+POLITIQUE_RESET = PasswordResetPolicy(
+    window_seconds=900,
+    max_requests_per_identifier=3,
+    max_requests_per_ip=10,
+    token_ttl=timedelta(minutes=15),
+    frontend_reset_url="http://localhost:4200/reset-password",
 )
 
 
@@ -168,6 +179,43 @@ class FausseTransaction:
         self.validations += 1
 
 
+class FauxDepotJetonsReset:
+    def __init__(self, revendique: ConsumedResetToken | None = None) -> None:
+        self.revendique = revendique
+        self.crees: list[UUID] = []
+        self.invalidations: list[UUID] = []
+
+    async def create(self, *, user_id: UUID, **_: object) -> None:
+        self.crees.append(user_id)
+
+    async def consume(self, token_hash: bytes) -> ConsumedResetToken | None:
+        return self.revendique
+
+    async def invalidate_all_for_user(self, user_id: UUID) -> int:
+        self.invalidations.append(user_id)
+        return len(self.invalidations)
+
+
+class FauxDepotTentativesReset:
+    def __init__(self, compteurs: ResetRequestCounts | None = None) -> None:
+        self.compteurs = compteurs or ResetRequestCounts(0, 0)
+        self.enregistrees: list[str] = []
+
+    async def count_recent(self, **_: object) -> ResetRequestCounts:
+        return self.compteurs
+
+    async def record(self, *, email: str, **_: object) -> None:
+        self.enregistrees.append(email)
+
+
+class FauxMailer:
+    def __init__(self) -> None:
+        self.envois: list[tuple[str, str]] = []
+
+    async def send_password_reset_email(self, *, to: str, reset_url: str) -> None:
+        self.envois.append((to, reset_url))
+
+
 @dataclass
 class Attirail:
     service: AuthService
@@ -176,6 +224,9 @@ class Attirail:
     jetons: FauxDepotJetons
     audit: FauxDepotAudit
     hacheur: FauxHacheur
+    jetons_reset: FauxDepotJetonsReset
+    tentatives_reset: FauxDepotTentativesReset
+    mailer: FauxMailer
 
 
 def fabrique_service(
@@ -184,12 +235,17 @@ def fabrique_service(
     compteurs: FailureCounts | None = None,
     hacheur: FauxHacheur | None = None,
     jetons: FauxDepotJetons | None = None,
+    jetons_reset: FauxDepotJetonsReset | None = None,
+    compteurs_reset: ResetRequestCounts | None = None,
 ) -> Attirail:
     comptes = FauxDepotComptes(compte)
     tentatives = FauxDepotTentatives(compteurs)
     depot_jetons = jetons or FauxDepotJetons()
     audit = FauxDepotAudit()
     hacheur = hacheur or FauxHacheur()
+    depot_jetons_reset = jetons_reset or FauxDepotJetonsReset()
+    tentatives_reset = FauxDepotTentativesReset(compteurs_reset)
+    mailer = FauxMailer()
     service = AuthService(
         users=comptes,  # type: ignore[arg-type]
         attempts=tentatives,  # type: ignore[arg-type]
@@ -200,8 +256,22 @@ def fabrique_service(
         token_policy=POLITIQUE_JETON,
         login_policy=POLITIQUE_CONNEXION,
         refresh_ttl=timedelta(days=7),
+        reset_tokens=depot_jetons_reset,  # type: ignore[arg-type]
+        reset_attempts=tentatives_reset,  # type: ignore[arg-type]
+        reset_policy=POLITIQUE_RESET,
+        mailer=mailer,  # type: ignore[arg-type]
     )
-    return Attirail(service, comptes, tentatives, depot_jetons, audit, hacheur)
+    return Attirail(
+        service,
+        comptes,
+        tentatives,
+        depot_jetons,
+        audit,
+        hacheur,
+        depot_jetons_reset,
+        tentatives_reset,
+        mailer,
+    )
 
 
 async def connecte(service: AuthService, mot_de_passe: str = "un-mot-de-passe-valide") -> object:
@@ -493,3 +563,89 @@ async def test_change_password_refuses_a_wrong_current_password() -> None:
 
     assert attirail.jetons.revocations_par_compte == []
     assert attirail.jetons.crees == []
+
+
+async def test_request_password_reset_emails_a_link_when_the_account_exists() -> None:
+    compte = FauxCompte()
+    attirail = fabrique_service(compte=compte)
+
+    await attirail.service.request_password_reset(
+        email=compte.email, client_ip="203.0.113.10", user_agent="pytest"
+    )
+
+    assert attirail.jetons_reset.invalidations == [compte.id]
+    assert attirail.jetons_reset.crees == [compte.id]
+    assert len(attirail.mailer.envois) == 1
+    assert attirail.mailer.envois[0][0] == compte.email
+    assert "auth.password_reset_requested" in attirail.audit.lignes[0][0]
+
+
+async def test_request_password_reset_stays_silent_when_the_account_is_unknown() -> None:
+    attirail = fabrique_service(compte=None)
+
+    await attirail.service.request_password_reset(
+        email="inconnu@enervision.fr", client_ip="203.0.113.10", user_agent="pytest"
+    )
+
+    assert attirail.jetons_reset.crees == []
+    assert attirail.mailer.envois == []
+    assert attirail.hacheur.verifications == 1, "le hachage factice doit tout de même tourner"
+
+
+async def test_request_password_reset_stays_silent_when_the_account_is_inactive() -> None:
+    compte = FauxCompte(is_active=False)
+    attirail = fabrique_service(compte=compte)
+
+    await attirail.service.request_password_reset(
+        email=compte.email, client_ip="203.0.113.10", user_agent="pytest"
+    )
+
+    assert attirail.jetons_reset.crees == []
+    assert attirail.mailer.envois == []
+
+
+async def test_request_password_reset_raises_when_the_rate_limit_is_reached() -> None:
+    attirail = fabrique_service(compteurs_reset=ResetRequestCounts(per_identifier=3, per_ip=0))
+
+    with pytest.raises(RateLimitedError):
+        await attirail.service.request_password_reset(
+            email="operateur@enervision.fr", client_ip="203.0.113.10", user_agent="pytest"
+        )
+
+    assert attirail.mailer.envois == []
+
+
+async def test_confirm_password_reset_revokes_every_session_then_reopens_the_current_one() -> None:
+    compte = FauxCompte()
+    jetons_reset = FauxDepotJetonsReset(
+        revendique=ConsumedResetToken(id=uuid4(), user_id=compte.id)
+    )
+    attirail = fabrique_service(compte=compte, jetons_reset=jetons_reset)
+
+    session = await attirail.service.confirm_password_reset(
+        token="un-secret-opaque",
+        new_password="Un-nouveau-mot-de-passe1!",
+        client_ip="203.0.113.10",
+        user_agent="pytest",
+    )
+
+    assert attirail.jetons.revocations_par_compte == [
+        (compte.id, RevocationReason.CHANGEMENT_MOT_DE_PASSE.value)
+    ]
+    assert len(attirail.jetons.crees) == 1
+    assert session.refresh_secret
+    assert "auth.password_reset_self_service" in attirail.audit.lignes[0][0]
+
+
+async def test_confirm_password_reset_rejects_an_invalid_or_expired_token() -> None:
+    attirail = fabrique_service(jetons_reset=FauxDepotJetonsReset(revendique=None))
+
+    with pytest.raises(InvalidOrExpiredResetTokenError):
+        await attirail.service.confirm_password_reset(
+            token="un-secret-invalide",
+            new_password="Un-nouveau-mot-de-passe1!",
+            client_ip=None,
+            user_agent=None,
+        )
+
+    assert attirail.jetons.revocations_par_compte == []
