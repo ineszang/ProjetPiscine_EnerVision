@@ -1,15 +1,17 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../../core/services/auth.service';
 import { passwordValidators, PASSWORD_HINT } from '../../../shared/validators/password.validator';
+import { PasswordRequirementsChecklist } from '../../../shared/components/password-requirements/password-requirements';
 import { MOTIF_LIEN_RESET_INVALIDE } from '../../../shared/models/auth-redirect-reason';
 
 @Component({
   selector: 'app-reset-password',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, PasswordRequirementsChecklist],
   templateUrl: './reset-password.html',
   styleUrl: './reset-password.scss',
 })
@@ -29,6 +31,8 @@ export class ResetPassword implements OnInit {
   form = this.fb.nonNullable.group({
     new_password: ['', passwordValidators],
   });
+
+  password = toSignal(this.form.controls.new_password.valueChanges, { initialValue: '' });
 
   ngOnInit(): void {
     if (!this.hasToken) {

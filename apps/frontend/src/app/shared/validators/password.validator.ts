@@ -23,3 +23,18 @@ export const passwordValidators = [
   Validators.maxLength(PASSWORD_MAX_LENGTH),
   Validators.pattern(PASSWORD_PATTERN),
 ];
+
+export interface PasswordRequirement {
+  label: string;
+  test: (value: string) => boolean;
+}
+
+const SPECIAL_REGEX = new RegExp(`[${SPECIAL_CHARACTERS}]`);
+
+export const PASSWORD_REQUIREMENTS: PasswordRequirement[] = [
+  { label: `${PASSWORD_MIN_LENGTH} caractères minimum`, test: (v) => v.length >= PASSWORD_MIN_LENGTH },
+  { label: '1 majuscule', test: (v) => /[A-ZÀ-ÖØ-Þ]/.test(v) },
+  { label: '1 minuscule', test: (v) => /[a-zà-öø-þ]/.test(v) },
+  { label: '1 chiffre', test: (v) => /[0-9]/.test(v) },
+  { label: '1 caractère spécial', test: (v) => SPECIAL_REGEX.test(v) },
+];
