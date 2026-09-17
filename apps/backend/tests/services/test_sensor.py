@@ -195,3 +195,30 @@ async def test_status_ignores_an_unknown_null_reason() -> None:
         site.sensors.network,
     ):
         assert capteur.status == "ok"
+
+
+async def test_status_flags_network_from_null_reasons_only() -> None:
+    service = SensorService(
+        sites=FauxDepotSites([FauxSite("A", "Site A")]),  # type: ignore[arg-type]
+        readings=FauxDepotLectures(  # type: ignore[arg-type]
+            [
+                FauxLecture(
+                    "A",
+                    TIMESTAMP,
+                    "partial",
+                    null_reasons=["network_loss"],
+                )
+            ]
+        ),
+    )
+
+    etat = await service.status()
+
+    site = etat.sites[0]
+    assert site.overall == "degraded"
+    assert site.sensors.network.status == "failing"
+    assert site.sensors.network.since == TIMESTAMP
+    assert site.sensors.consumption.status == "ok"
+    assert site.sensors.electrical.status == "ok"
+    assert site.sensors.temperature.status == "ok"
+    assert site.sensors.humidity.status == "ok"
