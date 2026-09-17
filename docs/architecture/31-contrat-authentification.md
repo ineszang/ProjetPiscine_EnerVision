@@ -20,6 +20,8 @@ gérer : il suffit d'envoyer les requêtes avec `withCredentials`.
 | POST | `/api/v1/auth/logout` | cookie | `204` |
 | POST | `/api/v1/auth/logout-all` | jeton d'accès | `204` |
 | POST | `/api/v1/auth/password` | jeton d'accès | `200` `TokenResponse` |
+| POST | `/api/v1/auth/forgot-password` | aucune | `202` (toujours, que le compte existe ou non) |
+| POST | `/api/v1/auth/reset-password` | aucune (jeton dans le corps) | `200` `TokenResponse` |
 | GET | `/api/v1/auth/me` | jeton d'accès | `200` `PrincipalResponse` |
 | GET | `/api/v1/users` | jeton d'accès, `admin` | `200` `UserResponse[]` |
 | POST | `/api/v1/users` | jeton d'accès, `admin` | `201` `TemporaryPasswordResponse` |
@@ -51,7 +53,17 @@ codes d'erreur ci-dessous reste la référence de comportement, le schéma celle
 }
 
 // POST /auth/password
-{ "current_password": "...", "new_password": "..." }   // 12 à 128 caractères
+{ "current_password": "...", "new_password": "..." }   // 8 à 128 caractères, au moins 1 majuscule, 1 minuscule, 1 chiffre, 1 caractère spécial
+
+// POST /auth/forgot-password
+{ "email": "operateur@enervision.fr" }
+// Répond toujours 202, sans corps, que le compte existe, soit inactif, ou soit inconnu.
+
+// POST /auth/reset-password
+{ "token": "...", "new_password": "..." }   // même règle de complexité que /auth/password
+// Le jeton vient du lien reçu par email, valable 15 minutes, à usage unique. Répond
+// TokenResponse au succès (l'appareil qui pose le nouveau mot de passe reste connecté), ou 400
+// si le jeton est invalide, déjà utilisé, ou expiré.
 ```
 
 Le secret de rafraîchissement **n'apparaît jamais** dans le corps de la réponse.
@@ -70,6 +82,9 @@ Le secret de rafraîchissement **n'apparaît jamais** dans le corps de la répon
 | `403` avec `detail: "Droits insuffisants"` | rôle trop bas | masquer ou griser l'action, ne pas déconnecter |
 | `403` sur `/auth/refresh`, `/logout`, `/logout-all`, `/password` | origine hors liste autorisée (voir « Origines autorisées ») | erreur de configuration réseau, pas un cas à gérer par l'utilisateur |
 | `422` | corps invalide | le détail donne `champ` et `type`, jamais la valeur envoyée |
+| `429` sur `/auth/forgot-password` | trop de demandes | afficher l'attente, l'en-tête `Retry-After` donne les secondes |
+| `400` sur `/auth/reset-password` | lien invalide, déjà utilisé, ou expiré | inviter à redemander un lien depuis `/forgot-password` |
+| `403` sur `/auth/reset-password` | origine hors liste autorisée | erreur de configuration réseau, pas un cas à gérer par l'utilisateur |
 
 ## Les quatre règles qui comptent
 

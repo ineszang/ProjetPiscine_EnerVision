@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app import cli
+from app.schemas.auth import valide_complexite
 
 
 def test_build_parser_reads_the_create_admin_arguments() -> None:
@@ -34,26 +35,36 @@ def test_read_password_generates_a_long_secret_when_asked(
 
     assert len(mot_de_passe) >= cli.LONGUEUR_MOT_DE_PASSE_GENERE
     assert mot_de_passe in capsys.readouterr().out
+    valide_complexite(mot_de_passe)
 
 
 def test_read_password_accepts_two_matching_entries(monkeypatch: pytest.MonkeyPatch) -> None:
-    saisies = iter(["un-mot-de-passe-valide", "un-mot-de-passe-valide"])
+    saisies = iter(["Un-mot-de-passe-valide1", "Un-mot-de-passe-valide1"])
     monkeypatch.setattr(cli, "getpass", lambda _: next(saisies))
 
-    assert cli.read_password(generate=False) == "un-mot-de-passe-valide"
+    assert cli.read_password(generate=False) == "Un-mot-de-passe-valide1"
 
 
 def test_read_password_refuses_a_password_below_the_minimum_length(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(cli, "getpass", lambda _: "court")
+    monkeypatch.setattr(cli, "getpass", lambda _: "Court1!")
+
+    with pytest.raises(SystemExit):
+        cli.read_password(generate=False)
+
+
+def test_read_password_refuses_a_password_missing_a_character_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli, "getpass", lambda _: "un-mot-de-passe-sans-majuscule-ni-chiffre")
 
     with pytest.raises(SystemExit):
         cli.read_password(generate=False)
 
 
 def test_read_password_refuses_two_different_entries(monkeypatch: pytest.MonkeyPatch) -> None:
-    saisies = iter(["un-mot-de-passe-valide", "un-autre-mot-de-passe"])
+    saisies = iter(["Un-mot-de-passe-valide1", "Un-autre-mot-de-passe2"])
     monkeypatch.setattr(cli, "getpass", lambda _: next(saisies))
 
     with pytest.raises(SystemExit):

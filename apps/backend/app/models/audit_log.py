@@ -29,6 +29,8 @@ class AuditAction(StrEnum):
     COMPTE_ACTIVE = "user.enabled"
     COMPTE_MOT_DE_PASSE_REINITIALISE = "user.password_reset_by_admin"
     COMPTE_MOT_DE_PASSE_CHANGE = "user.password_changed"
+    MOT_DE_PASSE_OUBLIE_DEMANDE = "auth.password_reset_requested"
+    MOT_DE_PASSE_REINITIALISE_PAR_SOI = "auth.password_reset_self_service"
     REFRESH_REUTILISE = "auth.refresh_reuse_detected"
     SESSIONS_REVOQUEES = "auth.all_sessions_revoked"
     LIMITE_PAR_IDENTIFIANT = "auth.identifier_throttled"

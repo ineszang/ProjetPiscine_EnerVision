@@ -1,34 +1,27 @@
 import { Component, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../../core/services/auth.service';
-import { MESSAGE_LIEN_RESET_INVALIDE, MOTIF_LIEN_RESET_INVALIDE } from '../../../shared/models/auth-redirect-reason';
 
 @Component({
-  selector: 'app-login',
+  selector: 'app-forgot-password',
   standalone: true,
   imports: [ReactiveFormsModule, RouterLink],
-  templateUrl: './login.html',
-  styleUrl: './login.scss',
+  templateUrl: './forgot-password.html',
+  styleUrl: './forgot-password.scss',
 })
-export class Login {
+export class ForgotPassword {
   private fb = inject(FormBuilder);
   private auth = inject(AuthService);
-  private router = inject(Router);
-  private route = inject(ActivatedRoute);
 
-  errorMessage = signal<string | null>(
-    this.route.snapshot.queryParamMap.get('motif') === MOTIF_LIEN_RESET_INVALIDE
-      ? MESSAGE_LIEN_RESET_INVALIDE
-      : null,
-  );
+  errorMessage = signal<string | null>(null);
   retryAfterSeconds = signal<number | null>(null);
+  submitted = signal(false);
   isLoading = signal(false);
 
   form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
-    password: ['', Validators.required],
   });
 
   onSubmit(): void {
@@ -38,23 +31,22 @@ export class Login {
     this.errorMessage.set(null);
     this.retryAfterSeconds.set(null);
 
-    this.auth.login(this.form.getRawValue()).subscribe({
-      next: (response) => {
-        if (response.principal.must_change_password) {
-          this.router.navigate(['/change-password']);
-          return;
-        }
-        this.router.navigate(['/dashboard']);
+    this.auth.forgotPassword(this.form.getRawValue()).subscribe({
+      // Le message affiché ne dépend jamais du fait que le compte existe ou non : la réponse
+      // du serveur est déjà générique, l'écran doit l'être aussi.
+      next: () => {
+        this.isLoading.set(false);
+        this.submitted.set(true);
       },
       error: (error: HttpErrorResponse) => {
         this.isLoading.set(false);
         if (error.status === 429) {
           const retryAfter = error.headers.get('Retry-After');
           this.retryAfterSeconds.set(retryAfter ? Number(retryAfter) : null);
-          this.errorMessage.set('Trop de tentatives, réessayez plus tard.');
+          this.errorMessage.set('Trop de demandes, réessayez plus tard.');
           return;
         }
-        this.errorMessage.set('Email ou mot de passe incorrect.');
+        this.submitted.set(true);
       },
     });
   }
