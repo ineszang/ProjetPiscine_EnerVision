@@ -3,12 +3,19 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../../core/services/auth.service';
-import { MESSAGE_LIEN_RESET_INVALIDE, MOTIF_LIEN_RESET_INVALIDE } from '../../../shared/models/auth-redirect-reason';
+import { Button } from '../../../shared/components/ui/button/button';
+import { Card } from '../../../shared/components/ui/card/card';
+import { Alert } from '../../../shared/components/ui/alert/alert';
+import { Brand } from '../../../shared/components/ui/brand/brand';
+import {
+  MESSAGE_LIEN_RESET_INVALIDE,
+  MOTIF_LIEN_RESET_INVALIDE,
+} from '../../../shared/models/auth-redirect-reason';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, Button, Card, Alert, Brand],
   templateUrl: './login.html',
   styleUrl: './login.scss',
 })

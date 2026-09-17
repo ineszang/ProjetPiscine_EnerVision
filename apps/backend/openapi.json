@@ -4,7 +4,11 @@
     "title": "EnerVision API",
     "summary": "Collecte, analyse et restitution de séries temporelles énergétiques.",
     "description": "\nToutes les routes sont préfixées par `/api/v1`.\n\n**Authentification.** Le jeton d'accès se présente dans l'en-tête `Authorization: Bearer ...`.\nLe jeton de rafraîchissement est un cookie `HttpOnly` que le code client ne voit jamais : il\nsuffit d'émettre les requêtes avec les identifiants de session. `POST /auth/refresh` rend un\nnouveau jeton d'accès et fait tourner le cookie.\n\n**Rôles.** `lecteur`, puis `operateur`, puis `admin`. Chaque rôle couvre les droits du\nprécédent.\n\n**Erreurs.** Le corps porte toujours une clé `detail`. Un `403` dont le `detail` vaut\n`password_change_required` n'est pas un refus de droits : il exige le changement du mot de passe\nprovisoire avant toute autre action.\n\nLe parcours de session complet est décrit dans\n`docs/architecture/31-contrat-authentification.md`.\n",
-    "version": "0.1.0"
+    "version": "0.1.0",
+    "x-logo": {
+      "url": "/static/logo-icon.png",
+      "altText": "EnerVision"
+    }
   },
   "paths": {
     "/api/v1/health/live": {

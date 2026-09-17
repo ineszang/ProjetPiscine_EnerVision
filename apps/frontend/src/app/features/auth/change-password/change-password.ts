@@ -2,12 +2,16 @@ import { Component, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { Button } from '../../../shared/components/ui/button/button';
+import { Card } from '../../../shared/components/ui/card/card';
+import { Alert } from '../../../shared/components/ui/alert/alert';
+import { Brand } from '../../../shared/components/ui/brand/brand';
 import { passwordValidators, PASSWORD_HINT } from '../../../shared/validators/password.validator';
 
 @Component({
   selector: 'app-change-password',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, Button, Card, Alert, Brand],
   templateUrl: './change-password.html',
   styleUrl: './change-password.scss',
 })
@@ -36,7 +40,9 @@ export class ChangePassword {
       },
       error: () => {
         this.isLoading.set(false);
-        this.errorMessage.set(`Mot de passe actuel incorrect, ou nouveau mot de passe invalide (${this.passwordHint}).`);
+        this.errorMessage.set(
+          `Mot de passe actuel incorrect, ou nouveau mot de passe invalide (${this.passwordHint}).`,
+        );
       },
     });
   }

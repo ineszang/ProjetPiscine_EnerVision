@@ -81,3 +81,18 @@ async def test_the_declared_routes_are_actually_reachable(app: FastAPI) -> None:
 )
 def test_the_health_probes_stay_public(app: FastAPI, chemin: str) -> None:
     assert ("GET", chemin) in ROUTES_PUBLIQUES
+
+
+# Piège : ni les routes `include_in_schema=False` (/docs, /redoc) ni un `Mount` Starlette
+# (/static) n'apparaissent dans `app.openapi()["paths"]`. `routes_declarees()` ne les voit
+# donc jamais, et elles échapperaient silencieusement au garde-fou ci-dessus.
+@pytest.mark.parametrize(
+    "chemin",
+    ["/docs", "/redoc", "/static/logo-icon.png"],
+    ids=["swagger_ui", "redoc", "logo_statique"],
+)
+async def test_the_documentation_routes_are_public_by_design(
+    app: FastAPI, client: AsyncClient, chemin: str
+) -> None:
+    response = await client.get(chemin)
+    assert response.status_code == 200

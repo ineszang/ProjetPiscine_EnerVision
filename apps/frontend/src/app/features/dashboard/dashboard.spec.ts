@@ -148,4 +148,28 @@ describe('Dashboard', () => {
   expect(authMock.clearSession).toHaveBeenCalled();
   expect(routerMock.navigate).toHaveBeenCalledWith(['/login']);
 });
+
+  it('distingue le ton des sévérités high et critical', () => {
+    const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
+    const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
+
+    TestBed.configureTestingModule({
+      imports: [Dashboard],
+      providers: [
+        { provide: StatsService, useValue: statsMock },
+        { provide: AlertsService, useValue: alertsMock },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(Dashboard);
+    const dashboard = fixture.componentInstance;
+
+    expect(dashboard.badgeToneForSeverity('low')).toBe('success');
+    expect(dashboard.badgeToneForSeverity('medium')).toBe('warning');
+    expect(dashboard.badgeToneForSeverity('high')).toBe('danger');
+    expect(dashboard.badgeToneForSeverity('critical')).toBe('critical');
+    expect(dashboard.badgeToneForSeverity('high')).not.toBe(
+      dashboard.badgeToneForSeverity('critical'),
+    );
+  });
 });

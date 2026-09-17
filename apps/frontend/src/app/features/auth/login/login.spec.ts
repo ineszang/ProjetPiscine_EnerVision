@@ -79,7 +79,7 @@ describe('Login', () => {
   fixture.detectChanges(); // rend le bloc @if (errorMessage()) du template
 
   expect(component.errorMessage()).toBe('Email ou mot de passe incorrect.');
-  const errorEl = fixture.nativeElement.querySelector('.auth-error');
+  const errorEl = fixture.nativeElement.querySelector('.ev-alert');
   expect(errorEl?.textContent).toContain('Email ou mot de passe incorrect.');
   });
 
@@ -96,7 +96,7 @@ describe('Login', () => {
     fixture.detectChanges(); // rend aussi le sous-bloc @if (retryAfterSeconds(); as seconds)
 
     expect(component.retryAfterSeconds()).toBe(30);
-    const errorEl = fixture.nativeElement.querySelector('.auth-error');
+    const errorEl = fixture.nativeElement.querySelector('.ev-alert');
     expect(errorEl?.textContent).toContain('30s');
   });
 
@@ -114,7 +114,7 @@ describe('Login', () => {
 
     const button = fixture.nativeElement.querySelector('button[type="submit"]');
     expect(button.disabled).toBe(true);
-    expect(fixture.nativeElement.querySelector('.auth-error')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.ev-alert')).toBeNull();
   });
 
  it('déclenche onSubmit via la soumission réelle du formulaire (ngSubmit)', () => {

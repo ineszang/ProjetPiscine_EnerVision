@@ -63,7 +63,7 @@ describe('ChangePassword', () => {
   fixture.detectChanges(); // rend le bloc @if (errorMessage())
 
   expect(component.errorMessage()).toContain('incorrect');
-  const errorEl = fixture.nativeElement.querySelector('.auth-error');
+  const errorEl = fixture.nativeElement.querySelector('.ev-alert');
   expect(errorEl?.textContent).toContain('incorrect');
   });
 
@@ -73,7 +73,7 @@ describe('ChangePassword', () => {
 
   const button = fixture.nativeElement.querySelector('button[type="submit"]');
   expect(button.disabled).toBe(true);
-  expect(fixture.nativeElement.querySelector('.auth-error')).toBeNull();
+  expect(fixture.nativeElement.querySelector('.ev-alert')).toBeNull();
   });
 
   it('déclenche onSubmit via la soumission réelle du formulaire (ngSubmit)', () => {
