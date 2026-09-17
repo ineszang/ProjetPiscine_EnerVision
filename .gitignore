@@ -52,7 +52,8 @@ standalone_admin_password.txt
 secrets/
 
 # Donnees locales
-data/
+data/raw/*
+!data/raw/.gitkeep
 *.sqlite3
 monitoring/grafana/data/
 monitoring/prometheus/data/

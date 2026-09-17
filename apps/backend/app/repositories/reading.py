@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,3 +30,23 @@ class ReadingRepository:
         )
         lecture: Reading | None = await self._session.scalar(requete)
         return lecture
+
+    async def list_history(
+        self,
+        *,
+        start: datetime,
+        end: datetime,
+        site_id: str | None = None,
+        limit: int,
+        offset: int,
+    ) -> Sequence[Reading]:
+        requete = (
+            select(Reading)
+            .where(Reading.timestamp >= start, Reading.timestamp < end)
+            .order_by(Reading.timestamp.desc(), Reading.reading_id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        if site_id is not None:
+            requete = requete.where(Reading.site_id == site_id)
+        return (await self._session.scalars(requete)).all()
