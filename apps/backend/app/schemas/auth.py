@@ -1,5 +1,9 @@
 # Contrainte : le mot de passe est borné à 128 caractères. Sans plafond, une chaîne de dix
 # mégaoctets ferait travailler Argon2 gratuitement, à la charge du serveur.
+# Contrainte : `SPECIAL_CHARACTERS` doit rester identique à `password.validator.ts` côté
+# frontend. `\w`/`\d` divergent entre Python (Unicode) et JavaScript (ASCII) : une classe
+# explicite, plutôt qu'une négation, évite qu'un mot de passe soit accepté d'un côté et
+# rejeté de l'autre (ex. "Sécurité1", où "é" comptait comme "spécial" pour Python seul).
 
 import re
 from typing import Literal, Self
@@ -13,10 +17,12 @@ from app.core.roles import AccountKind, Role
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
 
-_MAJUSCULE = re.compile(r"[A-ZÀ-Ý]")
-_MINUSCULE = re.compile(r"[a-zà-ÿ]")
-_CHIFFRE = re.compile(r"\d")
-_SPECIAL = re.compile(r"[^\w\s]")
+SPECIAL_CHARACTERS = "!@#$%^&*()-_=+[]{};:,.?"
+
+_MAJUSCULE = re.compile(r"[A-ZÀ-ÖØ-Þ]")
+_MINUSCULE = re.compile(r"[a-zà-öø-þ]")
+_CHIFFRE = re.compile(r"[0-9]")
+_SPECIAL = re.compile(r"[" + re.escape(SPECIAL_CHARACTERS) + r"]")
 
 
 def valide_complexite(mot_de_passe: str) -> str:

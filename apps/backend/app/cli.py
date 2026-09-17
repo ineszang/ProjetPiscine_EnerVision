@@ -23,10 +23,9 @@ from app.core.roles import Role
 from app.db.session import get_session_factory
 from app.main import create_app
 from app.repositories.user import UserRepository
-from app.schemas.auth import PASSWORD_MIN_LENGTH, valide_complexite
+from app.schemas.auth import PASSWORD_MIN_LENGTH, SPECIAL_CHARACTERS, valide_complexite
 
 LONGUEUR_MOT_DE_PASSE_GENERE = 24
-CARACTERES_SPECIAUX = "!@#$%^&*()-_=+[]{};:,.?"
 CHEMIN_CONTRAT = Path(__file__).resolve().parent.parent / "openapi.json"
 
 
@@ -119,7 +118,7 @@ def genere_mot_de_passe() -> str:
         string.ascii_uppercase,
         string.ascii_lowercase,
         string.digits,
-        CARACTERES_SPECIAUX,
+        SPECIAL_CHARACTERS,
     ]
     reste = LONGUEUR_MOT_DE_PASSE_GENERE - len(classes)
     caracteres = [tirage.choice(classe) for classe in classes]

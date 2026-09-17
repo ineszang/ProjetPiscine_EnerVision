@@ -2,7 +2,7 @@
 # d'accès ne va jamais dans un cookie. C'est ce qui réduit la surface CSRF aux trois routes de
 # ce module : partout ailleurs, le navigateur n'attache rien de lui-même.
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 
 from app.api.deps import (
     AuthServiceDep,
@@ -299,6 +299,7 @@ async def forgot_password(
     request: Request,
     response: Response,
     service: AuthServiceDep,
+    background_tasks: BackgroundTasks,
     client_ip: str | None = Depends(get_client_ip),
 ) -> None:
     response.headers["Cache-Control"] = "no-store"
@@ -308,6 +309,7 @@ async def forgot_password(
             email=payload.email,
             client_ip=client_ip,
             user_agent=request.headers.get("user-agent"),
+            background_tasks=background_tasks,
         )
     except RateLimitedError as erreur:
         logger.warning("auth.password_reset.rate_limited ip=%s", client_ip)

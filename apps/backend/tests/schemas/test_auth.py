@@ -39,3 +39,23 @@ def test_password_change_request_rejects_a_password_below_the_minimum_length() -
 def test_valide_complexite_names_every_missing_class_in_the_error() -> None:
     with pytest.raises(ValueError, match=r"majuscule.*chiffre|chiffre.*majuscule"):
         valide_complexite("minuscules-seulement")
+
+
+def test_valide_complexite_accepts_an_accented_password() -> None:
+    assert valide_complexite("Sécurité1!") == "Sécurité1!"
+
+
+@pytest.mark.parametrize("mot_de_passe", ["abcdefg1×", "abcdefg1÷"])  # noqa: RUF001
+def test_valide_complexite_rejects_a_password_without_uppercase_despite_times_or_divide(
+    mot_de_passe: str,
+) -> None:
+    with pytest.raises(ValueError, match="majuscule"):
+        valide_complexite(mot_de_passe)
+
+
+@pytest.mark.parametrize("mot_de_passe", ["ABCDEFG1×", "ABCDEFG1÷"])  # noqa: RUF001
+def test_valide_complexite_rejects_a_password_without_lowercase_despite_times_or_divide(
+    mot_de_passe: str,
+) -> None:
+    with pytest.raises(ValueError, match="minuscule"):
+        valide_complexite(mot_de_passe)

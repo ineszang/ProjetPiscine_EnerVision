@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import BackgroundTasks
 
 from app.core.principal import Principal
 from app.core.roles import AccountKind, Role
@@ -568,13 +569,16 @@ async def test_change_password_refuses_a_wrong_current_password() -> None:
 async def test_request_password_reset_emails_a_link_when_the_account_exists() -> None:
     compte = FauxCompte()
     attirail = fabrique_service(compte=compte)
+    taches = BackgroundTasks()
 
     await attirail.service.request_password_reset(
-        email=compte.email, client_ip="203.0.113.10", user_agent="pytest"
+        email=compte.email, client_ip="203.0.113.10", user_agent="pytest", background_tasks=taches
     )
 
     assert attirail.jetons_reset.invalidations == [compte.id]
     assert attirail.jetons_reset.crees == [compte.id]
+    assert attirail.mailer.envois == [], "l'envoi doit être différé, pas fait dans la réponse"
+    await taches()
     assert len(attirail.mailer.envois) == 1
     assert attirail.mailer.envois[0][0] == compte.email
     assert "auth.password_reset_requested" in attirail.audit.lignes[0][0]
@@ -582,10 +586,15 @@ async def test_request_password_reset_emails_a_link_when_the_account_exists() ->
 
 async def test_request_password_reset_stays_silent_when_the_account_is_unknown() -> None:
     attirail = fabrique_service(compte=None)
+    taches = BackgroundTasks()
 
     await attirail.service.request_password_reset(
-        email="inconnu@enervision.fr", client_ip="203.0.113.10", user_agent="pytest"
+        email="inconnu@enervision.fr",
+        client_ip="203.0.113.10",
+        user_agent="pytest",
+        background_tasks=taches,
     )
+    await taches()
 
     assert attirail.jetons_reset.crees == []
     assert attirail.mailer.envois == []
@@ -595,10 +604,12 @@ async def test_request_password_reset_stays_silent_when_the_account_is_unknown()
 async def test_request_password_reset_stays_silent_when_the_account_is_inactive() -> None:
     compte = FauxCompte(is_active=False)
     attirail = fabrique_service(compte=compte)
+    taches = BackgroundTasks()
 
     await attirail.service.request_password_reset(
-        email=compte.email, client_ip="203.0.113.10", user_agent="pytest"
+        email=compte.email, client_ip="203.0.113.10", user_agent="pytest", background_tasks=taches
     )
+    await taches()
 
     assert attirail.jetons_reset.crees == []
     assert attirail.mailer.envois == []
@@ -606,13 +617,35 @@ async def test_request_password_reset_stays_silent_when_the_account_is_inactive(
 
 async def test_request_password_reset_raises_when_the_rate_limit_is_reached() -> None:
     attirail = fabrique_service(compteurs_reset=ResetRequestCounts(per_identifier=3, per_ip=0))
+    taches = BackgroundTasks()
 
     with pytest.raises(RateLimitedError):
         await attirail.service.request_password_reset(
-            email="operateur@enervision.fr", client_ip="203.0.113.10", user_agent="pytest"
+            email="operateur@enervision.fr",
+            client_ip="203.0.113.10",
+            user_agent="pytest",
+            background_tasks=taches,
         )
 
+    await taches()
     assert attirail.mailer.envois == []
+
+
+async def test_request_password_reset_logs_instead_of_raising_when_the_mailer_fails() -> None:
+    compte = FauxCompte()
+    attirail = fabrique_service(compte=compte)
+    taches = BackgroundTasks()
+
+    async def echoue(*, to: str, reset_url: str) -> None:
+        raise RuntimeError("relais SMTP indisponible")
+
+    attirail.mailer.send_password_reset_email = echoue  # type: ignore[method-assign]
+
+    await attirail.service.request_password_reset(
+        email=compte.email, client_ip="203.0.113.10", user_agent="pytest", background_tasks=taches
+    )
+
+    await taches()
 
 
 async def test_confirm_password_reset_revokes_every_session_then_reopens_the_current_one() -> None:
@@ -635,6 +668,25 @@ async def test_confirm_password_reset_revokes_every_session_then_reopens_the_cur
     assert len(attirail.jetons.crees) == 1
     assert session.refresh_secret
     assert "auth.password_reset_self_service" in attirail.audit.lignes[0][0]
+
+
+async def test_confirm_password_reset_rejects_a_token_for_an_account_disabled_since() -> None:
+    compte = FauxCompte(is_active=False)
+    jetons_reset = FauxDepotJetonsReset(
+        revendique=ConsumedResetToken(id=uuid4(), user_id=compte.id)
+    )
+    attirail = fabrique_service(compte=compte, jetons_reset=jetons_reset)
+
+    with pytest.raises(InvalidOrExpiredResetTokenError):
+        await attirail.service.confirm_password_reset(
+            token="un-secret-opaque",
+            new_password="Un-nouveau-mot-de-passe1!",
+            client_ip="203.0.113.10",
+            user_agent="pytest",
+        )
+
+    assert attirail.comptes.mots_de_passe_changes == 0
+    assert attirail.jetons.revocations_par_compte == []
 
 
 async def test_confirm_password_reset_rejects_an_invalid_or_expired_token() -> None:
