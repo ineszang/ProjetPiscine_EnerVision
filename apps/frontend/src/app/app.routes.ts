@@ -12,4 +12,17 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/dashboard/dashboard').then(m => m.Dashboard),
   },
+  {
+    path: 'sites',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/sites/site-list/site-list').then(m => m.SiteList),
+  },
+  {
+    path: 'sites/:siteId',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/sites/site-detail-placeholder/site-detail-placeholder').then(
+        (m) => m.SiteDetailPlaceholder,
+      ),
+  },
 ];

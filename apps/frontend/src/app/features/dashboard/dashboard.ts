@@ -2,7 +2,7 @@ import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { timer, switchMap, catchError, EMPTY, Observable } from 'rxjs';
 import { DecimalPipe } from '@angular/common';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { StatsService } from '../../core/services/stats.service';
 import { ConsumptionGauge } from '../../shared/components/consumption-gauge/consumption-gauge';
 import { SiteLoadChart } from '../../shared/components/site-load-chart/site-load-chart';
@@ -30,7 +30,17 @@ const TON_PAR_SEVERITE: Record<AlertSeverity, BadgeTone> = {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DecimalPipe, ConsumptionGauge, SiteLoadChart, Card, EvAlert, Badge, Brand, Button],
+  imports: [
+    DecimalPipe,
+    RouterLink,
+    ConsumptionGauge,
+    SiteLoadChart,
+    Card,
+    EvAlert,
+    Badge,
+    Brand,
+    Button,
+  ],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
 })

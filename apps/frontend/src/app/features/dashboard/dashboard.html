@@ -7,9 +7,16 @@
         <p class="dashboard__subtitle">Consommation instantanée du parc</p>
       </div>
     </div>
-    <ev-button class="logout-button" variant="secondary" [fullWidth]="false" (click)="onLogout()"
-      >Déconnexion</ev-button
-    >
+    <div class="dashboard__actions">
+      <a routerLink="/sites" class="dashboard__sites-link">Voir les sites</a>
+      <ev-button
+        class="logout-button"
+        variant="secondary"
+        [fullWidth]="false"
+        (click)="onLogout()"
+        >Déconnexion</ev-button
+      >
+    </div>
   </header>
 
   @if (error(); as message) {
