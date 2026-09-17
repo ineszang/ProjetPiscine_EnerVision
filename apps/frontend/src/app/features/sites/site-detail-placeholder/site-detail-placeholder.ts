@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { map } from 'rxjs';
 import { Card } from '../../../shared/components/ui/card/card';
 import { Brand } from '../../../shared/components/ui/brand/brand';
 
@@ -13,5 +15,5 @@ import { Brand } from '../../../shared/components/ui/brand/brand';
 export class SiteDetailPlaceholder {
   private route = inject(ActivatedRoute);
 
-  siteId = this.route.snapshot.paramMap.get('siteId');
+  siteId = toSignal(this.route.paramMap.pipe(map((params) => params.get('siteId'))));
 }

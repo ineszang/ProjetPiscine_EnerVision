@@ -164,6 +164,7 @@ describe('Dashboard', () => {
       providers: [
         { provide: StatsService, useValue: statsMock },
         { provide: AlertsService, useValue: alertsMock },
+        provideRouter([]),
       ],
     });
 
