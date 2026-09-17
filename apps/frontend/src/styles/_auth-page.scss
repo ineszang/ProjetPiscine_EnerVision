@@ -1,0 +1,16 @@
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-4);
+  box-sizing: border-box;
+  background: radial-gradient(circle at 15% 10%, var(--color-primary-light) 0%, transparent 45%),
+    radial-gradient(circle at 85% 90%, var(--color-primary-light) 0%, transparent 40%),
+    var(--color-bg);
+}
+
+.auth-card-wrapper {
+  width: 100%;
+  max-width: 420px;
+}

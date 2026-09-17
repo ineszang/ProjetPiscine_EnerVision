@@ -29,6 +29,11 @@ s'appliquent directement à des `<label>`/`<input>` natifs liés par `formContro
 composant `ControlValueAccessor` dédié, le gain n'en vaut pas la complexité pour des formulaires
 aussi simples que ceux de ce projet.
 
+La classe `.auth-page` (`apps/frontend/src/styles/_auth-page.scss`, importée globalement) porte
+le fond dégradé et le centrage commun aux pages d'authentification (`login`, `change-password`,
+et à terme `forgot-password`/`reset-password`) : elle enveloppe la carte, pas de duplication du
+fond par page.
+
 ## Composants partagés
 
 Dans `apps/frontend/src/app/shared/components/ui/`, chacun standalone, à importer directement
