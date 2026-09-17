@@ -36,6 +36,13 @@ le fond dégradé et le centrage commun aux pages d'authentification (`login`, `
 et à terme `forgot-password`/`reset-password`) : elle enveloppe la carte, pas de duplication du
 fond par page.
 
+Les classes de navigation partagées (`.ev-link`, `.ev-breadcrumb`, `.ev-brand-link`) sont dans
+`apps/frontend/src/styles/_links.scss`, importées globalement. Convention pour toute page de la
+zone authentifiée (derrière `authGuard`) : le logo (`<ev-brand>`) est enveloppé dans
+`<a routerLink="/dashboard" class="ev-brand-link">` pour ramener au tableau de bord en un clic,
+et un `<nav class="ev-breadcrumb">` liste le chemin de retour vers les pages parentes quand la
+page n'est pas à la racine (voir `site-list`/`site-detail-placeholder` pour l'exemple).
+
 ## Composants partagés
 
 Dans `apps/frontend/src/app/shared/components/ui/`, chacun standalone, à importer directement

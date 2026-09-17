@@ -34,6 +34,12 @@
   color: var(--color-text-muted);
 }
 
+.dashboard__actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 h2 {
   font-size: 1.1rem;
   font-weight: 600;
