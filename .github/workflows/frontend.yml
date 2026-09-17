@@ -36,13 +36,13 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
-      
-      - run: npm ci 
+
+      - run: npm ci
         working-directory: apps/frontend
       - run: npm run build
         working-directory: apps/frontend
 
-  test:  
+  test:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -52,9 +52,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
-      - run: npm ci 
+      - run: npm ci
         working-directory: apps/frontend
-      - run: npm test -- --watch=false
+      - run: npm test -- --watch=false --coverage
         working-directory: apps/frontend
 
   sonarqube:
@@ -70,7 +70,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-    
+
   # deploy:
   #   runs-on: ubuntu-latest
   #   steps:
