@@ -2,10 +2,12 @@ import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { timer, switchMap, catchError, EMPTY, Observable } from 'rxjs';
 import { DecimalPipe } from '@angular/common';
+import { Router } from '@angular/router';
 import { StatsService } from '../../core/services/stats.service';
 import { ConsumptionGauge } from '../../shared/components/consumption-gauge/consumption-gauge';
 import { SiteLoadChart } from '../../shared/components/site-load-chart/site-load-chart';
 import { AlertsService } from '../../core/services/alerts.service';
+import { AuthService } from '../../core/services/auth.service';
 import { StatsSummary } from '../../shared/models/stats.model';
 import { Alert } from '../../shared/models/alert.model';
 
@@ -23,6 +25,8 @@ const UNAVAILABLE_MESSAGE =
 export class Dashboard implements OnInit {
   private statsService = inject(StatsService);
   private alertsService = inject(AlertsService);
+  private auth = inject(AuthService);
+  private router = inject(Router);
   private destroyRef = inject(DestroyRef);
 
   stats = signal<StatsSummary | null>(null);
@@ -48,6 +52,17 @@ export class Dashboard implements OnInit {
         this.error.set(null);
         this.stats.set(stats);
       });
+  }
+
+  onLogout(): void {
+    this.auth.logout().subscribe({
+      next: () => this.router.navigate(['/login']),
+      error: () => {
+        // Même si l'appel réseau échoue, on considère l'utilisateur déconnecté localement.
+        this.auth.clearSession();
+        this.router.navigate(['/login']);
+      },
+    });
   }
 
   private reportUnavailable(): Observable<never> {

@@ -35,6 +35,8 @@ ROUTES_A_ROLE = {
     ("GET", "/api/v1/recommendations"),
     ("GET", "/api/v1/recommendations/{recommendation_id}"),
     ("GET", "/api/v1/stats/summary"),
+    ("GET", "/api/v1/readings"),
+    ("GET", "/api/v1/sensors/status"),
 }
 
 
