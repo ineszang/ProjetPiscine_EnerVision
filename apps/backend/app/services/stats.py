@@ -1,14 +1,10 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
 
 from app.models.energy import Reading, Site
 from app.repositories.reading import ReadingRepository
 from app.repositories.site import SiteRepository
-
-DataQuality = Literal["good", "partial", "degraded", "critical"]
-
-QUALITES_CONNUES: frozenset[str] = frozenset({"good", "partial", "degraded", "critical"})
+from app.services.data_quality import QUALITES_CONNUES, DataQuality, qualite_ou_critique
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,13 +54,10 @@ class StatsService:
     @staticmethod
     def _resume_site(site: Site, derniere: Reading | None) -> SiteConsumption:
         capacite = site.capacity_kw or 0
-        # Piège : `data_quality` est nul dès qu'un site n'a jamais reçu de lecture, ou que le
-        # producteur n'a pas su la qualifier. Le contrat frontend n'a pas de valeur pour ce cas,
-        # `critical` est la seule des quatre qui n'induit pas une confiance qu'on n'a pas.
         qualite: DataQuality = "critical"
         consommation = None
         if derniere is not None and derniere.data_quality in QUALITES_CONNUES:
-            qualite = derniere.data_quality  # type: ignore[assignment]
+            qualite = qualite_ou_critique(derniere.data_quality)
             consommation = derniere.consumption_kw
 
         charge = (
