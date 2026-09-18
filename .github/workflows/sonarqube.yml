@@ -4,11 +4,13 @@ on:
   push:
     paths:
       - "apps/frontend/**"
-      - ".github/workflows/frontend.yml"
+      - "apps/backend/**"
+      - ".github/workflows/sonarqube.yml"
   pull_request:
     paths:
       - "apps/frontend/**"
-      - ".github/workflows/frontend.yml"
+      - "apps/backend/**"
+      - ".github/workflows/sonarqube.yml"
 
 
 # Build l'ensemble du projet, puis lance les tests
