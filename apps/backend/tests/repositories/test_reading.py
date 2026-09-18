@@ -155,6 +155,56 @@ async def test_latest_for_site_ignores_the_readings_of_the_other_sites(
     assert trouvee is None
 
 
+async def test_list_since_orders_by_site_then_by_time_ascending(session: AsyncSession) -> None:
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    plus_recente = await creer_lecture(
+        session, site_id=site.site_id, timestamp=datetime(2026, 9, 16, tzinfo=UTC)
+    )
+    plus_ancienne = await creer_lecture(
+        session, site_id=site.site_id, timestamp=datetime(2026, 9, 15, tzinfo=UTC)
+    )
+
+    resultats = await depot.list_since(since=datetime(2026, 9, 1, tzinfo=UTC), site_id=site.site_id)
+    identifiants = [r.reading_id for r in resultats]
+    await session.rollback()
+
+    assert identifiants == [plus_ancienne.reading_id, plus_recente.reading_id]
+
+
+async def test_list_since_excludes_readings_before_the_cutoff(session: AsyncSession) -> None:
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    dedans = await creer_lecture(
+        session, site_id=site.site_id, timestamp=datetime(2026, 9, 16, tzinfo=UTC)
+    )
+    await creer_lecture(session, site_id=site.site_id, timestamp=datetime(2026, 9, 1, tzinfo=UTC))
+
+    resultats = await depot.list_since(
+        since=datetime(2026, 9, 10, tzinfo=UTC), site_id=site.site_id
+    )
+    identifiants = [r.reading_id for r in resultats]
+    await session.rollback()
+
+    assert identifiants == [dedans.reading_id]
+
+
+async def test_list_since_filters_by_site_id(session: AsyncSession) -> None:
+    premier = await creer_site(session)
+    second = await creer_site(session)
+    depot = ReadingRepository(session)
+    voulue = await creer_lecture(session, site_id=premier.site_id)
+    await creer_lecture(session, site_id=second.site_id)
+
+    resultats = await depot.list_since(
+        since=datetime(2026, 8, 1, tzinfo=UTC), site_id=premier.site_id
+    )
+    identifiants = [r.reading_id for r in resultats]
+    await session.rollback()
+
+    assert identifiants == [voulue.reading_id]
+
+
 async def test_list_history_orders_the_readings_by_timestamp_descending(
     session: AsyncSession,
 ) -> None:

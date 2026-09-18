@@ -29,6 +29,61 @@ async def creer_prediction(
     return prediction
 
 
+async def test_list_since_excludes_predictions_before_the_cutoff(session: AsyncSession) -> None:
+    site = await creer_site(session)
+    depot = PredictionRepository(session)
+    dedans = await creer_prediction(
+        session, site_id=site.site_id, target_at=datetime(2026, 9, 16, tzinfo=UTC)
+    )
+    await creer_prediction(
+        session, site_id=site.site_id, target_at=datetime(2026, 9, 1, tzinfo=UTC)
+    )
+
+    resultats = await depot.list_since(
+        since=datetime(2026, 9, 10, tzinfo=UTC), site_id=site.site_id
+    )
+    identifiants = [p.prediction_id for p in resultats]
+    await session.rollback()
+
+    assert identifiants == [dedans.prediction_id]
+
+
+async def test_list_since_excludes_predictions_that_are_not_available(
+    session: AsyncSession,
+) -> None:
+    site = await creer_site(session)
+    depot = PredictionRepository(session)
+    await creer_prediction(
+        session,
+        site_id=site.site_id,
+        target_at=datetime(2026, 9, 16, tzinfo=UTC),
+        status="insufficient_data",
+        predicted_value=None,
+        failure_reason="pas assez d'historique",
+    )
+
+    resultats = await depot.list_since(since=datetime(2026, 9, 1, tzinfo=UTC), site_id=site.site_id)
+    await session.rollback()
+
+    assert list(resultats) == []
+
+
+async def test_list_since_filters_by_site_id(session: AsyncSession) -> None:
+    premier = await creer_site(session)
+    second = await creer_site(session)
+    depot = PredictionRepository(session)
+    voulue = await creer_prediction(session, site_id=premier.site_id)
+    await creer_prediction(session, site_id=second.site_id)
+
+    resultats = await depot.list_since(
+        since=datetime(2026, 8, 1, tzinfo=UTC), site_id=premier.site_id
+    )
+    identifiants = [p.prediction_id for p in resultats]
+    await session.rollback()
+
+    assert identifiants == [voulue.prediction_id]
+
+
 async def test_latest_by_site_keeps_only_the_most_recent_target(session: AsyncSession) -> None:
     site = await creer_site(session)
     depot = PredictionRepository(session)

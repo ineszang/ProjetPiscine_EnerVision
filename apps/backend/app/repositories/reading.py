@@ -34,6 +34,18 @@ class ReadingRepository:
         lecture: Reading | None = await self._session.scalar(requete)
         return lecture
 
+    async def list_since(self, *, since: datetime, site_id: str | None = None) -> Sequence[Reading]:
+        # Trié par site puis par heure croissante : la détection d'alertes (spike) a besoin de
+        # comparer chaque lecture à celle qui la précède immédiatement pour le même site.
+        requete = (
+            select(Reading)
+            .where(Reading.timestamp >= since)
+            .order_by(Reading.site_id, Reading.timestamp)
+        )
+        if site_id is not None:
+            requete = requete.where(Reading.site_id == site_id)
+        return (await self._session.scalars(requete)).all()
+
     async def list_history(
         self,
         *,
