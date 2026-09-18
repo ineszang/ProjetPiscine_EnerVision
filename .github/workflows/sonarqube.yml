@@ -6,11 +6,13 @@ on:
       - "apps/frontend/**"
       - "apps/backend/**"
       - ".github/workflows/sonarqube.yml"
+      - "sonar-project.properties"
   pull_request:
     paths:
       - "apps/frontend/**"
       - "apps/backend/**"
       - ".github/workflows/sonarqube.yml"
+      - "sonar-project.properties"
 
 
 # Build l'ensemble du projet, puis lance les tests
