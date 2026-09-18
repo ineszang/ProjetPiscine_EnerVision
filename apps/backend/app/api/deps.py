@@ -27,6 +27,7 @@ from app.repositories.audit_log import AuditLogRepository
 from app.repositories.login_attempt import LoginAttemptRepository
 from app.repositories.password_reset_attempt import PasswordResetAttemptRepository
 from app.repositories.password_reset_token import PasswordResetTokenRepository
+from app.repositories.prediction import PredictionRepository
 from app.repositories.reading import ReadingRepository
 from app.repositories.recommendation import RecommendationRepository
 from app.repositories.refresh_token import RefreshTokenRepository
@@ -34,6 +35,7 @@ from app.repositories.site import SiteRepository
 from app.repositories.user import UserRepository
 from app.services.alert import AlertService
 from app.services.auth import AuthService, LoginPolicy, PasswordResetPolicy
+from app.services.prediction import PredictionService
 from app.services.reading import ReadingService
 from app.services.recommendation import RecommendationService
 from app.services.sensor import SensorService
@@ -210,6 +212,15 @@ def get_sensor_service(session: SessionDep) -> SensorService:
 
 
 SensorServiceDep = Annotated[SensorService, Depends(get_sensor_service)]
+
+
+def get_prediction_service(session: SessionDep) -> PredictionService:
+    return PredictionService(
+        sites=SiteRepository(session), predictions=PredictionRepository(session)
+    )
+
+
+PredictionServiceDep = Annotated[PredictionService, Depends(get_prediction_service)]
 
 
 async def get_current_principal(

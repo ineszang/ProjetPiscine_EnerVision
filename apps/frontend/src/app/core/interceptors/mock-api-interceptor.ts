@@ -26,5 +26,7 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
   if (req.url.endsWith(`${environment.apiUrl}/alerts`)) {
     return of(new HttpResponse({ status: 200, body: ALERTS_FIXTURE }));
   }
+  // Volontairement jamais mocké, contrairement à `stats`/`alerts` : les prévisions sont servies
+  // par l'API réelle dès maintenant (au même titre que `/auth/*`, déjà toujours réel).
   return next(req);
 };

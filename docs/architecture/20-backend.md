@@ -12,10 +12,10 @@ Les quatre couches existent désormais, portées par l'authentification.
 
 ```mermaid
 flowchart TB
-  ep["endpoints<br/>health, auth, users, sites, alerts,<br/>recommendations, stats, sensors"]
+  ep["endpoints<br/>health, auth, users, sites, alerts,<br/>recommendations, stats, readings, sensors, predictions"]
   sc["schemas<br/>Pydantic"]
-  sv["services<br/>AuthService, UserService,<br/>SiteService, AlertService, RecommendationService,<br/>StatsService, SensorService"]
-  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site, alert, recommendation, reading"]
+  sv["services<br/>AuthService, UserService,<br/>SiteService, AlertService, RecommendationService,<br/>StatsService, ReadingService, SensorService, PredictionService"]
+  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site, alert, recommendation, reading, prediction"]
   md["models<br/>10 tables"]
   db[("PostgreSQL")]
 
@@ -149,6 +149,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | GET | `/api/v1/stats/summary` | Résume la consommation instantanée du parc. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/readings` | Historique des lectures, filtrable par `site_id`, fenêtre `start`/`end` (24h par défaut, 90 jours maximum) et paginé par `limit`/`offset`. `lecteur` | 400, 401, 403, 422, 500 |
 | GET | `/api/v1/sensors/status` | État de santé des capteurs par site, dérivé de la dernière lecture. `admin` | 401, 403, 500 |
+| GET | `/api/v1/predictions` | Dernière prévision de consommation par site, calculée hors ligne par le pipeline de scoring (`ml/`). `lecteur` | 401, 403, 500 |
 | GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
 | GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
 
@@ -163,7 +164,7 @@ le jeton à usage unique plutôt que dans un `Principal`.
 donc de modifier `ROUTES_PUBLIQUES` dans `tests/api/acces.py`.
 
 `GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit repris pour
-`GET /alerts` puis pour les suivantes (`dataset`, `prediction`) : les quatre couches
+`GET /alerts` puis pour les suivantes (`dataset`) : les quatre couches
 `endpoints → services → repositories → models` y sont toutes présentes, sur des tables déjà créées
 par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`, contrairement aux
 routes d'administration qui exigent `admin`. `SiteRepository` lit par `AsyncSession.scalar()` (une
@@ -180,6 +181,18 @@ dernière `Reading` du site : un site connu sans lecture rend `200` avec tous le
 à `null` et `data_quality="critical"`, seul un `site_id` absent de la base rend `404`. Le contrat
 détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
+
+`GET /predictions` reprend ce même sous-gabarit « dernière valeur par site » (`SiteRepository` +
+`PredictionRepository`, un `SitePredictionSummaryResponse` par site plutôt qu'une table brute).
+Différence avec `stats`/`sensors` : `prediction` est une vraie table accumulée par un processus
+externe (`enervision_ml.score`, cf. `ml/README.md`), pas une valeur recalculée à la volée depuis
+`reading` à chaque appel. `PredictionRepository.latest_by_site()` isole donc un `DISTINCT ON
+(site_id)` ordonné par `target_at DESC` (couvert par l'index `ix_prediction_site_target`), le même
+mécanisme que `ReadingRepository.latest_by_site()`. Un site jamais scoré rend `prediction: null`
+plutôt qu'un statut inventé : le domaine `available`/`insufficient_data`/`error` de la contrainte
+`ck_prediction_status` n'a pas de valeur pour « pas encore de ligne ». L'API ne lance jamais
+LightGBM elle-même ; elle lit ce que le pipeline de scoring a déjà écrit, cf.
+[ML-START.md](../../ML-START.md) section 3.
 
 `GET /readings` reprend le même gabarit mais s'en écarte sur un point : `reading` est l'hypertable,
 donc la seule table métier pouvant porter des années d'historique, ce que `docs/architecture/
@@ -269,7 +282,7 @@ Les modèles de `app/schemas/errors.py` décrivent ce que les gestionnaires renv
 ### Ajouter une route métier
 
 Checklist pour toute nouvelle route sur le gabarit `sites`/`alerts`/`recommendations`/`stats`/
-`readings`/`sensors` (`dataset`, `prediction`) :
+`readings`/`sensors`/`predictions` (`dataset`) :
 
 1. Composer ses `responses=` depuis `app/api/openapi.py` : `REPONSES_LECTEUR`/`REPONSES_ADMIN`
    au niveau de l'`include_router()` du routeur, `REPONSE_VALIDATION` et les codes locaux

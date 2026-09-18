@@ -21,7 +21,13 @@
     </div>
   </header>
 
-  @if (error(); as message) {
+  @if (statsError(); as message) {
+    <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
+  }
+  @if (alertsError(); as message) {
+    <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
+  }
+  @if (predictionsError(); as message) {
     <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
   }
 
@@ -67,6 +73,35 @@
           <li class="alert-item">
             <ev-badge [tone]="badgeToneForSeverity(alert.severity)">{{ alert.severity }}</ev-badge>
             <span class="alert-item__message">{{ alert.message }}</span>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (predictions().length > 0) {
+    <section class="predictions-section">
+      <h2>Prévisions de consommation</h2>
+      <ul class="predictions-list">
+        @for (site of predictions(); track site.site_id) {
+          <li class="prediction-item">
+            <span class="prediction-item__site">{{ site.site_name }}</span>
+            @if (site.prediction; as prediction) {
+              @if (prediction.status === 'available') {
+                <span class="prediction-item__value">
+                  {{ prediction.predicted_value | number: '1.0-1' }} kWh
+                  <span class="prediction-item__target"
+                    >{{ prediction.target_at | date: "dd/MM 'à' HH:mm" }}</span
+                  >
+                </span>
+              } @else {
+                <ev-badge [tone]="badgeToneForPredictionStatus(prediction.status)">{{
+                  prediction.status === 'insufficient_data' ? 'Historique insuffisant' : 'Erreur'
+                }}</ev-badge>
+              }
+            } @else {
+              <ev-badge tone="neutral">Pas encore de prévision</ev-badge>
+            }
           </li>
         }
       </ul>

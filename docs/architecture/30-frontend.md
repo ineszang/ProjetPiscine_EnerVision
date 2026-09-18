@@ -13,24 +13,29 @@ Ce qui est en place :
 - `app.config.ts` fournit `provideBrowserGlobalErrorListeners()`, `provideRouter(routes)` et
   `provideHttpClient(withInterceptors([mockApiInterceptor]))`.
 - Une route `/dashboard` en composant différé, et une redirection depuis la racine.
-- `core/services` porte `StatsService` et `AlertsService`, `core/interceptors` l'intercepteur de
-  fixtures, `features/dashboard` la page, `shared/components` la jauge de consommation et le
+- `core/services` porte `StatsService`, `AlertsService`, `PredictionsService`, `SitesService` et
+  `AuthService`, `core/interceptors` l'intercepteur de fixtures et l'intercepteur d'authentification
+  (jeton porteur, rafraîchissement sur 401), `core/guards` la garde de route `authGuard`,
+  `features/dashboard` la page principale, `shared/components` la jauge de consommation et le
   graphique de charge par site, tous deux construits sur Chart.js.
+- Une authentification complète côté interface : connexion, mot de passe oublié/réinitialisation,
+  changement de mot de passe, garde de route sur `/dashboard` et `/sites`. Détail :
+  [31-contrat-authentification.md](31-contrat-authentification.md).
 - Un système de design partagé (`shared/components/ui/` : `ev-button`, `ev-card`, `ev-alert`,
   `ev-badge`, `ev-brand`, tokens CSS dans `styles/_tokens.scss`) que toute nouvelle page doit
   réutiliser plutôt que redéfinir ses propres styles. Détail :
   [32-design-systeme-frontend.md](32-design-systeme-frontend.md).
 - L'état vit dans des signaux, sans bibliothèque dédiée.
-- Vitest via le builder `@angular/build:unit-test`, couverture activée, sept fichiers de test.
+- Vitest via le builder `@angular/build:unit-test`, couverture activée.
 - Prettier configuré, parser `angular` pour les gabarits HTML.
 
 Ce qui n'existe pas encore :
 
-- **Aucun endpoint réel derrière l'écran.** `GET /api/v1/stats/summary` et `GET /api/v1/alerts`
-  sont servis par l'intercepteur ; l'API expose `/health`, `/auth` et `/users`, rien d'autre.
-- Aucune authentification côté interface : ni garde de route, ni intercepteur de jeton, alors que
-  les routes métier de l'API en exigent un. Voir
-  [31-contrat-authentification.md](31-contrat-authentification.md).
+- **`stats`/`alerts` restent sur fixtures.** `GET /api/v1/stats/summary` et `GET /api/v1/alerts`
+  sont servis par l'intercepteur de fixtures ; l'API expose bien ces routes désormais, mais rien
+  ne bascule `useMockFixtures` à `false` en développement pour les consommer réellement.
+  `GET /api/v1/predictions` fait exception : jamais mocké, branché sur l'API réelle depuis cette
+  PR (voir plus bas).
 - Aucun état de chargement : tant que la première réponse n'est pas arrivée, la page reste vide.
 - Aucun lint : ESLint n'est pas installé.
 
@@ -84,19 +89,19 @@ sequenceDiagram
 `mockApiInterceptor` n'intercepte que `/stats/summary` et `/alerts`, et seulement si
 `environment.useMockFixtures` est vrai. Le drapeau est à `true` en développement, à `false` en
 production : toute autre requête, et toutes les requêtes en production, suivent le chemin réel.
+`/predictions` est volontairement exclu de cette liste (contrairement à `stats`/`alerts`) : il
+suit toujours le chemin réel, comme `/auth/*` - en développement, ça veut dire qu'un jeton valide
+et un backend joignable sont nécessaires pour que la section prévisions du dashboard s'affiche.
 
 En développement, `proxy.conf.json` redirige tout `/api` vers `http://localhost:8000`. C'est ce
 qui évite le CORS sur le poste, et c'est pourquoi `environment.development.ts` se contente d'un
 `apiUrl` relatif, `/api/v1`.
 
-En production, il n'y a pas de proxy : `environment.ts` porte une URL absolue. Angular substitue
-le fichier via `fileReplacements`, et la configuration `production` est celle par défaut.
-
-**Dette connue.** `src/environments/environment.ts`, qui est la configuration de production,
-pointe `http://localhost:8000/api/v1` en dur. La valeur est celle du poste de développement :
-telle quelle, un build de production ne joindra jamais l'API. À corriger avant le premier
-déploiement, en même temps que sera tranchée la question de l'ingress dans
-[10-infra.md](10-infra.md).
+En production, il n'y a pas de proxy, mais `environment.ts` porte lui aussi un `apiUrl` relatif
+(`/api/v1`) plutôt qu'une URL absolue : la dette qui pointait en dur sur
+`http://localhost:8000/api/v1` a été corrigée. Un build de production sert donc l'appel `/api/v1/...`
+sur son propre origin, ce qui suppose qu'un ingress ou un reverse proxy route `/api` vers le
+backend une fois déployé — question toujours ouverte dans [10-infra.md](10-infra.md).
 
 ## Exécution
 
@@ -124,9 +129,10 @@ avec un service statique, il reste à écrire.
 ## Sécurité
 
 - Le frontend ne détient aucun secret : `environment.ts` ne porte qu'une URL.
-- L'authentification existe côté API mais pas côté interface : aucune garde de route, aucun
-  intercepteur de jeton. `core/guards` reste à créer, `core/interceptors` n'héberge aujourd'hui
-  que les fixtures.
+- L'authentification existe des deux côtés désormais : `authGuard` protège `/dashboard` et
+  `/sites`, `authInterceptor` pose le jeton porteur sur les requêtes sortantes et déclenche le
+  rafraîchissement sur 401. Détail complet dans
+  [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ## Tests
 
