@@ -26,6 +26,24 @@ variable "ssh_password" {
   sensitive = true
 }
 
+variable "remote_path" {
+  type        = string
+  description = "Chemin distant sur le serveur pour le deploiement."
+  default     = "/var/www/enervision"
+}
+
+variable "docker_host" {
+  type        = string
+  default     = "npipe:////.//pipe//docker_engine"
+  description = "Host Docker (local ou distant)"
+}
+
+variable "frontend_port" {
+  type        = number
+  default     = 3000
+  description = "Port externe du frontend"
+}
+
 variable "k3s_version" {
   type        = string
   description = "Version k3s a epingler pour un deploiement reproductible (ex: v1.31.5+k3s1). Voir https://github.com/k3s-io/k3s/releases."
