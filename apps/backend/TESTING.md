@@ -123,6 +123,11 @@ async def test_repository_reads_back_what_it_wrote(session: AsyncSession) -> Non
 defaut, ce qui garde `make check` jouable sans Docker. Tout autre marqueur doit etre
 declare dans `pyproject.toml` : `--strict-markers` refuse les marqueurs inconnus.
 
+Ces tests ne sont pas pour autant facultatifs : le job `integration` de
+`.github/workflows/backend.yml` monte un service TimescaleDB, applique les migrations et
+les joue a chaque poussee. Un test `integration` casse donc la CI comme un autre. En local,
+`make db-up` puis `make test-integration`.
+
 ## Couverture
 
 Les branches sont mesurees, pas seulement les lignes. Le seuil de 85 % ne s'applique
@@ -142,14 +147,27 @@ uv run pytest tests/api/test_health.py           # un seul fichier
 uv run pytest -k readiness                       # par motif de nom
 ```
 
-## Trois fichiers à connaître avant de toucher à l'authentification
+## Quatre fichiers à connaître avant de toucher à l'authentification
+
+`tests/api/acces.py` porte la classification des routes du contrat, en quatre ensembles :
+`ROUTES_PUBLIQUES`, `ROUTE_COOKIE`, `ROUTES_SANS_ROLE` et la table `ROLE_MINIMUM`. Ce n'est pas
+un fichier de test, c'est la référence que les trois autres confrontent au comportement observé.
+**Toute route ajoutée doit y être classée** : `test_every_declared_route_is_classified` échoue
+sinon, et échoue aussi sur une entrée qui ne correspond plus à aucune route.
 
 `tests/api/test_route_protection.py` interroge réellement chaque route sans identifiant et
 échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Il n'inspecte pas l'arbre de
 dépendances : celui-ci n'est accessible que par l'API privée de FastAPI, et surtout une route
 peut porter la bonne dépendance tout en répondant quand même. **Rendre une route publique impose
-donc de modifier la liste `ROUTES_PUBLIQUES` de ce fichier**, ce qui apparaît en clair dans la
-diff d'une pull request.
+donc de modifier `ROUTES_PUBLIQUES` dans `acces.py`**, ce qui apparaît en clair dans la diff
+d'une pull request.
+
+`tests/api/test_matrice_acces.py` croise chaque route gardée avec chacun des trois rôles, dans
+les deux sens : un rôle insuffisant reçoit un 403 `Droits insuffisants`, un rôle suffisant ne le
+reçoit jamais. Le second sens est ce qui rend visible une garde posée trop haut, par exemple
+`AdminDep` sur une route de lecture. La même matrice est rejouée sous `integration` avec de vrais
+jetons, donc en traversant le décodage du JWT et la relecture du compte en base, que
+`dependency_overrides` court-circuite.
 
 `tests/services/test_auth.py` donne au faux hacheur un **compteur d'appels**. C'est ce qui rend
 possibles les deux assertions qui prouvent la conception, et qu'aucune autre forme de test

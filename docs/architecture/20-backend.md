@@ -156,10 +156,12 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 Les codes de la dernière colonne sont ceux que le schéma **déclare**, et le fichier
 `openapi.json` versionné interdit qu'ils divergent de ce que les routes rendent.
 
-**Quatre routes seulement sont publiques** : les deux sondes, `/auth/login` et `/auth/logout`.
+**Sept routes du contrat sont publiques** : les deux sondes, `/auth/login`, `/auth/logout`,
+`/auth/forgot-password` et les deux routes de réinitialisation, qui portent leur autorisation dans
+le jeton à usage unique plutôt que dans un `Principal`.
 `tests/api/test_route_protection.py` interroge réellement chaque autre route sans identifiant et
 échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Rendre une route publique impose
-donc de modifier la liste dans ce fichier de test.
+donc de modifier `ROUTES_PUBLIQUES` dans `tests/api/acces.py`.
 
 `GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit repris pour
 `GET /alerts` puis pour les suivantes (`dataset`) : les quatre couches
@@ -286,11 +288,16 @@ Checklist pour toute nouvelle route sur le gabarit `sites`/`alerts`/`recommendat
    au niveau de l'`include_router()` du routeur, `REPONSE_VALIDATION` et les codes locaux
    (404, 409, ...) directement sur l'endpoint qui les rend.
 2. Décrire son tag dans `TAGS`.
-3. Si elle passe par `require_role` (`LecteurDep`/`OperateurDep`/`AdminDep`), l'ajouter à
-   `ROUTES_A_ROLE` dans `tests/api/test_openapi.py`. Si elle passe par `require_trusted_origin`,
-   l'ajouter à `ORIGINE_VERIFIEE`. **Ces deux listes sont maintenues à la main, pas dérivées** :
-   une route oubliée n'y est pas détectée automatiquement.
-4. `make openapi`, puis `uv run pytest tests/api/test_openapi.py`.
+3. **La classer dans `tests/api/acces.py`** : `ROLE_MINIMUM` avec son rôle minimum si elle passe
+   par `require_role` (`LecteurDep`/`OperateurDep`/`AdminDep`), `ROUTES_SANS_ROLE` si elle se
+   contente de `CurrentPrincipalDep`, `ROUTES_PUBLIQUES` si elle est ouverte. L'oubli n'est plus
+   silencieux : `test_every_declared_route_is_classified` échoue sur une route non classée comme
+   sur une entrée qui ne correspond plus à aucune route. `ROUTES_A_ROLE` de `test_openapi.py` en
+   est dérivée, et `test_matrice_acces.py` vérifie le niveau réellement monté.
+4. Si elle passe par `require_trusted_origin`, l'ajouter à `ORIGINE_VERIFIEE` dans
+   `tests/api/test_openapi.py`. **Cette liste-là reste maintenue à la main.**
+5. `make openapi`, puis `uv run pytest tests/api/test_openapi.py tests/api/test_route_protection.py
+   tests/api/test_matrice_acces.py`.
 
 ## Sécurité
 
@@ -341,9 +348,14 @@ Le reste, par ordre de surface :
 
 Conventions, gabarits et arborescence : [`apps/backend/TESTING.md`](../../apps/backend/TESTING.md).
 
-Trois fichiers méritent d'être connus avant de toucher à l'authentification :
+Quatre fichiers méritent d'être connus avant de toucher à l'authentification :
 
+- `tests/api/acces.py` : la classification des routes, `ROUTES_PUBLIQUES` et `ROLE_MINIMUM` en
+  tête. Ce n'est pas un test, c'est la référence que les deux suivants confrontent au
+  comportement observé.
 - `tests/api/test_route_protection.py` : le garde-fou de l'autorisation, décrit plus haut.
+- `tests/api/test_matrice_acces.py` : chaque route gardée croisée avec chacun des trois rôles,
+  dans les deux sens, puis rejouée sous `integration` avec de vrais jetons.
 - `tests/services/test_auth.py` : le faux hacheur y porte un compteur d'appels, ce qui permet les
   deux assertions qui prouvent le design, à savoir un appel quand l'adresse est inconnue et zéro
   appel quand la limite est atteinte.
