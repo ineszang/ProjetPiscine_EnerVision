@@ -36,13 +36,18 @@
       <section class="overview">
         <ev-card class="card card--gauge">
           <span class="card__label">Consommation vs capacité</span>
-          <app-consumption-gauge
-            [consumption]="current()?.consumption_kw ?? 0"
-            [capacity]="s.capacity_kw ?? 0"
-          />
-          <span class="card__value">
-            {{ current()?.consumption_kw ?? '-' }} / {{ s.capacity_kw ?? '-' }} kW
-          </span>
+          @let consumption = consumptionKw();
+          @if (consumption !== null) {
+            <app-consumption-gauge [consumption]="consumption" [capacity]="s.capacity_kw ?? 0" />
+            <span class="card__value">
+              {{ consumptionLabel() }} / {{ s.capacity_kw ?? '-' }} kW
+            </span>
+          } @else {
+            <p class="card__unavailable">
+              Consommation indisponible
+              <span class="metric__reason">({{ consumptionReason() }})</span>
+            </p>
+          }
         </ev-card>
 
         <ev-card class="metrics-card">

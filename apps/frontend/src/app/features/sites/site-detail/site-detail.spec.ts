@@ -116,6 +116,86 @@ describe('SiteDetail', () => {
     expect(fixture.componentInstance.site()).toBeNull();
   });
 
+  it('efface les données du site précédent quand le chargement du suivant échoue', () => {
+    const getSite = vi
+      .fn()
+      .mockReturnValueOnce(of(SITE))
+      .mockReturnValueOnce(throwError(() => new Error('404')));
+    const { fixture, paramMap } = setup(
+      'SITE001',
+      { getSite, getCurrent: vi.fn().mockReturnValue(of(CURRENT_COMPLET)) },
+      { getHistory: vi.fn().mockReturnValue(of([LECTURE])) },
+    );
+
+    fixture.detectChanges();
+    expect(fixture.componentInstance.site()?.site_id).toBe('SITE001');
+
+    paramMap.next(convertToParamMap({ siteId: 'SITE002' }));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.error()).not.toBeNull();
+    expect(fixture.componentInstance.site()).toBeNull();
+    expect(fixture.componentInstance.current()).toBeNull();
+    expect(fixture.componentInstance.history()).toEqual([]);
+    expect(fixture.nativeElement.textContent).not.toContain('Site 1');
+  });
+
+  it('interroge le site et sa mesure courante en parallèle', () => {
+    const getSite = vi.fn().mockReturnValue(of(SITE));
+    const getCurrent = vi.fn().mockReturnValue(of(CURRENT_COMPLET));
+    const { fixture } = setup(
+      'SITE001',
+      { getSite, getCurrent },
+      { getHistory: vi.fn().mockReturnValue(of([])) },
+    );
+
+    fixture.detectChanges();
+
+    expect(getSite).toHaveBeenCalledWith('SITE001');
+    expect(getCurrent).toHaveBeenCalledWith('SITE001');
+  });
+
+  it('signale la panne du capteur de consommation au lieu de tracer une jauge à zéro', () => {
+    const sansConsommation = {
+      ...CURRENT_COMPLET,
+      consumption_kw: null,
+      null_reasons: ['consumption_sensor_failure'],
+      data_quality: 'partial' as const,
+    };
+    const { fixture } = setup(
+      'SITE001',
+      {
+        getSite: vi.fn().mockReturnValue(of(SITE)),
+        getCurrent: vi.fn().mockReturnValue(of(sansConsommation)),
+      },
+      { getHistory: vi.fn().mockReturnValue(of([LECTURE])) },
+    );
+
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.consumptionKw()).toBeNull();
+    expect(fixture.componentInstance.consumptionReason()).toBe('capteur de consommation en panne');
+    expect(fixture.nativeElement.querySelector('app-consumption-gauge')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Consommation indisponible');
+  });
+
+  it('trace la jauge pour une consommation nulle réellement mesurée', () => {
+    const { fixture } = setup(
+      'SITE001',
+      {
+        getSite: vi.fn().mockReturnValue(of(SITE)),
+        getCurrent: vi.fn().mockReturnValue(of({ ...CURRENT_COMPLET, consumption_kw: 0 })),
+      },
+      { getHistory: vi.fn().mockReturnValue(of([LECTURE])) },
+    );
+
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.consumptionLabel()).toBe('0.0 kW');
+    expect(fixture.nativeElement.querySelector('app-consumption-gauge')).not.toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Consommation indisponible');
+  });
+
   it('affiche explicitement les champs null avec leur raison plutôt que de les masquer', () => {
     const partielle = {
       ...CURRENT_COMPLET,

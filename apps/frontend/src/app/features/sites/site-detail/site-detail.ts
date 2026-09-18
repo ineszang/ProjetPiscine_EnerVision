@@ -1,7 +1,7 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { catchError, EMPTY, filter, map, Observable, of, switchMap } from 'rxjs';
+import { catchError, EMPTY, filter, forkJoin, map, Observable, of, switchMap } from 'rxjs';
 import { SitesService } from '../../../core/services/sites.service';
 import { ReadingsService } from '../../../core/services/readings.service';
 import { Site } from '../../../shared/models/site.model';
@@ -52,8 +52,14 @@ interface MetricDef {
   format: (value: number) => string;
 }
 
+const CONSUMPTION_DEF: MetricDef = {
+  key: 'consumption_kw',
+  label: 'Consommation',
+  format: (v) => `${v.toFixed(1)} kW`,
+};
+
 const METRIC_DEFS: MetricDef[] = [
-  { key: 'consumption_kw', label: 'Consommation', format: (v) => `${v.toFixed(1)} kW` },
+  CONSUMPTION_DEF,
   { key: 'voltage_v', label: 'Tension', format: (v) => `${v.toFixed(1)} V` },
   { key: 'current_a', label: 'Courant', format: (v) => `${v.toFixed(1)} A` },
   { key: 'power_factor', label: 'Cos φ', format: (v) => v.toFixed(2) },
@@ -111,6 +117,15 @@ export class SiteDetail {
 
   hasMeasurement = computed(() => this.current()?.timestamp != null);
 
+  consumptionKw = computed(() => this.current()?.consumption_kw ?? null);
+
+  consumptionLabel = computed(() => {
+    const kw = this.consumptionKw();
+    return kw != null ? CONSUMPTION_DEF.format(kw) : null;
+  });
+
+  consumptionReason = computed(() => this.reasonFor('consumption_kw', this.current()));
+
   qualityLabel = computed(() => {
     const quality = this.current()?.data_quality;
     return quality ? LIBELLE_PAR_QUALITE[quality] : null;
@@ -156,10 +171,10 @@ export class SiteDetail {
   }
 
   private load(siteId: string) {
-    return this.sitesService.getSite(siteId).pipe(
-      switchMap((site) =>
-        this.sitesService.getCurrent(siteId).pipe(map((current) => ({ site, current }))),
-      ),
+    return forkJoin({
+      site: this.sitesService.getSite(siteId),
+      current: this.sitesService.getCurrent(siteId),
+    }).pipe(
       switchMap(({ site, current }) =>
         this.loadHistory(siteId, current).pipe(map((history) => ({ site, current, history }))),
       ),
@@ -186,8 +201,13 @@ export class SiteDetail {
     return trouvees.length > 0 ? trouvees.join(', ') : 'cause inconnue';
   }
 
+  // Piège : vider les signaux avec l'erreur, sinon la page garde le site précédemment chargé
+  // sous le bandeau et laisse lire les chiffres de A en croyant regarder B.
   private reportUnavailable(): Observable<never> {
     this.error.set(UNAVAILABLE_MESSAGE);
+    this.site.set(null);
+    this.current.set(null);
+    this.history.set([]);
     return EMPTY;
   }
 }

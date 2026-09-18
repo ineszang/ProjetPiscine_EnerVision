@@ -74,6 +74,11 @@
   font-weight: 700;
 }
 
+.card__unavailable {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

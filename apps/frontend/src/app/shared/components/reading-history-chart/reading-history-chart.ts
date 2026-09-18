@@ -20,8 +20,23 @@ const QUALITY_COLORS: Record<ReadingDataQuality, string> = {
 };
 const UNKNOWN_QUALITY_COLOR = '#9ca3af';
 
-function pointColors(readings: Reading[]): string[] {
-  return readings.map((r) => (r.data_quality ? QUALITY_COLORS[r.data_quality] : UNKNOWN_QUALITY_COLOR));
+interface ChartSeries {
+  labels: string[];
+  values: number[];
+  colors: string[];
+}
+
+// Piège : l'API renvoie les lectures du plus récent au plus ancien (ReadingRepository.list_history
+// trie en timestamp desc) ; sans ce tri l'axe des abscisses se lirait à rebours.
+function toSeries(readings: Reading[]): ChartSeries {
+  const ordered = [...readings].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+  return {
+    labels: ordered.map((r) => r.timestamp),
+    values: ordered.map((r) => r.consumption_kw ?? 0),
+    colors: ordered.map((r) =>
+      r.data_quality ? QUALITY_COLORS[r.data_quality] : UNKNOWN_QUALITY_COLOR,
+    ),
+  };
 }
 
 @Component({
@@ -38,27 +53,27 @@ export class ReadingHistoryChart implements AfterViewInit, OnDestroy {
 
   constructor() {
     effect(() => {
-      const readings = this.readings();
+      const series = toSeries(this.readings());
       if (this.chart) {
-        this.chart.data.labels = readings.map((r) => r.timestamp);
-        this.chart.data.datasets[0].data = readings.map((r) => r.consumption_kw ?? 0);
-        this.chart.data.datasets[0].pointBackgroundColor = pointColors(readings);
+        this.chart.data.labels = series.labels;
+        this.chart.data.datasets[0].data = series.values;
+        this.chart.data.datasets[0].pointBackgroundColor = series.colors;
         this.chart.update('none');
       }
     });
   }
 
   ngAfterViewInit(): void {
-    const readings = this.readings();
+    const series = toSeries(this.readings());
     this.chart = new Chart(this.canvasRef.nativeElement, {
       type: 'line',
       data: {
-        labels: readings.map((r) => r.timestamp),
+        labels: series.labels,
         datasets: [
           {
-            data: readings.map((r) => r.consumption_kw ?? 0),
+            data: series.values,
             borderColor: '#3b82f6',
-            pointBackgroundColor: pointColors(readings),
+            pointBackgroundColor: series.colors,
             tension: 0.25,
           },
         ],
