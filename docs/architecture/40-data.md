@@ -4,12 +4,12 @@ PostgreSQL 17 avec l'extension TimescaleDB. Le choix, ses alternatives et ses co
 dans l'[ADR 0001](../adr/0001-postgresql-timescaledb.md), qui fait foi. Ce document décrit le
 système qui en découle.
 
-## Avertissement
+## Ce que couvre ce document
 
-**Aucune table applicative n'existe à ce jour.** `Base.metadata` est vide, `app/models/` ne
-contient qu'un commentaire, l'unique révision Alembic ne crée aucune table, et aucune hypertable
-n'a été déclarée. Tout ce qui suit sous le statut `Cible` est une proposition de structure, pas un
-relevé du code. Le modèle sera arrêté au jalon J2.
+**Dix tables applicatives existent** : quatre pour l'authentification, six pour les données
+d'énergie, dont l'hypertable `reading`. Les sections marquées `Fait` relèvent le code. Celles
+marquées `Cible` décrivent ce qui n'est pas écrit, au premier rang desquelles la chaîne
+d'ingestion, les agrégats continus, la compression et la rétention.
 
 ## Trois emplacements, trois rôles
 
@@ -35,8 +35,8 @@ Statut : `Fait`.
 - `db/init/100-extensions.sql` crée l'extension `timescaledb`.
 - `db/init/110-test-database.sql` crée `enervision_test`, dont le nom est attendu en dur par
   `apps/backend/tests/conftest.py`.
-- Une révision Alembic, `5353c0e4f094`, qui **ne crée aucune table**. Elle établit
-  `alembic_version` et refuse de s'appliquer si l'extension manque :
+- Cinq révisions Alembic. La première, `5353c0e4f094`, **ne crée aucune table** : elle
+  établit `alembic_version` et refuse de s'appliquer si l'extension manque :
 
 ```sql
 IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
@@ -47,14 +47,19 @@ END IF;
 Cette garde forme paire avec le 503 de `/api/v1/health/ready`. Un bootstrap sauté ne se voit pas
 au démarrage de l'API : ces deux gardes le rendent visible tôt, des deux côtés.
 
+Les trois suivantes créent les tables de l'authentification, décrites plus bas : `app_user`,
+puis `login_attempt` et `audit_log`, puis `refresh_token`. La cinquième, `e6d2026091501`, crée
+les six tables de données décrites en fin de document et déclare l'hypertable `reading`.
+
 ## Cycle de vie d'une mesure
 
-Statut : `Cible`. Aucun de ces maillons n'existe.
+Statut : `Cible`, sauf l'hypertable `reading` qui existe. Ni l'ingestion, ni les agrégats
+continus, ni la compression, ni la rétention ne sont écrits.
 
 ```mermaid
 flowchart LR
   src["Source de mesures"] -.-> ing["Ingestion Airflow"]
-  ing -.-> hy[("Hypertable mesure")]
+  ing -.-> hy[("Hypertable reading")]
   hy -.-> agg[("Agrégat continu")]
   hy -.-> comp["Compression"]
   hy -.-> ret["Rétention"]
@@ -65,67 +70,111 @@ flowchart LR
 Les lectures de l'API et de Grafana visent l'agrégat continu, pas la table brute : c'est tout
 l'intérêt de TimescaleDB, et cela doit rester vrai quand les volumes augmenteront.
 
-## Modèle
+## Tables d'authentification
 
-Statut : `Cible`. Les entités ci-dessous sont des **candidates**, à valider en J2. Elles
-s'appuient sur les gabarits de [`apps/backend/TESTING.md`](../../apps/backend/TESTING.md), qui
-évoquent déjà un modèle `Site`, un `SiteRepository` et un `ConsumptionService` exposant un
-`total_kwh(site_id)`.
+Statut : `Fait`. Elles ne sont pas des séries temporelles et n'ont donc rien à voir avec les
+hypertables ; elles vivent dans `apps/backend/alembic/`, qui porte le schéma exposé par l'API.
 
 ```mermaid
 erDiagram
-  SITE ||--o{ POINT_DE_MESURE : porte
-  POINT_DE_MESURE ||--o{ MESURE : produit
-
-  SITE {
-    int id PK
-    string nom
+  APP_USER ||--o{ REFRESH_TOKEN : ouvre
+  APP_USER {
+    uuid id PK
+    string email UK
+    text password_hash
+    text role
+    text kind
+    bool is_active
+    bool must_change_password
+    timestamptz credentials_changed_at
   }
-  POINT_DE_MESURE {
-    int id PK
-    int site_id FK
-    string libelle
-    string unite
+  REFRESH_TOKEN {
+    uuid id PK
+    uuid family_id
+    uuid user_id FK
+    bytea token_hash UK
+    timestamptz expires_at
+    timestamptz rotated_at
+    timestamptz revoked_at
+    text revoked_reason
+    uuid replaced_by
   }
-  MESURE {
-    timestamptz horodatage PK
-    int point_id PK
-    double valeur
+  LOGIN_ATTEMPT {
+    bigint id PK
+    timestamptz occurred_at
+    string email_tried
+    inet client_ip
+    text outcome
+  }
+  AUDIT_LOG {
+    bigint id PK
+    timestamptz occurred_at
+    uuid actor_id
+    text actor_email
+    text action
+    jsonb detail
   }
 ```
 
-`MESURE` est la table destinée à devenir une hypertable, partitionnée sur `horodatage`. Sa clé
-primaire doit inclure la colonne de temps : TimescaleDB l'exige, une clé sur le seul identifiant
-de point serait refusée.
+Quatre choix de modélisation portent une intention et se défendent seuls :
+
+- **`app_user` et non `user`** : `user` est un mot réservé PostgreSQL, raccourci de
+  `CURRENT_USER`. Le nom rappelle en prime qu'il s'agit d'un compte applicatif, par opposition
+  au rôle PostgreSQL qui portera le cantonnement de l'ETL.
+- **`credentials_changed_at`, une seule colonne**, couvre le changement de mot de passe, le
+  changement de rôle et la désactivation. Un compteur de version ne dirait rien à un humain qui
+  lit un audit.
+- **`refresh_token.expires_at` est absolu et hérité** du prédécesseur à chaque rotation. S'il
+  glissait, la promesse de sept jours serait fictive et une session active ne finirait jamais.
+- **`audit_log.actor_id` n'a aucune clé étrangère**, et `actor_email` comme `actor_role` sont
+  dénormalisés. Une contrainte `ON DELETE SET NULL` déclencherait un `UPDATE` que le déclencheur
+  d'ajout seul refuserait. Voir l'[ADR 0004](../adr/0004-journal-d-audit-en-ajout-seul.md).
+
+`audit_log` porte deux déclencheurs qui refusent `UPDATE`, `DELETE` et `TRUNCATE`. Elle n'est
+donc **pas** une hypertable : une politique de rétention émettrait des `DELETE` qu'ils
+refuseraient. `login_attempt`, à l'inverse, est faite pour se purger, puisque son volume est
+piloté par l'attaquant.
 
 ## Gabarit de révision créant une hypertable
 
-Conforme à la règle de l'ADR 0001 : table et hypertable dans la même révision.
+Conforme à la règle de l'ADR 0001 : table et hypertable dans la même révision. La révision
+`e6d2026091501` en est l'exemple réel, réduit ici à l'essentiel.
 
 ```python
 def upgrade() -> None:
     op.create_table(
-        "mesure",
-        sa.Column("horodatage", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("point_id", sa.Integer(), sa.ForeignKey("point_de_mesure.id"), nullable=False),
-        sa.Column("valeur", sa.Float(), nullable=False),
-        sa.PrimaryKeyConstraint("horodatage", "point_id"),
+        "reading",
+        sa.Column("reading_id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("site_id", sa.Text(), nullable=False),
+        sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("reading_id", "timestamp"),
     )
-    op.execute("SELECT create_hypertable('mesure', by_range('horodatage'))")
+    op.execute(
+        "SELECT create_hypertable('reading', by_range('timestamp'), "
+        "create_default_indexes => FALSE)"
+    )
 
 
 def downgrade() -> None:
-    op.drop_table("mesure")
+    op.drop_table("reading")
 ```
+
+La clé primaire inclut la colonne de temps parce que TimescaleDB l'exige : toute contrainte
+unique d'une hypertable doit porter la colonne de partitionnement, et une clé sur le seul
+`reading_id` serait refusée par `create_hypertable`.
+
+`create_default_indexes => FALSE` écarte l'index que TimescaleDB pose d'office sur la seule
+colonne de temps : les index déclarés dans la révision le couvrent déjà.
 
 `drop_table` suffit au retour arrière : supprimer la table supprime l'hypertable et ses partitions.
 
 ## Conventions
 
-- **Noms au singulier**, en minuscules, sans préfixe de table.
+- **Noms au singulier**, en minuscules, sans préfixe de table : `app_user`, `reading`.
 - **Toute colonne de temps en `timestamptz`.** Jamais de `timestamp` nu : une mesure sans fuseau
   devient ininterprétable dès le premier changement d'heure.
-- **La colonne de partitionnement s'appelle `horodatage`** et entre dans la clé primaire.
+- **La colonne de partitionnement entre dans la clé primaire.** Dans `reading` elle s'appelle
+  `timestamp` : c'est un nom de colonne, son type reste `timestamptz`.
 - **Les politiques de rétention et de compression** vont dans `db/migrations/`, pas dans Alembic :
   elles ne découlent pas du schéma applicatif.
 - **Tout modèle doit être importé dans `app/models/__init__.py`**, sans quoi
@@ -133,11 +182,122 @@ def downgrade() -> None:
 
 ## Questions ouvertes
 
-Elles relèvent du jalon J2, « valider le périmètre retenu », et bloquent le modèle définitif.
+Elles relèvent du jalon J2, « valider le périmètre retenu ». Le schéma est livré : ce qui suit
+porte sur son exploitation, plus sur sa forme.
 
-- **Quelles sources de mesures**, et selon quel protocole elles sont collectées.
 - **Quelle granularité** à l'ingestion : la seconde, la minute, le quart d'heure.
 - **Quels agrégats continus**, et sur quelles fenêtres.
 - **Quelle profondeur de rétention** en données brutes, et à partir de quand on compresse.
-- **Quelles unités** sont manipulées, et si une même table les mélange.
 - **Multi-tenant ou non** : un site appartient-il à un client, et faut-il cloisonner les lectures.
+
+## Modélisation détaillée des données
+
+Cette modélisation prend en compte les fichiers CSV historiques,
+leurs métadonnées JSON et les données de l’API Mock.
+Elle comprend six tables, depuis le stockage des mesures
+jusqu’aux recommandations proposées à l’utilisateur.
+
+### Schéma de données
+
+Le diagramme ci-dessous présente les tables et leurs relations.
+La révision `e6d2026091501` les crée.
+
+![Schéma de données EnerVision](images/EnerVision-schema-donnees.png)
+
+*Figure : Modélisation des données EnerVision.*
+
+### Description des tables
+
+Chaque table remplit un rôle précis dans le traitement et l’exploitation
+des données.
+
+| Table | Rôle | Origine des informations |
+|---|---|---|
+| `dataset` | Identifier les jeux historiques, retrouver leurs fichiers et conserver leurs métadonnées | Archive CSV/JSON et informations ajoutées lors de l’import |
+| `site` | Regrouper les informations des sites : identifiant, nom, type et caractéristiques disponibles | CSV et API Mock `/api/v1/sites` |
+| `reading` | Stocker les mesures, leur provenance, leur qualité et les éventuelles valeurs imputées | CSV et API Mock `/current` et `/readings` |
+| `prediction` | Conserver les prévisions, leur période cible et la référence du modèle utilisé | Traitements ML d’EnerVision |
+| `alert` | Enregistrer les alertes, leur type, leur gravité et leur message | API Mock `/alerts` et détections EnerVision |
+| `recommendation` | Proposer des actions et expliquer la règle qui les motive | Règles métier d’EnerVision |
+
+Les anomalies historiques décrites dans les JSON sont conservées
+dans `dataset.metadata`. Elles servent à l’analyse des données
+et ne sont pas considérées comme des alertes actuelles.
+
+### Relations entre les tables
+
+- Un site possède plusieurs mesures, prévisions et alertes.
+- Un jeu de données historique contient plusieurs mesures CSV.
+- Les mesures API ne sont pas rattachées à un dataset historique.
+- Une alerte peut être associée à une prévision du même site.
+- Une alerte peut donner lieu à plusieurs recommandations.
+
+## Ingestion des données historiques
+
+Le MVP EnerVision initialise les données énergétiques à partir du dataset fourni dans le cadre du projet.
+
+Le dataset de référence contient 122 647 mesures issues de 7 sites et couvre la période du 1er janvier 2023 au 31 décembre 2024.
+
+Les fichiers sources CSV et JSON sont nécessaires uniquement pour l'initialisation des données. Ils ne sont pas versionnés dans Git et sont placés localement dans `data/raw/`.
+
+### Architecture du flux
+
+```text
+Dataset CSV + métadonnées JSON
+              |
+              v
+     historical_import.py
+              |
+       +------+------+
+       |             |
+       v             v
+   Validation     SHA-256
+       |          Traçabilité
+       +------+------+
+              |
+              v
+      Normalisation
+      + qualité data
+              |
+              v
+    Chargement par batches
+              |
+              v
+ PostgreSQL / TimescaleDB
+       |      |       |
+       v      v       v
+    dataset  site   reading
+```
+
+Le pipeline est développé en Python.
+
+Pandas est utilisé pour l'extraction, la validation et la préparation des données. SQLAlchemy Async assure le chargement transactionnel dans PostgreSQL/TimescaleDB.
+
+Une empreinte SHA-256 permet d'identifier le dataset utilisé et d'assurer sa traçabilité.
+
+Les valeurs manquantes sont conservées pendant l'ingestion afin de préserver les données sources. Aucune imputation n'est réalisée à cette étape.
+
+Le chargement des mesures est effectué par batches de 1 000 lignes.
+
+Les données provenant du dataset CSV sont identifiées par `source = "csv"` et associées à leur `dataset_id`.
+
+### Résultats validés
+
+Le chargement de référence a permis d'obtenir :
+
+- 1 dataset ;
+- 7 sites ;
+- 122 647 mesures ;
+- 0 doublon détecté dans le dataset source.
+
+L'idempotence a également été vérifiée par une deuxième exécution du pipeline : aucune nouvelle mesure n'a été créée et le nombre de `reading` est resté à 122 647.
+
+La procédure détaillée d'installation, d'exécution, de validation et de contrôle du pipeline est disponible dans `etl/README.md`.
+
+### Évolution prévue
+
+L'étape suivante consiste à orchestrer les traitements Data avec Apache Airflow.
+
+L'orchestration réutilisera la logique ETL existante afin de séparer la logique de traitement de la planification, du suivi des exécutions et de la gestion des erreurs.
+
+Le pipeline servira ensuite de base à la préparation des données nécessaires au modèle de Machine Learning.

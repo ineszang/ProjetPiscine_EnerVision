@@ -10,14 +10,20 @@ contredisent, c'est l'ADR qui fait foi et la vue qui est en retard.
 |---|---|
 | [00-vue-ensemble.md](00-vue-ensemble.md) | Jalons du projet, contexte, conteneurs, sécurité, flux bout en bout |
 | [10-infra.md](10-infra.md) | Poste de développement, cible k3s, décisions figées, ports et noms |
-| [20-backend.md](20-backend.md) | Couches FastAPI, séquence de démarrage, routes, configuration |
+| [20-backend.md](20-backend.md) | Couches FastAPI, séquence de démarrage, routes, configuration, contrat OpenAPI |
 | [30-frontend.md](30-frontend.md) | Angular, arborescence cible, flux HTTP |
+| [31-contrat-authentification.md](31-contrat-authentification.md) | Ce que le frontend doit savoir pour coder la connexion |
+| [32-design-systeme-frontend.md](32-design-systeme-frontend.md) | Tokens CSS, composants `ev-*` partagés, règle anti-couleur-en-dur |
 | [40-data.md](40-data.md) | Frontières `db/` et `alembic/`, cycle de vie d'une mesure, modèle |
 
-L'observabilité, la sécurité et la CI/CD n'ont pas de document propre : ce sont des sections des
-cinq ci-dessus, tant que `monitoring/`, `.github/workflows/` et `etl/airflow/` ne contiennent que
-des `.gitkeep`. Elles en sortiront le jour où elles auront de la matière. Un fichier vide de plus
-n'aide personne.
+L'observabilité et la CI/CD n'ont pas de document propre : ce sont des sections des documents
+ci-dessus, tant que `monitoring/` et `etl/airflow/` ne contiennent que des `.gitkeep`. Elles en
+sortiront le jour où elles auront de la matière. Un fichier vide de plus n'aide personne.
+
+La sécurité applicative, elle, a désormais de la matière : la vue consolidée reste dans
+[00-vue-ensemble.md](00-vue-ensemble.md), le détail dans [20-backend.md](20-backend.md), la
+traçabilité OWASP dans [owasp-traceabilite.md](owasp-traceabilite.md), et les décisions dans les
+ADR 0002 à 0004.
 
 ## Conventions
 

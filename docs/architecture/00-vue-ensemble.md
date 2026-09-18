@@ -63,8 +63,9 @@ flowchart TB
   grafana -.-> prom
 ```
 
-Le lien `front -.-> api` est en pointillé à dessein : le frontend n'appelle aujourd'hui aucune
-API, `provideHttpClient` n'est pas encore installé. Voir [30-frontend.md](30-frontend.md).
+Le lien `front -.-> api` reste en pointillé : le frontend appelle bien une API, mais un
+intercepteur répond à sa place tant que les endpoints n'existent pas. Voir
+[30-frontend.md](30-frontend.md).
 
 Le lien `prom -.-> api` de même : l'API expose bien `/metrics` au format Prometheus, mais aucun
 collecteur ne vient le lire.
@@ -73,9 +74,10 @@ collecteur ne vient le lire.
 
 | Domaine | Technologie | Emplacement | Statut | Ce qui existe réellement |
 |---|---|---|---|---|
-| Backend | FastAPI, Python 3.14 | `apps/backend` | `En cours` | Factory, configuration, journalisation, 2 sondes de santé, `/metrics`. Aucune couche métier |
-| Frontend | Angular 22, Node 24 | `apps/frontend` | `En cours` | Squelette `ng new` standalone, routes vides, aucun service HTTP |
-| Base | PostgreSQL 17 + TimescaleDB | `db` | `Fait` | Bootstrap de l'extension, base de test, chaîne Alembic. Aucune table applicative |
+| Backend | FastAPI, Python 3.14 | `apps/backend` | `En cours` | Factory, configuration, journalisation, 2 sondes de santé, `/metrics`, contrat OpenAPI versionné, routes `sites`, `alerts`, `recommendations`, `stats/summary` et `readings` en lecture (endpoints → services → repositories → models) |
+| Frontend | Angular 22, Node 24 | `apps/frontend` | `En cours` | Tableau de bord sur route `/dashboard`, deux services HTTP, graphiques Chart.js, données servies par des fixtures |
+| Base | PostgreSQL 17 + TimescaleDB | `db` | `Fait` | Bootstrap de l'extension, base de test, chaîne Alembic. Schéma applicatif créé (`site`, `dataset`, `reading` en hypertable, `prediction`, `alert`, `recommendation`) |
+| ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement (features par lags/moyennes glissantes, baseline de persistance saisonnière, suivi MLflow local), voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../../ML-START.md). Scoring, endpoint et surveillance de dérive pas encore construits |
 | Infra | Terraform, k3s single-node | `infra/terraform` | `En cours` | Module d'installation du cluster. Jamais appliqué, aucune ressource Kubernetes déclarée |
 | Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Cible` | Rien, hors le `/metrics` exposé par l'API |
 | ETL | Apache Airflow | `etl/airflow` | `Cible` | Rien |
@@ -109,24 +111,52 @@ consolidée.
 
 ### En place
 
+- **Authentification et autorisation.** JWT d'accès de 15 minutes, jeton de rafraîchissement
+  opaque en cookie `HttpOnly` avec rotation et détection de réutilisation, mots de passe en
+  Argon2id, RBAC à trois rôles. Détail dans [20-backend.md](20-backend.md), décisions dans les
+  [ADR 0002](../adr/0002-authentification-jwt-et-refresh-opaque.md) et
+  [0003](../adr/0003-autorisation-rbac-a-trois-roles.md).
+- **Interdire par défaut.** Toute route exige un jeton, sauf quatre exceptions listées dans un
+  fichier de test qui interroge réellement chaque route sans identifiant.
+- **Révocation immédiate.** Le compte est relu en base à chaque requête : une désactivation ou un
+  changement de rôle prend effet à la requête suivante, pas au bout de 15 minutes.
+- **Limitation de débit à fenêtre glissante** sur trois clés, évaluée avant le hachage. Pas de
+  verrouillage de compte, qui serait un déni de service trivial.
+- **Journal d'audit en ajout seul**, garanti par deux déclencheurs PostgreSQL
+  ([ADR 0004](../adr/0004-journal-d-audit-en-ajout-seul.md)).
 - **Les secrets n'ont pas de valeur par défaut.** `APP_SECRET_KEY` et `DATABASE_URL` sont requis
-  sans repli : l'application refuse de démarrer si l'un manque, plutôt que de tourner avec une
-  valeur de démonstration. `.env` reste hors dépôt, `.env.example` est versionné.
-- **CORS conditionnel** : le middleware n'est ajouté que si `APP_CORS_ORIGINS` est renseigné.
-- **Documentation interactive fermée en production** : `/docs`, `/redoc` et `/openapi.json` sont
-  désactivés dès que `APP_ENV=prod`.
+  sans repli, et la configuration refuse de démarrer sur cinq erreurs silencieuses : secret trop
+  court ou laissé à sa valeur d'exemple, `debug` en production, joker CORS, origines vides hors
+  local, cookie `SameSite=None` sans `Secure`.
+- **CORS explicite** : origines listées, méthodes et en-têtes énumérés, jamais de joker.
+- **En-têtes de sécurité** posés par l'application (`nosniff`, `DENY`, `no-referrer`) et
+  `Cache-Control: no-store` sur les routes d'authentification.
+- **Caviardage des journaux** : jetons, empreintes Argon2, mots de passe et cookies sont
+  expurgés avant écriture.
+- **Documentation interactive fermée** en préproduction et en production, `/metrics` derrière un
+  jeton facultatif, sonde de disponibilité qui ne publie plus la version de TimescaleDB.
+- **CI backend bloquante** : format, lint, typage strict et tests avec seuil de couverture.
 - **Conteneur backend non-root**, déclaré dans `apps/backend/Dockerfile`.
 - **Côté infrastructure** : la clé SSH est marquée `sensitive`, le kubeconfig reste en `600/root`
   sur la machine cible et n'est lu que par `sudo`, `*.tfvars` est ignoré par git sauf les
   `.example`.
 
-### Absent
+### Absent, et assumé
 
-- **Aucune authentification ni autorisation.** Les deux endpoints exposés sont publics. Rien
-  n'est encore décidé sur ce point.
-- Pas de TLS, pas de limitation de débit, pas de journalisation des accès, pas de rotation des
-  secrets.
-- Aucune analyse de dépendances ni de conteneur, faute de CI.
+- **Rôles PostgreSQL cantonnés** pour l'ETL et le travail d'apprentissage. C'est la vraie
+  frontière pour ces deux consommateurs, qui écrivent en base et non par HTTP. Reporté parce que
+  cela impose une réinitialisation de base à toute l'équipe. Voir l'ADR 0003.
+- **`REVOKE` sur `audit_log`** : les déclencheurs arrêtent les accidents, les privilèges
+  arrêteraient une application compromise. Même raison de report.
+- **Portée par site** dans l'autorisation : les rôles sont globaux, un opérateur du site A peut
+  agir sur le site B. C'est la limite connue du modèle.
+- **TLS, HSTS et CSP** : ils appartiennent au terminateur TLS, qui n'existe pas encore.
+- **Limitation de débit au frontal** : celle de l'application protège les identifiants, pas
+  l'infrastructure.
+- **Analyse de dépendances et de conteneurs** dans la CI, qui relève du chantier CI/CD.
+- **Le fichier `environment.ts` de production** pointe encore sur `http://localhost:8000` en HTTP
+  simple : dans cet état, le cookie `Secure` ne sera pas posé. Voir
+  [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ## Décisions structurantes
 

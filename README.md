@@ -19,16 +19,18 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Domaine    | Technologie                         | Emplacement         | Etat          |
 |------------|-------------------------------------|---------------------|---------------|
 | Backend    | FastAPI, Python 3.14                | `apps/backend`      | Initialise    |
-| Frontend   | Angular 22, Node 24 LTS             | `apps/frontend`     | Squelette     |
+| Frontend   | Angular 22, Node 24 LTS             | `apps/frontend`     | Tableau de bord |
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | Initialise    |
 | ETL        | Apache Airflow                      | `etl/airflow`       | A initialiser |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
-| CI/CD      | GitHub Actions                      | `.github/workflows` | A initialiser |
+| CI/CD      | GitHub Actions                      | `.github/workflows` | Backend en place |
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
+| ML         | LightGBM, MLflow                    | `ml`                | Entrainement initialise |
 
 Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Le frontend
-porte le squelette Angular, sans code metier : aucune route, aucun appel d'API. Les autres dossiers
-portent l'arborescence et un README de cadrage, leur contenu fait l'objet d'un ticket dedie.
+sert un tableau de bord sur `/dashboard`, dont les données proviennent de fixtures : les endpoints
+correspondants restent à écrire côté API. Les autres dossiers portent l'arborescence et un README
+de cadrage, leur contenu fait l'objet d'un ticket dedie.
 
 L'etat detaille de chaque brique et les vues d'architecture sont dans
 [docs/architecture](docs/architecture/README.md).
@@ -52,6 +54,7 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 ├── infra/terraform/
 │   ├── modules/        Modules reutilisables
 │   └── environments/   Racines Terraform, une par environnement
+├── ml/                 Pipeline d'entrainement LightGBM, suivi MLflow
 ├── monitoring/
 │   ├── prometheus/     Collecte et regles d'alerte
 │   ├── grafana/        Provisioning et dashboards
@@ -62,16 +65,17 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 
 ## Demarrage
 
-Prerequis : uv, Docker. Le poste doit disposer de Python 3.14, que `uv` installe seul.
+Prerequis : uv, Docker, Node 24 LTS (npm fourni). Le poste doit disposer de Python 3.14, que
+`uv` installe seul.
 
 ```bash
 cp .env.example .env                               # variables de docker-compose
 cp apps/backend/.env.example apps/backend/.env     # variables du backend hors conteneur
 
 make db-up     # PostgreSQL + TimescaleDB, publie sur le port 5433
-make install   # dependances du backend
+make install   # dependances du backend et du frontend
 make migrate   # applique les migrations Alembic
-make dev       # API sur http://localhost:8000, docs sur /docs
+make dev       # backend sur http://localhost:8000 (docs sur /docs), frontend sur http://localhost:4200
 make check     # lint + typage + tests
 ```
 
@@ -82,9 +86,11 @@ Deux fichiers d'environnement, deux usages : `.env` a la racine alimente `docker
 5432, souvent deja pris par une autre base.
 
 La boucle de developpement est `make db-up` puis `make dev` : seule la base tourne en
-conteneur. Le service `backend` du `docker-compose.yml` sert la stack complete et la recette,
-et n'embarque pas le source, donc toute modification y demande un
-`docker compose up -d --build backend`.
+conteneur, le backend et le frontend tournent tous les deux sur le poste, lances ensemble par
+`make dev` (logs entrelaces dans le meme terminal, Ctrl+C arrete les deux). `make dev-backend`
+et `make dev-frontend` restent disponibles pour lancer un seul des deux. Le service `backend`
+du `docker-compose.yml` sert la stack complete et la recette, et n'embarque pas le source, donc
+toute modification y demande un `docker compose up -d --build backend`.
 
 Verifier que la base repond et que l'extension est chargee :
 

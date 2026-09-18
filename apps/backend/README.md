@@ -28,7 +28,7 @@ de demarrer sans elles.
 ## Commandes
 
 Depuis la racine du monorepo, via le `Makefile` : `make install`, `make dev`, `make lint`,
-`make format`, `make typecheck`, `make test`, `make check`, `make docker-build`.
+`make format`, `make typecheck`, `make test`, `make check`, `make openapi`, `make docker-build`.
 
 Directement depuis ce dossier :
 
@@ -39,7 +39,11 @@ uv run ruff format .         # format
 uv run mypy app              # typage strict
 uv run pytest                # tests + couverture
 uv run pytest -m integration # tests exigeant une base joignable
+uv run python -m app.cli export-openapi   # régénère openapi.json
 ```
+
+`openapi.json` est versionné : `tests/api/test_openapi.py` échoue si le fichier ne correspond
+plus aux routes déclarées. Toute PR qui change une route le régénère dans le même commit.
 
 Les conventions de tests, les gabarits et le detail des marqueurs sont dans
 [`TESTING.md`](TESTING.md).
@@ -57,13 +61,21 @@ independants de l'environnement.
 ```
 app/
 ├── api/
-│   ├── deps.py          Dependances FastAPI partagees (session, settings)
+│   ├── deps.py          Dépendances partagées : session, settings, principal, gardes de rôle
+│   ├── errors.py        Gestionnaires 422 et 500
+│   ├── middleware.py    En-têtes de sécurité
+│   ├── security.py      Garde du point /metrics
 │   └── v1/
-│       ├── router.py    Agregation des routes de la version 1
-│       └── endpoints/   Un module par ressource exposee
+│       ├── router.py    Agrégation des routes de la version 1
+│       └── endpoints/   Un module par ressource exposée
 ├── core/
 │   ├── config.py        Settings Pydantic, source unique de configuration
-│   └── logging.py       Journalisation console en local, JSON en production
+│   ├── cookies.py       Attributs du cookie de rafraîchissement
+│   ├── hashing.py       Argon2id, poussé dans un fil sous limiteur
+│   ├── logging.py       Journalisation console en local, JSON en production
+│   ├── principal.py     L'identité que voit le code métier
+│   ├── roles.py         Rôles ordonnés
+│   └── security.py      Encodage et décodage des jetons d'accès
 ├── db/
 │   ├── base.py          Base declarative SQLAlchemy
 │   └── session.py       Engine et sessions asynchrones
@@ -71,6 +83,7 @@ app/
 ├── schemas/             Modeles Pydantic d'entree et de sortie
 ├── repositories/        Acces aux donnees, une classe par agregat
 ├── services/            Regles metier, orchestrent les repositories
+├── cli.py               Commandes hors HTTP, dont l'amorcage du premier admin
 └── main.py              Factory applicative
 tests/                   Miroir de app/
 alembic/                 Migrations du schema applicatif
@@ -81,12 +94,45 @@ Le sens de dependance est unique : `endpoints` vers `services` vers `repositorie
 
 ## Routes
 
-| Route                  | Role                                            |
-|------------------------|-------------------------------------------------|
-| `/api/v1/health/live`  | Sonde de vivacite, aucune dependance externe    |
-| `/api/v1/health/ready` | Sonde de disponibilite, verifie la base et TimescaleDB |
-| `/metrics`             | Metriques au format Prometheus                  |
-| `/docs`, `/openapi.json` | Documentation, desactivee quand `APP_ENV=prod` |
+| Route | Rôle | Accès |
+|---|---|---|
+| `/api/v1/health/live` | Sonde de vivacité, aucune dépendance externe | public |
+| `/api/v1/health/ready` | Sonde de disponibilité, vérifie la base et TimescaleDB | public |
+| `/api/v1/auth/login` | Ouvre une session | public |
+| `/api/v1/auth/refresh` | Fait tourner la session | cookie |
+| `/api/v1/auth/logout` | Ferme la session courante | cookie, idempotente |
+| `/api/v1/auth/logout-all` | Ferme toutes les sessions du compte | jeton |
+| `/api/v1/auth/password` | Change son propre mot de passe | jeton |
+| `/api/v1/auth/forgot-password` | Demande un lien de réinitialisation par email | public |
+| `/api/v1/auth/reset-password` | Choisit un nouveau mot de passe depuis ce lien | public |
+| `/api/v1/auth/me` | Décrit le compte connecté | jeton |
+| `/api/v1/users` | Liste et crée des comptes | `admin` |
+| `/api/v1/users/{id}` | Change le rôle ou l'activation | `admin` |
+| `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions | `admin` |
+| `/api/v1/sites` | Liste les sites | `lecteur` |
+| `/api/v1/sites/{site_id}` | Décrit un site | `lecteur` |
+| `/api/v1/recommendations` | Liste les recommandations | `lecteur` |
+| `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation | `lecteur` |
+| `/metrics` | Métriques au format Prometheus | jeton si `APP_METRICS_TOKEN` |
+| `/docs`, `/openapi.json` | Documentation, fermée en `staging` et `prod` | public sinon |
+
+Le contrat détaillé pour le frontend est dans
+[`docs/architecture/31-contrat-authentification.md`](../../docs/architecture/31-contrat-authentification.md).
+
+## Premier administrateur
+
+Aucun compte n'existe après les migrations. Il s'en crée un en ligne de commande :
+
+```bash
+make bootstrap-admin EMAIL=prenom.nom@enervision.fr   # mot de passe saisi au clavier
+# ou, depuis apps/backend :
+uv run python -m app.cli create-admin --email prenom.nom@enervision.fr --generate
+```
+
+Le compte est créé avec `must_change_password`, donc la première connexion ne donne accès qu'à
+`/auth/me` et `/auth/password` jusqu'au changement. Le mot de passe ne transite jamais par
+`argv`, visible de tout `ps`, et aucune révision Alembic n'insère de compte : son empreinte
+resterait dans Git pour toujours.
 
 ## Migrations
 

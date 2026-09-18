@@ -1,0 +1,43 @@
+:root {
+  // Marque (dérivé du logo : vert feuille/éclair, halo)
+  --color-primary: #16a34a;
+  --color-primary-hover: #15803d;
+  --color-primary-light: #dcfce7;
+
+  // Neutres (texte, bordures, fonds)
+  --color-text: #1f2937;
+  --color-text-muted: #6b7280;
+  --color-label: #374151;
+  --color-border: #d1d5db;
+  --color-border-light: #e5e7eb;
+  --color-bg: #f3f4f6;
+  --color-surface: #ffffff;
+  --color-disabled: #9ca3af;
+
+  // Sémantique (statuts, alertes)
+  --color-success: #16a34a;
+  --color-success-bg: #dcfce7;
+  --color-warning: #f9a825;
+  --color-warning-bg: #fef9e7;
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #fecaca;
+  --color-critical: #b91c1c;
+  --color-warning-text: #92400e;
+  --color-text-inverse: #ffffff;
+
+  // Typo, rayons, ombre
+  --font-family: 'Segoe UI', system-ui, sans-serif;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
+
+  // Espacements
+  --space-1: 0.35rem;
+  --space-2: 0.6rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2.5rem;
+}

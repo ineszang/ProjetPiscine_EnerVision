@@ -1,0 +1,59 @@
+name: ML
+
+# Piège : la version de Python vient de ml/.python-version, et doit rester en 3.14 (cf.
+# .github/workflows/backend.yml, même contrainte).
+
+on:
+  push:
+    paths:
+      - "ml/**"
+      - ".github/workflows/ml.yml"
+  pull_request:
+    paths:
+      - "ml/**"
+      - ".github/workflows/ml.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ml-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verification:
+    name: Lint, typage et tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: ml/uv.lock
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        run: uv python install
+
+      - name: Synchronise les dépendances sans dévier du verrou
+        run: uv sync --all-groups --frozen
+
+      - name: Vérifie le formatage
+        run: uv run ruff format --check .
+
+      - name: Analyse statique
+        run: uv run ruff check --output-format=github .
+
+      - name: Typage
+        run: uv run mypy enervision_ml tests
+
+      # Aucun test ne touche PostgreSQL ni MLflow distant : tout tourne sur donnees
+      # synthetiques ou un magasin SQLite local jetable (cf. ml/tests/test_train.py).
+      - name: Tests
+        run: uv run pytest

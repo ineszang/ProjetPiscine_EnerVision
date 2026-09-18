@@ -17,7 +17,7 @@ async def test_liveness_exposes_service_metadata(client: AsyncClient) -> None:
     }
 
 
-async def test_readiness_reports_the_timescaledb_version(
+async def test_readiness_confirms_the_extension_without_leaking_its_version(
     fake_session: Callable[..., None], client: AsyncClient
 ) -> None:
     fake_session(result="2.22.1")
@@ -28,8 +28,9 @@ async def test_readiness_reports_the_timescaledb_version(
     assert response.json() == {
         "status": "ready",
         "database": "reachable",
-        "timescaledb": "2.22.1",
+        "timescaledb": "loaded",
     }
+    assert "2.22.1" not in response.text
 
 
 async def test_readiness_returns_503_when_the_extension_is_missing(
@@ -59,7 +60,7 @@ async def test_readiness_returns_503_when_database_is_unreachable(
     response = await client.get("/api/v1/health/ready")
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "Base de donnees injoignable"
+    assert response.json()["detail"] == "Base de données injoignable"
 
 
 @pytest.mark.parametrize("path", ["/openapi.json", "/metrics"])
@@ -75,4 +76,4 @@ async def test_readiness_reaches_the_real_database(client: AsyncClient) -> None:
     body = response.json()
     assert body["status"] == "ready"
     assert body["database"] == "reachable"
-    assert body["timescaledb"]
+    assert body["timescaledb"] == "loaded"
