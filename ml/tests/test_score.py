@@ -8,6 +8,7 @@ import pytest
 from enervision_ml.features import TARGET_COLUMN
 from enervision_ml.score import (
     LAG_168H_COLUMN,
+    MAX_STALENESS,
     ScoredSite,
     build_scoring_frame,
     model_reference,
@@ -123,12 +124,23 @@ def test_build_scoring_frame_returns_empty_when_there_is_no_recent_reading() -> 
     assert scoring_frame.empty
 
 
+def target_at_for(depart: datetime, heures: int) -> datetime:
+    """`target_at` que produira `build_scoring_frame` pour ce jeu synthetique (derniere lecture
+    + 1h) : l'utiliser comme `instant` donne un age d'1h, largement sous le seuil de peremption,
+    pour les tests qui ne visent pas ce filtre."""
+    return depart + timedelta(hours=heures)
+
+
 def test_score_marks_insufficient_history_without_calling_the_model() -> None:
     depart = datetime(2026, 1, 1, tzinfo=UTC)
     scoring_frame = build_scoring_frame(make_recent("site-a", heures=100, depart=depart))
     booster = FakeBooster()
 
-    resultats = score(booster, scoring_frame)  # type: ignore[arg-type]
+    resultats = score(
+        booster,  # type: ignore[arg-type]
+        scoring_frame,
+        instant=target_at_for(depart, 100),
+    )
 
     assert resultats == [
         ScoredSite(
@@ -147,12 +159,47 @@ def test_score_predicts_when_history_is_sufficient() -> None:
     scoring_frame = build_scoring_frame(make_recent("site-a", heures=200, depart=depart))
     booster = FakeBooster(valeur=99.5)
 
-    resultats = score(booster, scoring_frame)  # type: ignore[arg-type]
+    resultats = score(
+        booster,  # type: ignore[arg-type]
+        scoring_frame,
+        instant=target_at_for(depart, 200),
+    )
 
     assert len(resultats) == 1
     assert resultats[0].status == "available"
     assert resultats[0].predicted_value == 99.5
     assert resultats[0].failure_reason is None
+    assert booster.appels == [1]
+
+
+def test_score_marks_a_stale_site_as_insufficient_data_without_calling_the_model() -> None:
+    depart = datetime(2026, 1, 1, tzinfo=UTC)
+    # Historique largement suffisant (168h+), mais l'instant de reference est loin apres la
+    # derniere lecture : la fraicheur doit primer sur la disponibilite de l'historique.
+    scoring_frame = build_scoring_frame(make_recent("site-a", heures=200, depart=depart))
+    instant = target_at_for(depart, 200) + MAX_STALENESS + timedelta(hours=1)
+    booster = FakeBooster()
+
+    resultats = score(booster, scoring_frame, instant=instant)  # type: ignore[arg-type]
+
+    assert len(resultats) == 1
+    assert resultats[0].status == "insufficient_data"
+    assert resultats[0].predicted_value is None
+    assert "vieille" in (resultats[0].failure_reason or "")
+    assert booster.appels == []
+
+
+def test_score_accepts_a_reading_exactly_at_the_staleness_threshold() -> None:
+    depart = datetime(2026, 1, 1, tzinfo=UTC)
+    scoring_frame = build_scoring_frame(make_recent("site-a", heures=200, depart=depart))
+    # `target_at_for(...)` donne deja un age d'1h (cf. sa docstring) : retrancher cette heure
+    # pour retomber exactement sur le seuil, ni en dessous ni au dessus.
+    instant = target_at_for(depart, 200) + MAX_STALENESS - timedelta(hours=1)
+    booster = FakeBooster(valeur=12.0)
+
+    resultats = score(booster, scoring_frame, instant=instant)  # type: ignore[arg-type]
+
+    assert resultats[0].status == "available"
     assert booster.appels == [1]
 
 

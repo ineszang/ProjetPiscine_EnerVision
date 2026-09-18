@@ -119,6 +119,11 @@ def _typer(frame: pd.DataFrame) -> pd.DataFrame:
     LightGBM refuse ("pandas dtypes must be int, float or bool"). `pd.to_numeric` corrige aussi
     n'importe quelle autre colonne mesuree entierement absente sur une fenetre de scoring, pas
     seulement `capacity_kw`.
+
+    Piege additionnel : `NUMERIC_COLUMNS` inclut `consumption_kwh`, la cible du modele, pas
+    seulement des variables explicatives. Une valeur non numerique y devient donc silencieusement
+    `NaN` aussi bien a l'entrainement (ou `train.py` l'exclura ensuite via son `dropna`) qu'au
+    scoring -- ce n'est pas un effet de bord limite aux colonnes mesurees.
     """
     typee = frame.copy()
     for colonne in NUMERIC_COLUMNS:

@@ -1,34 +1,55 @@
+from pathlib import Path
+
 import pandas as pd
 
-from enervision_ml.data import NUMERIC_COLUMNS, OUTPUT_COLUMNS, _typer
+from enervision_ml.data import NUMERIC_COLUMNS, load_from_csv
+
+_CSV_HEADER = (
+    "site_id,timestamp,consumption_kwh,temperature_celsius,humidity_percent,"
+    "solar_irradiance_wm2,is_working_hours,site_type"
+)
 
 
-def make_frame_with_object_dtype_capacity() -> pd.DataFrame:
-    # Reproduit ce que `pd.read_sql` renvoie pour une colonne entierement `NULL` en base :
-    # dtype `object` rempli de `None`, pas `float64` rempli de `NaN`.
-    frame = pd.DataFrame(
-        {colonne: [1.0, 2.0] for colonne in OUTPUT_COLUMNS if colonne not in NUMERIC_COLUMNS}
+def write_csv(tmp_path: Path, *lignes: str) -> Path:
+    csv_path = tmp_path / "recent.csv"
+    csv_path.write_text("\n".join([_CSV_HEADER, *lignes]) + "\n")
+    return csv_path
+
+
+def test_load_from_csv_types_every_numeric_column_as_float(tmp_path: Path) -> None:
+    csv_path = write_csv(tmp_path, "SITE001,2026-01-01T00:00:00,10.5,15.0,50.0,0.0,True,office")
+
+    frame = load_from_csv(csv_path)
+
+    for colonne in NUMERIC_COLUMNS:
+        assert frame[colonne].dtype == "float64"
+
+
+def test_load_from_csv_coerces_a_corrupted_measurement_to_nan(tmp_path: Path) -> None:
+    # Reproduit une valeur de capteur corrompue plutot que vraiment manquante : `pandas` type
+    # alors la colonne entiere en `object`, pas en `float64` rempli de `NaN` -- le meme genre de
+    # divergence de typage que celle que `pd.read_sql` produit sur une colonne SQL entierement
+    # `NULL` (cf. `site.capacity_kw`, jamais peuplee par aucun pipeline d'ingestion aujourd'hui).
+    csv_path = write_csv(
+        tmp_path,
+        "SITE001,2026-01-01T00:00:00,10.5,15.0,50.0,0.0,True,office",
+        "SITE001,2026-01-01T01:00:00,capteur_hs,15.2,50.5,0.0,True,office",
     )
-    for colonne in NUMERIC_COLUMNS:
-        frame[colonne] = pd.Series([None, None], dtype="object")
-    return frame
+
+    frame = load_from_csv(csv_path)
+
+    assert frame["consumption_kwh"].dtype == "float64"
+    assert frame["consumption_kwh"].iloc[0] == 10.5
+    assert pd.isna(frame["consumption_kwh"].iloc[1])
 
 
-def test_typer_coerces_an_all_null_object_column_to_float() -> None:
-    frame = make_frame_with_object_dtype_capacity()
+def test_load_from_csv_always_types_capacity_kw_as_float(tmp_path: Path) -> None:
+    # `capacity_kw` n'existe pas dans ce CSV : `load_from_csv` la pose elle-meme a `NaN`. Cette
+    # affectation directe est deja un `float`, contrairement au cas `pd.read_sql` -- ce test
+    # garde le contrat visible malgre tout, au cas ou l'implementation changerait.
+    csv_path = write_csv(tmp_path, "SITE001,2026-01-01T00:00:00,10.5,15.0,50.0,0.0,True,office")
 
-    typee = _typer(frame)
+    frame = load_from_csv(csv_path)
 
-    for colonne in NUMERIC_COLUMNS:
-        assert typee[colonne].dtype == "float64"
-        assert typee[colonne].isna().all()
-
-
-def test_typer_preserves_real_numeric_values() -> None:
-    frame = make_frame_with_object_dtype_capacity()
-    frame["capacity_kw"] = pd.Series([100.0, None], dtype="object")
-
-    typee = _typer(frame)
-
-    assert typee["capacity_kw"].tolist()[0] == 100.0
-    assert pd.isna(typee["capacity_kw"].tolist()[1])
+    assert frame["capacity_kw"].dtype == "float64"
+    assert pd.isna(frame["capacity_kw"].iloc[0])

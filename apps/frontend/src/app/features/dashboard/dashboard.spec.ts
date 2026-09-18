@@ -52,7 +52,9 @@ describe('Dashboard', () => {
     expect(predictions.getPredictions).toHaveBeenCalled();
     expect(fixture.componentInstance.alerts().length).toBe(1);
     expect(fixture.componentInstance.predictions().length).toBe(1);
-    expect(fixture.componentInstance.error()).toBeNull();
+    expect(fixture.componentInstance.statsError()).toBeNull();
+    expect(fixture.componentInstance.alertsError()).toBeNull();
+    expect(fixture.componentInstance.predictionsError()).toBeNull();
   });
 
   it("signale l'indisponibilité puis repart au rafraîchissement suivant", () => {
@@ -80,13 +82,13 @@ describe('Dashboard', () => {
 
     vi.advanceTimersByTime(1);
     expect(statsMock.getSummary).toHaveBeenCalledTimes(1);
-    expect(fixture.componentInstance.error()).not.toBeNull();
+    expect(fixture.componentInstance.statsError()).not.toBeNull();
     expect(fixture.componentInstance.stats()).toBeNull();
 
     vi.advanceTimersByTime(10000);
     expect(statsMock.getSummary).toHaveBeenCalledTimes(2);
     expect(fixture.componentInstance.stats()).not.toBeNull();
-    expect(fixture.componentInstance.error()).toBeNull();
+    expect(fixture.componentInstance.statsError()).toBeNull();
   });
 
   it("n'interrompt pas la page quand le chargement des alertes échoue", () => {
@@ -107,6 +109,7 @@ describe('Dashboard', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance.alerts().length).toBe(0);
+    expect(fixture.componentInstance.alertsError()).not.toBeNull();
   });
 
   it("n'interrompt pas la page quand le chargement des prévisions échoue", () => {
@@ -130,7 +133,38 @@ describe('Dashboard', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance.predictions().length).toBe(0);
-    expect(fixture.componentInstance.error()).not.toBeNull();
+    expect(fixture.componentInstance.predictionsError()).not.toBeNull();
+  });
+
+  it("un rafraîchissement de stats n'efface pas une erreur de prévisions en attente", () => {
+    vi.useFakeTimers();
+    const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
+    const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
+    const predictions = {
+      getPredictions: vi.fn().mockReturnValue(throwError(() => new Error('nope'))),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [Dashboard],
+      providers: [
+        { provide: StatsService, useValue: statsMock },
+        { provide: AlertsService, useValue: alertsMock },
+        { provide: PredictionsService, useValue: predictions },
+        provideRouter([]),
+      ],
+    });
+
+    const fixture = TestBed.createComponent(Dashboard);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.predictionsError()).not.toBeNull();
+
+    // Plusieurs cycles de `timer(0, 10_000)` (stats) plus tard, l'erreur des prévisions doit
+    // toujours être visible : rien ne vient la rafraîchir tant que la section n'est pas rechargée.
+    vi.advanceTimersByTime(30000);
+
+    expect(fixture.componentInstance.predictionsError()).not.toBeNull();
+    expect(fixture.componentInstance.statsError()).toBeNull();
   });
 
   it('appelle logout et redirige vers /login au clic sur le bouton de déconnexion', () => {

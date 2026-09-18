@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
+import { Component, OnInit, inject, signal, DestroyRef, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { timer, switchMap, catchError, EMPTY, Observable } from 'rxjs';
 import { DecimalPipe, DatePipe } from '@angular/common';
@@ -67,32 +67,44 @@ export class Dashboard implements OnInit {
   stats = signal<StatsSummary | null>(null);
   alerts = signal<Alert[]>([]);
   predictions = signal<SitePredictionSummary[]>([]);
-  error = signal<string | null>(null);
+
+  // Un signal par flux, pas un seul `error` partagé : sinon le tick suivant de `timer` (stats)
+  // efface silencieusement un message d'échec des prévisions ou des alertes après 10s au plus,
+  // sans retry ni indication pour l'utilisateur que la section correspondante est restée vide.
+  statsError = signal<string | null>(null);
+  alertsError = signal<string | null>(null);
+  predictionsError = signal<string | null>(null);
 
   ngOnInit(): void {
     this.alertsService
       .getAlerts()
-      .pipe(catchError(() => this.reportUnavailable()))
-      .subscribe((alerts) => this.alerts.set(alerts));
+      .pipe(catchError(() => this.reportUnavailable(this.alertsError)))
+      .subscribe((alerts) => {
+        this.alertsError.set(null);
+        this.alerts.set(alerts);
+      });
 
     // Les prévisions viennent d'un scoring hors ligne, pas d'un calcul à la demande : un seul
     // chargement au démarrage suffit, pas besoin du rafraîchissement périodique de `stats`.
     this.predictionsService
       .getPredictions()
-      .pipe(catchError(() => this.reportUnavailable()))
-      .subscribe((summary) => this.predictions.set(summary.sites));
+      .pipe(catchError(() => this.reportUnavailable(this.predictionsError)))
+      .subscribe((summary) => {
+        this.predictionsError.set(null);
+        this.predictions.set(summary.sites);
+      });
 
     // Piège : le catchError porte sur l'observable interne. Sur le flux externe il
     // terminerait le timer, et le rafraîchissement ne repartirait jamais.
     timer(0, REFRESH_INTERVAL_MS)
       .pipe(
         switchMap(() =>
-          this.statsService.getSummary().pipe(catchError(() => this.reportUnavailable())),
+          this.statsService.getSummary().pipe(catchError(() => this.reportUnavailable(this.statsError))),
         ),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((stats) => {
-        this.error.set(null);
+        this.statsError.set(null);
         this.stats.set(stats);
       });
   }
@@ -116,8 +128,8 @@ export class Dashboard implements OnInit {
     });
   }
 
-  private reportUnavailable(): Observable<never> {
-    this.error.set(UNAVAILABLE_MESSAGE);
+  private reportUnavailable(target: WritableSignal<string | null>): Observable<never> {
+    target.set(UNAVAILABLE_MESSAGE);
     return EMPTY;
   }
 }

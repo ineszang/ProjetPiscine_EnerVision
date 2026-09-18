@@ -205,19 +205,6 @@ par exemple `limit` hors bornes). Un datetime sans fuseau dans `start`/`end` est
 l'UTC plutôt que rejeté : le comparer tel quel à `reading.timestamp` (`timestamptz`) échouerait
 côté pilote, en `500` plutôt qu'un refus propre.
 
-`GET /readings` reprend le même gabarit mais s'en écarte sur un point : `reading` est l'hypertable,
-donc la seule table métier pouvant porter des années d'historique, ce que `docs/architecture/
-owasp-traceabilite.md` documentait comme un risque ouvert (API4, aucune pagination plafonnée ni
-fenêtre temporelle maximale). `ReadingService` porte donc une couche de validation absente des
-autres routes de lecture : `start`/`end` sont optionnels (24 dernières heures par défaut si les
-deux sont omis, l'un défaut par rapport à l'autre sinon), l'écart entre les deux est plafonné à 90
-jours (`FENETRE_MAXIMALE`), et `limit`/`offset` (défaut 500, plafond 2000) empêchent qu'une fenêtre
-large mais peu dense reste malgré tout coûteuse. Un dépassement de plafond répond `400` (règle
-métier, portée par le service) plutôt que `422` (réservé à la validation structurelle de FastAPI,
-par exemple `limit` hors bornes). Un datetime sans fuseau dans `start`/`end` est traité comme de
-l'UTC plutôt que rejeté : le comparer tel quel à `reading.timestamp` (`timestamptz`) échouerait
-côté pilote, en `500` plutôt qu'un refus propre.
-
 ### `/health/ready`
 
 Cette sonde porte une garde décrite dans l'[ADR 0001](../adr/0001-postgresql-timescaledb.md) : un

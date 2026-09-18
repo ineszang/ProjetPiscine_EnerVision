@@ -31,10 +31,11 @@ Ce qui est en place :
 
 Ce qui n'existe pas encore :
 
-- **Aucun endpoint métier réel derrière l'écran du tableau de bord.** `GET /api/v1/stats/summary`,
-  `GET /api/v1/alerts` et `GET /api/v1/predictions` sont servis par l'intercepteur de fixtures ;
-  l'API expose bien ces routes désormais, mais rien ne bascule `useMockFixtures` à `false` en
-  développement pour les consommer réellement.
+- **`stats`/`alerts` restent sur fixtures.** `GET /api/v1/stats/summary` et `GET /api/v1/alerts`
+  sont servis par l'intercepteur de fixtures ; l'API expose bien ces routes désormais, mais rien
+  ne bascule `useMockFixtures` à `false` en développement pour les consommer réellement.
+  `GET /api/v1/predictions` fait exception : jamais mocké, branché sur l'API réelle depuis cette
+  PR (voir plus bas).
 - Aucun état de chargement : tant que la première réponse n'est pas arrivée, la page reste vide.
 - Aucun lint : ESLint n'est pas installé.
 
@@ -85,10 +86,12 @@ sequenceDiagram
   S-->>C: modèle typé
 ```
 
-`mockApiInterceptor` n'intercepte que `/stats/summary`, `/alerts` et `/predictions`, et seulement
-si `environment.useMockFixtures` est vrai. Le drapeau est à `true` en développement, à `false` en
-production : toute autre requête (dont tout ce qui touche `/auth`), et toutes les requêtes en
-production, suivent le chemin réel.
+`mockApiInterceptor` n'intercepte que `/stats/summary` et `/alerts`, et seulement si
+`environment.useMockFixtures` est vrai. Le drapeau est à `true` en développement, à `false` en
+production : toute autre requête, et toutes les requêtes en production, suivent le chemin réel.
+`/predictions` est volontairement exclu de cette liste (contrairement à `stats`/`alerts`) : il
+suit toujours le chemin réel, comme `/auth/*` - en développement, ça veut dire qu'un jeton valide
+et un backend joignable sont nécessaires pour que la section prévisions du dashboard s'affiche.
 
 En développement, `proxy.conf.json` redirige tout `/api` vers `http://localhost:8000`. C'est ce
 qui évite le CORS sur le poste, et c'est pourquoi `environment.development.ts` se contente d'un

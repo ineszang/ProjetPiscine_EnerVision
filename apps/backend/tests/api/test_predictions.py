@@ -15,11 +15,14 @@ TARGET_AT = datetime(2026, 9, 16, 13, 0, tzinfo=UTC)
 CREATED_AT = datetime(2026, 9, 16, 12, 0, tzinfo=UTC)
 
 
-def principal(role: Role = Role.LECTEUR) -> Principal:
+def lecteur() -> Principal:
+    # Le garde-fou de rôle (`lecteur` minimum) est déjà couvert par l'ensemble `ROUTES_A_ROLE`
+    # de `tests/api/test_openapi.py` : pas besoin ici d'un paramètre de rôle jamais appelé avec
+    # autre chose que sa valeur par défaut.
     return Principal(
         id=uuid4(),
-        email=f"{role.value}@enervision.fr",
-        role=role,
+        email="lecteur@enervision.fr",
+        role=Role.LECTEUR,
         kind=AccountKind.HUMAIN,
         must_change_password=False,
     )
@@ -57,7 +60,7 @@ def servi(app: FastAPI) -> Iterator[Callable[[], FauxService]]:
     def installe() -> FauxService:
         service = FauxService()
         app.dependency_overrides[get_prediction_service] = lambda: service
-        app.dependency_overrides[get_current_principal] = lambda: principal()
+        app.dependency_overrides[get_current_principal] = lambda: lecteur()
         return service
 
     yield installe

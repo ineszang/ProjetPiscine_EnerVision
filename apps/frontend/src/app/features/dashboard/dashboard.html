@@ -21,7 +21,13 @@
     </div>
   </header>
 
-  @if (error(); as message) {
+  @if (statsError(); as message) {
+    <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
+  }
+  @if (alertsError(); as message) {
+    <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
+  }
+  @if (predictionsError(); as message) {
     <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
   }
 
@@ -85,7 +91,7 @@
                 <span class="prediction-item__value">
                   {{ prediction.predicted_value | number: '1.0-1' }} kWh
                   <span class="prediction-item__target"
-                    >à {{ prediction.target_at | date: 'HH:mm' }}</span
+                    >{{ prediction.target_at | date: "dd/MM 'à' HH:mm" }}</span
                   >
                 </span>
               } @else {
