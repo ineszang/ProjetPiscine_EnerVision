@@ -68,6 +68,15 @@ h2 {
   text-align: center;
 }
 
+.card--link {
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--color-primary);
+  }
+}
+
 .card__label {
   font-size: 0.8rem;
   color: var(--color-text-muted);

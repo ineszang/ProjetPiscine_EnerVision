@@ -10,6 +10,9 @@
       </div>
     </div>
     <div class="dashboard__actions">
+      @if (auth.principal()?.role === 'admin') {
+        <a routerLink="/monitoring/sensors" class="ev-link">Supervision des capteurs</a>
+       }
       <a routerLink="/sites" class="ev-link">Voir les sites</a>
       <ev-button
         class="logout-button"

@@ -47,7 +47,7 @@ const TON_PAR_SEVERITE: Record<AlertSeverity, BadgeTone> = {
 export class Dashboard implements OnInit {
   private statsService = inject(StatsService);
   private alertsService = inject(AlertsService);
-  private auth = inject(AuthService);
+  public auth = inject(AuthService);
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
 

@@ -25,4 +25,11 @@ export const routes: Routes = [
         (m) => m.SiteDetailPlaceholder,
       ),
   },
+  {
+  path: 'monitoring/sensors',
+  canActivate: [authGuard],
+  data: { role: 'admin' },
+  loadComponent: () =>
+    import('./features/monitoring/sensor-status/sensor-status').then((m) => m.SensorStatusView),
+},
 ];
