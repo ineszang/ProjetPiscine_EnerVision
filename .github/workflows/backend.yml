@@ -56,3 +56,27 @@ jobs:
       # Le marqueur `integration` est exclu par défaut, donc aucune base n'est nécessaire ici.
       - name: Tests et couverture
         run: uv run pytest --cov-fail-under=85
+
+  security-audit:
+    name: Audit des dépendances
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+
+      # L'audit porte sur le verrou, pas sur l'environnement : sinon pip-audit auditerait
+      # aussi les paquets que son propre `--with` injecte, hors dépendances du projet.
+      - name: Audite les dépendances livrées
+        # Piège : sans `shell: bash`, un échec de `uv export` serait masqué par le pipe.
+        shell: bash
+        run: uv export --frozen --no-dev --no-emit-project --no-hashes | uvx pip-audit --requirement /dev/stdin --no-deps
