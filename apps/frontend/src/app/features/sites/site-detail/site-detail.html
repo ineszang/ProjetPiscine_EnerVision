@@ -17,9 +17,14 @@
         </p>
       }
     </div>
-    @if (site(); as s) {
-      <ev-badge [tone]="badgeToneForStatus(s.status)">{{ s.status ?? '-' }}</ev-badge>
-    }
+    <div class="site-detail__badges">
+      @if (site(); as s) {
+        <ev-badge [tone]="badgeToneForStatus(s.status)">{{ s.status ?? '-' }}</ev-badge>
+      }
+      @if (hasMeasurement() && qualityLabel(); as label) {
+        <ev-badge [tone]="qualityTone()">{{ label }}</ev-badge>
+      }
+    </div>
   </header>
 
   @if (error(); as message) {
@@ -27,43 +32,47 @@
   }
 
   @if (site(); as s) {
-    <section class="overview">
-      <ev-card class="card card--gauge">
-        <span class="card__label">Consommation vs capacité</span>
-        <app-consumption-gauge
-          [consumption]="latestReading()?.consumption_kw ?? 0"
-          [capacity]="s.capacity_kw ?? 0"
-        />
-        <span class="card__value">
-          {{ latestReading()?.consumption_kw ?? '-' }} / {{ s.capacity_kw ?? '-' }} kW
-        </span>
-      </ev-card>
+    @if (hasMeasurement()) {
+      <section class="overview">
+        <ev-card class="card card--gauge">
+          <span class="card__label">Consommation vs capacité</span>
+          <app-consumption-gauge
+            [consumption]="current()?.consumption_kw ?? 0"
+            [capacity]="s.capacity_kw ?? 0"
+          />
+          <span class="card__value">
+            {{ current()?.consumption_kw ?? '-' }} / {{ s.capacity_kw ?? '-' }} kW
+          </span>
+        </ev-card>
 
-      <ev-card class="metrics-card">
-        <span class="card__label">Mesure instantanée</span>
-        <dl class="metrics-grid">
-          @for (metric of metrics(); track metric.key) {
-            <div class="metric">
-              <dt>{{ metric.label }}</dt>
-              @if (metric.value !== null) {
-                <dd>{{ metric.value }}</dd>
-              } @else {
-                <dd class="metric__unavailable">
-                  Indisponible
-                  <span class="metric__reason">({{ metric.reason }})</span>
-                </dd>
-              }
-            </div>
-          }
-        </dl>
-      </ev-card>
-    </section>
-
-    @if (history().length > 0) {
-      <section class="chart-section">
-        <h2>Historique de consommation</h2>
-        <app-reading-history-chart [readings]="history()" />
+        <ev-card class="metrics-card">
+          <span class="card__label">Mesure instantanée</span>
+          <dl class="metrics-grid">
+            @for (metric of metrics(); track metric.key) {
+              <div class="metric">
+                <dt>{{ metric.label }}</dt>
+                @if (metric.value !== null) {
+                  <dd>{{ metric.value }}</dd>
+                } @else {
+                  <dd class="metric__unavailable">
+                    Indisponible
+                    <span class="metric__reason">({{ metric.reason }})</span>
+                  </dd>
+                }
+              </div>
+            }
+          </dl>
+        </ev-card>
       </section>
+
+      @if (history().length > 0) {
+        <section class="chart-section">
+          <h2>Historique de consommation</h2>
+          <app-reading-history-chart [readings]="history()" />
+        </section>
+      }
+    } @else {
+      <ev-alert severity="warning" class="banner-empty">{{ noMeasurementMessage }}</ev-alert>
     }
   }
 

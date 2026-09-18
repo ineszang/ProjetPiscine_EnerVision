@@ -1,11 +1,12 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { catchError, EMPTY, filter, map, Observable, switchMap } from 'rxjs';
+import { catchError, EMPTY, filter, map, Observable, of, switchMap } from 'rxjs';
 import { SitesService } from '../../../core/services/sites.service';
 import { ReadingsService } from '../../../core/services/readings.service';
 import { Site } from '../../../shared/models/site.model';
-import { Reading } from '../../../shared/models/reading.model';
+import { Reading, ReadingDataQuality } from '../../../shared/models/reading.model';
+import { SiteCurrent } from '../../../shared/models/site-current.model';
 import { Card } from '../../../shared/components/ui/card/card';
 import { Alert } from '../../../shared/components/ui/alert/alert';
 import { Badge, BadgeTone } from '../../../shared/components/ui/badge/badge';
@@ -14,12 +15,27 @@ import { ConsumptionGauge } from '../../../shared/components/consumption-gauge/c
 import { ReadingHistoryChart } from '../../../shared/components/reading-history-chart/reading-history-chart';
 
 const UNAVAILABLE_MESSAGE = 'Détail du site indisponible, réessayez plus tard.';
+const NO_MEASUREMENT_MESSAGE = 'Aucune mesure remontée pour ce site.';
 const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const TON_PAR_STATUT: Record<string, BadgeTone> = {
   actif: 'success',
   maintenance: 'warning',
   hors_service: 'danger',
+};
+
+const TON_PAR_QUALITE: Record<ReadingDataQuality, BadgeTone> = {
+  good: 'success',
+  partial: 'warning',
+  degraded: 'danger',
+  critical: 'critical',
+};
+
+const LIBELLE_PAR_QUALITE: Record<ReadingDataQuality, string> = {
+  good: 'Données complètes',
+  partial: 'Données partielles',
+  degraded: 'Données dégradées',
+  critical: 'Données critiques',
 };
 
 type MetricKey =
@@ -45,9 +61,8 @@ const METRIC_DEFS: MetricDef[] = [
   { key: 'humidity_percent', label: 'Humidité', format: (v) => `${v.toFixed(0)} %` },
 ];
 
-// Contrainte : miroir de `RAISON_VERS_CAPTEUR`/`CHAMPS_PAR_CAPTEUR` côté backend
-// (apps/backend/app/services/sensor.py) - `null_reasons` porte le code de panne du capteur,
-// jamais le nom du champ.
+// Contrainte : miroir de RAISON_VERS_CAPTEUR et CHAMPS_PAR_CAPTEUR (backend, services/sensor.py) ;
+// `null_reasons` porte le code de panne du capteur, jamais le nom du champ resté vide.
 const RAISONS_PAR_CHAMP: Record<MetricKey, string[]> = {
   consumption_kw: ['consumption_sensor_failure', 'network_loss'],
   voltage_v: ['electrical_sensor_failure', 'network_loss'],
@@ -85,22 +100,36 @@ export class SiteDetail {
   private readingsService = inject(ReadingsService);
   private destroyRef = inject(DestroyRef);
 
+  readonly noMeasurementMessage = NO_MEASUREMENT_MESSAGE;
+
   siteId = toSignal(this.route.paramMap.pipe(map((params) => params.get('siteId') ?? '')));
 
   site = signal<Site | null>(null);
-  latestReading = signal<Reading | null>(null);
+  current = signal<SiteCurrent | null>(null);
   history = signal<Reading[]>([]);
   error = signal<string | null>(null);
 
+  hasMeasurement = computed(() => this.current()?.timestamp != null);
+
+  qualityLabel = computed(() => {
+    const quality = this.current()?.data_quality;
+    return quality ? LIBELLE_PAR_QUALITE[quality] : null;
+  });
+
+  qualityTone = computed<BadgeTone>(() => {
+    const quality = this.current()?.data_quality;
+    return quality ? TON_PAR_QUALITE[quality] : 'neutral';
+  });
+
   metrics = computed<MetricView[]>(() => {
-    const reading = this.latestReading();
+    const current = this.current();
     return METRIC_DEFS.map((def) => {
-      const valeur = reading ? reading[def.key] : null;
+      const valeur = current ? current[def.key] : null;
       return {
         key: def.key,
         label: def.label,
         value: valeur != null ? def.format(valeur) : null,
-        reason: valeur == null ? this.reasonFor(def.key, reading) : '',
+        reason: valeur == null ? this.reasonFor(def.key, current) : '',
       };
     });
   });
@@ -117,7 +146,7 @@ export class SiteDetail {
       .subscribe((result) => {
         this.error.set(null);
         this.site.set(result.site);
-        this.latestReading.set(result.latest);
+        this.current.set(result.current);
         this.history.set(result.history);
       });
   }
@@ -129,27 +158,29 @@ export class SiteDetail {
   private load(siteId: string) {
     return this.sitesService.getSite(siteId).pipe(
       switchMap((site) =>
-        this.readingsService.getLatest(siteId).pipe(map((latest) => ({ site, latest }))),
+        this.sitesService.getCurrent(siteId).pipe(map((current) => ({ site, current }))),
       ),
-      switchMap(({ site, latest }) => {
-        // Piège : le dataset historique se termine bien avant « maintenant ». Ancrer la
-        // fenêtre sur la dernière mesure connue plutôt que sur l'horloge évite un historique
-        // vide dès que le jeu de données n'est plus récent.
-        const end = latest?.timestamp;
-        const start = end
-          ? new Date(new Date(end).getTime() - HISTORY_WINDOW_MS).toISOString()
-          : undefined;
-        return this.readingsService
-          .getHistory(siteId, start, end)
-          .pipe(map((history) => ({ site, latest, history })));
-      }),
+      switchMap(({ site, current }) =>
+        this.loadHistory(siteId, current).pipe(map((history) => ({ site, current, history }))),
+      ),
       catchError(() => this.reportUnavailable()),
     );
   }
 
-  private reasonFor(field: MetricKey, reading: Reading | null): string {
+  private loadHistory(siteId: string, current: SiteCurrent): Observable<Reading[]> {
+    // Piège : le jeu de données s'arrête bien avant « maintenant » ; ancrer la fenêtre sur la
+    // dernière mesure connue plutôt que sur l'horloge évite un historique systématiquement vide.
+    const end = current.timestamp;
+    if (end === null) {
+      return of([]);
+    }
+    const start = new Date(new Date(end).getTime() - HISTORY_WINDOW_MS).toISOString();
+    return this.readingsService.getHistory(siteId, start, end);
+  }
+
+  private reasonFor(field: MetricKey, current: SiteCurrent | null): string {
     const raisons = RAISONS_PAR_CHAMP[field];
-    const trouvees = (reading?.null_reasons ?? [])
+    const trouvees = (current?.null_reasons ?? [])
       .filter((raison) => raisons.includes(raison))
       .map((raison) => LIBELLE_PAR_RAISON[raison] ?? raison);
     return trouvees.length > 0 ? trouvees.join(', ') : 'cause inconnue';

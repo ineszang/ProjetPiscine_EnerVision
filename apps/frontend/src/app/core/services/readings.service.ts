@@ -7,10 +7,6 @@ import { Reading } from '../../shared/models/reading.model';
 export class ReadingsService {
   private http = inject(HttpClient);
 
-  getLatest(siteId: string) {
-    return this.http.get<Reading | null>(`${environment.apiUrl}/sites/${siteId}/current`);
-  }
-
   getHistory(siteId: string, start?: string, end?: string) {
     let params = new HttpParams().set('site_id', siteId);
     if (start) {
