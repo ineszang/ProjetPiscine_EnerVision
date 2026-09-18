@@ -1,15 +1,17 @@
 import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { timer, switchMap, catchError, EMPTY, Observable } from 'rxjs';
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, DatePipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { StatsService } from '../../core/services/stats.service';
 import { ConsumptionGauge } from '../../shared/components/consumption-gauge/consumption-gauge';
 import { SiteLoadChart } from '../../shared/components/site-load-chart/site-load-chart';
 import { AlertsService } from '../../core/services/alerts.service';
+import { PredictionsService } from '../../core/services/predictions.service';
 import { AuthService } from '../../core/services/auth.service';
 import { StatsSummary } from '../../shared/models/stats.model';
 import { Alert, AlertSeverity } from '../../shared/models/alert.model';
+import { PredictionStatus, SitePredictionSummary } from '../../shared/models/prediction.model';
 import { Card } from '../../shared/components/ui/card/card';
 import { Alert as EvAlert } from '../../shared/components/ui/alert/alert';
 import { Badge, BadgeTone } from '../../shared/components/ui/badge/badge';
@@ -27,11 +29,21 @@ const TON_PAR_SEVERITE: Record<AlertSeverity, BadgeTone> = {
   critical: 'critical',
 };
 
+// `error` n'a pas de précédent dans les fixtures ou l'API à ce jour, mais figure dans le
+// domaine du schéma backend (`ck_prediction_status`) : mieux vaut une couleur définie que
+// tomber sur `undefined` si ce statut apparaît un jour.
+const TON_PAR_STATUT_PREDICTION: Record<PredictionStatus, BadgeTone> = {
+  available: 'success',
+  insufficient_data: 'warning',
+  error: 'danger',
+};
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
   imports: [
     DecimalPipe,
+    DatePipe,
     RouterLink,
     ConsumptionGauge,
     SiteLoadChart,
@@ -47,12 +59,14 @@ const TON_PAR_SEVERITE: Record<AlertSeverity, BadgeTone> = {
 export class Dashboard implements OnInit {
   private statsService = inject(StatsService);
   private alertsService = inject(AlertsService);
+  private predictionsService = inject(PredictionsService);
   private auth = inject(AuthService);
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
 
   stats = signal<StatsSummary | null>(null);
   alerts = signal<Alert[]>([]);
+  predictions = signal<SitePredictionSummary[]>([]);
   error = signal<string | null>(null);
 
   ngOnInit(): void {
@@ -60,6 +74,13 @@ export class Dashboard implements OnInit {
       .getAlerts()
       .pipe(catchError(() => this.reportUnavailable()))
       .subscribe((alerts) => this.alerts.set(alerts));
+
+    // Les prévisions viennent d'un scoring hors ligne, pas d'un calcul à la demande : un seul
+    // chargement au démarrage suffit, pas besoin du rafraîchissement périodique de `stats`.
+    this.predictionsService
+      .getPredictions()
+      .pipe(catchError(() => this.reportUnavailable()))
+      .subscribe((summary) => this.predictions.set(summary.sites));
 
     // Piège : le catchError porte sur l'observable interne. Sur le flux externe il
     // terminerait le timer, et le rafraîchissement ne repartirait jamais.
@@ -78,6 +99,10 @@ export class Dashboard implements OnInit {
 
   badgeToneForSeverity(severity: AlertSeverity): BadgeTone {
     return TON_PAR_SEVERITE[severity];
+  }
+
+  badgeToneForPredictionStatus(status: PredictionStatus): BadgeTone {
+    return TON_PAR_STATUT_PREDICTION[status];
   }
 
   onLogout(): void {
