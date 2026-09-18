@@ -84,6 +84,7 @@ jobs:
 
       - name: Typage
         run: uv run mypy app
+        working-directory: apps/backend
 
 
   test-back:
