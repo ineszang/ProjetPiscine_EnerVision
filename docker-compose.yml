@@ -27,11 +27,22 @@ services:
       start_period: 40s
     restart: unless-stopped
 
+  # Piege : Mailpit ne relaie rien vers l'exterieur, il capture tout email envoye par le
+  # backend. Aucun acces reseau sortant n'est requis ; l'UI web (8025) sert a lire les emails.
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    restart: unless-stopped
+
   backend:
     build: ./apps/backend
     depends_on:
       db:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     environment:
       APP_ENV: ${APP_ENV:-local}
       APP_DEBUG: ${APP_DEBUG:-false}
@@ -39,6 +50,11 @@ services:
       APP_SECRET_KEY: ${APP_SECRET_KEY:?}
       APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:4200}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      APP_FRONTEND_RESET_PASSWORD_URL: ${APP_FRONTEND_RESET_PASSWORD_URL:-http://localhost:4200/reset-password}
+      APP_SMTP_HOST: mailpit
+      APP_SMTP_PORT: "1025"
+      APP_SMTP_USE_TLS: "false"
+      APP_SMTP_FROM_ADDRESS: ${APP_SMTP_FROM_ADDRESS:-no-reply@enervision.fr}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped

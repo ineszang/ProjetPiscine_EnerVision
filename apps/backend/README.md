@@ -103,6 +103,8 @@ Le sens de dependance est unique : `endpoints` vers `services` vers `repositorie
 | `/api/v1/auth/logout` | Ferme la session courante | cookie, idempotente |
 | `/api/v1/auth/logout-all` | Ferme toutes les sessions du compte | jeton |
 | `/api/v1/auth/password` | Change son propre mot de passe | jeton |
+| `/api/v1/auth/forgot-password` | Demande un lien de réinitialisation par email | public |
+| `/api/v1/auth/reset-password` | Choisit un nouveau mot de passe depuis ce lien | public |
 | `/api/v1/auth/me` | Décrit le compte connecté | jeton |
 | `/api/v1/users` | Liste et crée des comptes | `admin` |
 | `/api/v1/users/{id}` | Change le rôle ou l'activation | `admin` |

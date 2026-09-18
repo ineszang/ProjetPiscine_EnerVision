@@ -1,27 +1,43 @@
 import { TestBed } from '@angular/core/testing';
 import { ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { Login } from './login';
 import { AuthService } from '../../../core/services/auth.service';
+import { MOTIF_LIEN_RESET_INVALIDE } from '../../../shared/models/auth-redirect-reason';
+
+function configure(queryParams: Record<string, string> = {}) {
+  const authMock = { login: vi.fn() };
+  const routerMock = { navigate: vi.fn() };
+
+  return {
+    authMock,
+    routerMock,
+    testBed: TestBed.configureTestingModule({
+      imports: [Login, ReactiveFormsModule],
+      providers: [
+        { provide: AuthService, useValue: authMock },
+        { provide: Router, useValue: routerMock },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } },
+        },
+      ],
+    }),
+  };
+}
 
 describe('Login', () => {
   let authMock: { login: ReturnType<typeof vi.fn> };
   let routerMock: { navigate: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
-    authMock = { login: vi.fn() };
-    routerMock = { navigate: vi.fn() };
-
-    await TestBed.configureTestingModule({
-      imports: [Login, ReactiveFormsModule],
-      providers: [
-        { provide: AuthService, useValue: authMock },
-        { provide: Router, useValue: routerMock },
-      ],
-    }).compileComponents();
+    const attirail = configure();
+    authMock = attirail.authMock;
+    routerMock = attirail.routerMock;
+    await attirail.testBed.compileComponents();
   });
 
   it('ne soumet pas si le formulaire est invalide', () => {
@@ -63,7 +79,7 @@ describe('Login', () => {
   fixture.detectChanges(); // rend le bloc @if (errorMessage()) du template
 
   expect(component.errorMessage()).toBe('Email ou mot de passe incorrect.');
-  const errorEl = fixture.nativeElement.querySelector('.auth-error');
+  const errorEl = fixture.nativeElement.querySelector('.ev-alert');
   expect(errorEl?.textContent).toContain('Email ou mot de passe incorrect.');
   });
 
@@ -80,8 +96,16 @@ describe('Login', () => {
     fixture.detectChanges(); // rend aussi le sous-bloc @if (retryAfterSeconds(); as seconds)
 
     expect(component.retryAfterSeconds()).toBe(30);
-    const errorEl = fixture.nativeElement.querySelector('.auth-error');
+    const errorEl = fixture.nativeElement.querySelector('.ev-alert');
     expect(errorEl?.textContent).toContain('30s');
+  });
+
+  it('affiche le message standard quand on arrive avec ?motif=lien-expire', async () => {
+    const attirail = configure({ motif: MOTIF_LIEN_RESET_INVALIDE });
+    await attirail.testBed.compileComponents();
+    const fixture = TestBed.createComponent(Login);
+
+    expect(fixture.componentInstance.errorMessage()).toContain('expiré');
   });
 
   it('désactive le bouton tant que le formulaire est invalide', () => {
@@ -90,7 +114,7 @@ describe('Login', () => {
 
     const button = fixture.nativeElement.querySelector('button[type="submit"]');
     expect(button.disabled).toBe(true);
-    expect(fixture.nativeElement.querySelector('.auth-error')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.ev-alert')).toBeNull();
   });
 
  it('déclenche onSubmit via la soumission réelle du formulaire (ngSubmit)', () => {

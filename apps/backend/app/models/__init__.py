@@ -4,6 +4,8 @@
 from app.models.audit_log import AuditLog
 from app.models.energy import Alert, Dataset, Prediction, Reading, Recommendation, Site
 from app.models.login_attempt import LoginAttempt
+from app.models.password_reset_attempt import PasswordResetAttempt
+from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_token import RefreshToken
 from app.models.user import AppUser
 
@@ -13,6 +15,8 @@ __all__ = [
     "AuditLog",
     "Dataset",
     "LoginAttempt",
+    "PasswordResetAttempt",
+    "PasswordResetToken",
     "Prediction",
     "Reading",
     "Recommendation",

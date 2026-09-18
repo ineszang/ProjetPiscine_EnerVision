@@ -58,6 +58,14 @@ data/raw/*
 monitoring/grafana/data/
 monitoring/prometheus/data/
 
+# ML : jeu de donnees, modeles entraines et suivi MLflow local, tous generes/volumineux
+ml/data/
+ml/models/*
+!ml/models/.gitkeep
+ml/mlruns/
+ml/mlartifacts/
+ml/mlflow.db
+
 # IDE et OS
 .idea/
 .vscode/

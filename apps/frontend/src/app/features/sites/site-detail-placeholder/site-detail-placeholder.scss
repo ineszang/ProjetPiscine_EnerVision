@@ -1,0 +1,28 @@
+:host {
+  display: block;
+  color: var(--color-text);
+  padding: 2.5rem 2rem;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.site-detail-placeholder__header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+}
+
+.site-detail-placeholder__logo {
+  font-size: 1.3rem;
+}
+
+ev-card p {
+  margin: 0 0 0.75rem;
+}

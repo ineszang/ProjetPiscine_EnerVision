@@ -54,6 +54,19 @@ class Settings(BaseSettings):
     login_max_failures_per_ip: int = Field(default=20, ge=1)
     login_max_failures_per_identifier: int = Field(default=50, ge=1)
 
+    password_reset_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+    password_reset_window_seconds: int = Field(default=900, ge=60)
+    password_reset_max_requests_per_identifier: int = Field(default=3, ge=1)
+    password_reset_max_requests_per_ip: int = Field(default=10, ge=1)
+
+    smtp_host: str = "localhost"
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_use_tls: bool = False
+    smtp_from_address: str = "no-reply@enervision.fr"
+    frontend_reset_password_url: str = "http://localhost:4200/reset-password"  # noqa: S105
+
     trust_proxy_headers: bool = False
     expose_api_docs: bool | None = None
     metrics_token: SecretStr | None = None
