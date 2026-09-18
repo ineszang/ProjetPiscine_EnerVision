@@ -68,6 +68,30 @@ async def test_list_since_excludes_predictions_that_are_not_available(
     assert list(resultats) == []
 
 
+async def test_list_since_breaks_a_target_at_tie_by_ascending_prediction_id(
+    session: AsyncSession,
+) -> None:
+    # `prediction` n'a pas d'unicité sur `(site_id, target_at)` : deux runs de scoring sans
+    # nouvelle lecture entre-temps produisent deux lignes `available` à la même cible. Sans ce
+    # départage, `_detect_anomaly` retiendrait une ligne au hasard plutôt que le run le plus
+    # récent.
+    site = await creer_site(session)
+    depot = PredictionRepository(session)
+    cible = datetime(2026, 9, 16, tzinfo=UTC)
+    premier_run = await creer_prediction(
+        session, site_id=site.site_id, target_at=cible, predicted_value=10.0
+    )
+    second_run = await creer_prediction(
+        session, site_id=site.site_id, target_at=cible, predicted_value=20.0
+    )
+
+    resultats = await depot.list_since(since=datetime(2026, 9, 1, tzinfo=UTC), site_id=site.site_id)
+    identifiants = [p.prediction_id for p in resultats]
+    await session.rollback()
+
+    assert identifiants == [premier_run.prediction_id, second_run.prediction_id]
+
+
 async def test_list_since_filters_by_site_id(session: AsyncSession) -> None:
     premier = await creer_site(session)
     second = await creer_site(session)

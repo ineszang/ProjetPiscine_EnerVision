@@ -142,41 +142,63 @@ def _detect_threshold(lectures: Sequence[Reading], sites_par_id: dict[str, Site]
 
 
 def _detect_spike(lectures: Sequence[Reading]) -> list[Alert]:
-    # `lectures` est triée par site puis par heure (cf. `ReadingRepository.list_since`) : deux
-    # lignes consécutives du même site sont donc deux mesures consécutives dans le temps.
+    # `lectures` est triée par site, heure puis `reading_id` (cf. `ReadingRepository.list_since`) :
+    # deux lignes consécutives du même site sont donc deux mesures consécutives dans le temps,
+    # sauf lorsqu'elles partagent le même horodatage (deux `source` différentes pour le même
+    # instant, permises par `uq_reading_source`) : ce n'est alors pas une variation réelle, on
+    # l'ignore plutôt que de générer une fausse alerte figée par son `source_alert_id`.
     alertes = []
     precedente: Reading | None = None
     for lecture in lectures:
-        if precedente is None or precedente.site_id != lecture.site_id:
+        if (
+            precedente is None
+            or precedente.site_id != lecture.site_id
+            or precedente.timestamp == lecture.timestamp
+        ):
             precedente = lecture
             continue
         avant, apres = precedente.consumption_kw, lecture.consumption_kw
         precedente = lecture
-        if avant is None or apres is None or avant == 0:
+        if avant is None or apres is None:
+            continue
+        if avant == 0:
+            # Une variation relative n'a pas de sens depuis zéro, mais un redémarrage direct à
+            # une consommation positive reste le signal le plus alarmant du lot : `critical`
+            # plutôt qu'un ratio indéfini.
+            if apres > 0:
+                alertes.append(_spike_alert(lecture, avant, apres, severity="critical"))
             continue
         variation = abs(apres - avant) / abs(avant)
         if variation < SPIKE_RELATIVE_THRESHOLD:
             continue
         alertes.append(
-            Alert(
-                source_alert_id=f"spike:{THRESHOLD_METRIC}:{lecture.timestamp.isoformat()}",
-                site_id=lecture.site_id,
-                source="enervision",
-                timestamp=lecture.timestamp,
-                type="spike",
+            _spike_alert(
+                lecture,
+                avant,
+                apres,
                 severity=_severity_from_ratio(variation / SPIKE_RELATIVE_THRESHOLD),
-                message=(
-                    f"Variation brutale de {variation * 100:.0f}% entre deux lectures "
-                    f"consécutives ({avant:.1f} kW -> {apres:.1f} kW)"
-                ),
-                value=apres,
-                threshold=avant,
-                metric=THRESHOLD_METRIC,
-                prediction_id=None,
-                raw_data={},
             )
         )
     return alertes
+
+
+def _spike_alert(lecture: Reading, avant: float, apres: float, *, severity: str) -> Alert:
+    return Alert(
+        source_alert_id=f"spike:{THRESHOLD_METRIC}:{lecture.timestamp.isoformat()}",
+        site_id=lecture.site_id,
+        source="enervision",
+        timestamp=lecture.timestamp,
+        type="spike",
+        severity=severity,
+        message=(
+            f"Variation brutale entre deux lectures consécutives ({avant:.1f} kW -> {apres:.1f} kW)"
+        ),
+        value=apres,
+        threshold=avant,
+        metric=THRESHOLD_METRIC,
+        prediction_id=None,
+        raw_data={},
+    )
 
 
 def _detect_anomaly(lectures: Sequence[Reading], predictions: Sequence[Prediction]) -> list[Alert]:

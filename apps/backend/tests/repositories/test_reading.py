@@ -189,6 +189,29 @@ async def test_list_since_excludes_readings_before_the_cutoff(session: AsyncSess
     assert identifiants == [dedans.reading_id]
 
 
+async def test_list_since_breaks_a_timestamp_tie_by_ascending_reading_id(
+    session: AsyncSession,
+) -> None:
+    # `uq_reading_source` autorise deux lignes au même `site_id`+`timestamp` quand la `source`
+    # diffère (même piège que `latest_for_site`). Sans ce départage, `_detect_spike` traiterait
+    # cette paire comme une variation réelle selon un ordre non garanti par le plan d'exécution.
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    horodatage = datetime(2026, 9, 16, tzinfo=UTC)
+    premiere = await creer_lecture(
+        session, site_id=site.site_id, timestamp=horodatage, source="api_history", consumption_kw=10
+    )
+    seconde = await creer_lecture(
+        session, site_id=site.site_id, timestamp=horodatage, source="api_current", consumption_kw=42
+    )
+
+    resultats = await depot.list_since(since=datetime(2026, 9, 1, tzinfo=UTC), site_id=site.site_id)
+    identifiants = [r.reading_id for r in resultats]
+    await session.rollback()
+
+    assert identifiants == [premiere.reading_id, seconde.reading_id]
+
+
 async def test_list_since_filters_by_site_id(session: AsyncSession) -> None:
     premier = await creer_site(session)
     second = await creer_site(session)

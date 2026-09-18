@@ -262,6 +262,28 @@ async def test_detect_ignores_a_prediction_whose_target_at_does_not_match_the_re
     assert [a for a in depot.crees if a.type == "anomaly"] == []
 
 
+async def test_detect_keeps_the_most_recent_run_when_two_predictions_share_the_same_target() -> (
+    None
+):
+    # `PredictionRepository.list_since` départage les égalités de `target_at` par `prediction_id`
+    # croissant : le repository fait donc déjà passer le run le plus récent en dernier dans la
+    # liste, et c'est ce dernier que le dict de `_detect_anomaly` doit retenir.
+    svc, depot = service(
+        sites=[FauxSite("A")],
+        lectures=[FauxLecture("A", NOW, consumption_kwh=100.0)],
+        predictions=[
+            FauxPrediction("A", target_at=NOW, predicted_value=100.0, prediction_id=1),
+            FauxPrediction("A", target_at=NOW, predicted_value=70.0, prediction_id=2),
+        ],
+    )
+
+    await svc.detect(now=NOW)
+
+    (candidate,) = [a for a in depot.crees if a.type == "anomaly"]
+    assert candidate.threshold == 70.0
+    assert candidate.prediction_id == 2
+
+
 async def test_detect_raises_an_outage_alert_past_the_threshold() -> None:
     derniere = NOW - OUTAGE_THRESHOLD - timedelta(minutes=1)
     svc, depot = service(
@@ -345,12 +367,57 @@ async def test_detect_returns_early_when_there_is_no_site() -> None:
     assert depot.crees == []
 
 
-async def test_detect_ignores_a_spike_when_the_previous_reading_is_zero() -> None:
+async def test_detect_ignores_a_spike_pair_with_a_missing_measurement() -> None:
+    svc, depot = service(
+        sites=[FauxSite("A")],
+        lectures=[
+            FauxLecture("A", NOW - timedelta(hours=1), consumption_kw=None),
+            FauxLecture("A", NOW, consumption_kw=160.0),
+        ],
+    )
+
+    await svc.detect(now=NOW)
+
+    assert [a for a in depot.crees if a.type == "spike"] == []
+
+
+async def test_detect_ignores_a_reading_still_at_zero_after_a_previous_zero() -> None:
+    svc, depot = service(
+        sites=[FauxSite("A")],
+        lectures=[
+            FauxLecture("A", NOW - timedelta(hours=1), consumption_kw=0.0),
+            FauxLecture("A", NOW, consumption_kw=0.0),
+        ],
+    )
+
+    await svc.detect(now=NOW)
+
+    assert [a for a in depot.crees if a.type == "spike"] == []
+
+
+async def test_detect_raises_a_critical_spike_when_a_site_restarts_from_zero() -> None:
     svc, depot = service(
         sites=[FauxSite("A")],
         lectures=[
             FauxLecture("A", NOW - timedelta(hours=1), consumption_kw=0.0),
             FauxLecture("A", NOW, consumption_kw=50.0),
+        ],
+    )
+
+    await svc.detect(now=NOW)
+
+    (candidate,) = [a for a in depot.crees if a.type == "spike"]
+    assert candidate.severity == "critical"
+    assert candidate.value == 50.0
+    assert candidate.threshold == 0.0
+
+
+async def test_detect_ignores_a_spike_pair_sharing_the_same_timestamp() -> None:
+    svc, depot = service(
+        sites=[FauxSite("A")],
+        lectures=[
+            FauxLecture("A", NOW, consumption_kw=100.0),
+            FauxLecture("A", NOW, consumption_kw=160.0),
         ],
     )
 

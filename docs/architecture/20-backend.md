@@ -217,7 +217,7 @@ leur sens dans chaque règle plutôt que d'être laissés à `null` par commodit
 | `type` | Règle | `value` / `threshold` |
 |---|---|---|
 | `threshold` | `reading.consumption_kw` dépasse `site.capacity_kw` (site sans capacité déclarée : ignoré) | mesure / capacité du site |
-| `spike` | Variation relative ≥ 50% (`SPIKE_RELATIVE_THRESHOLD`) entre deux lectures consécutives du même site | mesure actuelle / mesure précédente |
+| `spike` | Variation relative ≥ 50% (`SPIKE_RELATIVE_THRESHOLD`) entre deux lectures consécutives du même site, ou redémarrage direct à une valeur positive depuis zéro (`critical`) | mesure actuelle / mesure précédente |
 | `anomaly` | Écart relatif ≥ 30% (`ANOMALY_RELATIVE_THRESHOLD`) entre `reading.consumption_kwh` et la `prediction` du même site dont `target_at == timestamp` | mesure réelle / valeur prédite |
 | `outage` | Aucune lecture depuis plus de 3h (`OUTAGE_THRESHOLD`, 3x la cadence horaire nominale), ou site jamais lu | `null` / `null` |
 | `sensor` | `reading.data_quality` ∈ `partial`/`degraded`/`critical` | `null` / `null` |
@@ -228,6 +228,17 @@ au-delà. `AlertRepository.create_many()` insère par lot avec `ON CONFLICT DO N
 `uq_alert_source_reference`, et `source_alert_id` est construit de façon déterministe (règle +
 horodatage) : rejouer la détection sur une fenêtre déjà analysée ne duplique donc jamais une
 alerte.
+
+**Pièges de tri corrigés en revue** : `reading`/`prediction` n'ont pas d'unicité sur leur couple
+métier (`uq_reading_source` autorise deux `source` différentes au même `site_id`+`timestamp`,
+`prediction` n'a aucune contrainte sur `(site_id, target_at)`, chaque run de scoring gardant sa
+propre ligne). `ReadingRepository.list_since()`/`PredictionRepository.list_since()` départagent
+donc les égalités par `reading_id`/`prediction_id` croissant, comme le font déjà
+`latest_by_site()`/`latest_for_site()` sur les mêmes tables ; sans ce départage, l'ordre entre
+lignes à égalité n'est pas garanti d'un appel à l'autre, et `_detect_spike`/`_detect_anomaly`
+auraient pu comparer des lectures/choisir une prévision au hasard. `_detect_spike` ignore en plus
+explicitement les paires de lectures qui partagent le même horodatage (deux `source` pour un seul
+instant réel, pas une variation).
 
 Comme `enervision_ml.score`, la détection est un script lancé à la main, pas encore ordonnancé par
 Airflow : `uv run python -m app.detection.internal_alerts [--site-id ...] [--now ...]`, dans

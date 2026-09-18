@@ -16,10 +16,16 @@ class PredictionRepository:
     ) -> Sequence[Prediction]:
         # Restreint à `available` : une prévision `insufficient_data`/`error` n'a pas de
         # `predicted_value` à comparer à une lecture réelle (détection d'anomalie).
+        # Piège : `prediction` n'a pas d'unicité sur `(site_id, target_at)` (cf.
+        # `enervision_ml.score`, qui insère toujours une nouvelle ligne plutôt que d'écraser la
+        # précédente). `prediction_id` en dernier départage donc les égalités de `target_at` par
+        # ordre croissant : `_detect_anomaly` construit un dict qui garde le dernier rencontré,
+        # c'est-à-dire le run le plus récent plutôt qu'une ligne choisie au hasard par le plan
+        # d'exécution.
         requete = (
             select(Prediction)
             .where(Prediction.target_at >= since, Prediction.status == "available")
-            .order_by(Prediction.site_id, Prediction.target_at)
+            .order_by(Prediction.site_id, Prediction.target_at, Prediction.prediction_id)
         )
         if site_id is not None:
             requete = requete.where(Prediction.site_id == site_id)
