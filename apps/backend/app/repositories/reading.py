@@ -22,10 +22,12 @@ class ReadingRepository:
         return (await self._session.execute(requete)).scalars().all()
 
     async def latest_for_site(self, site_id: str) -> Reading | None:
+        # Piège : `uq_reading_source` autorise deux lignes au même `site_id`+`timestamp` quand la
+        # `source` diffère. Sans `reading_id` en départage, le `LIMIT 1` renverrait au hasard.
         requete = (
             select(Reading)
             .where(Reading.site_id == site_id)
-            .order_by(Reading.timestamp.desc())
+            .order_by(Reading.timestamp.desc(), Reading.reading_id.desc())
             .limit(1)
         )
         lecture: Reading | None = await self._session.scalar(requete)

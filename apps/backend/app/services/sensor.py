@@ -5,11 +5,10 @@ from typing import Literal
 from app.models.energy import Reading, Site
 from app.repositories.reading import ReadingRepository
 from app.repositories.site import SiteRepository
+from app.services.data_quality import qualite_ou_critique
 
 CapteurStatus = Literal["ok", "failing"]
 OverallStatus = Literal["ok", "degraded", "critical"]
-
-QUALITES_CONNUES: frozenset[str] = frozenset({"good", "partial", "degraded", "critical"})
 
 RAISON_VERS_CAPTEUR: dict[str, str] = {
     "consumption_sensor_failure": "consumption",
@@ -80,7 +79,7 @@ def _sante_site(site: Site, derniere: Reading | None) -> SanteSite:
             overall="critical",
         )
 
-    qualite = derniere.data_quality if derniere.data_quality in QUALITES_CONNUES else "critical"
+    qualite = qualite_ou_critique(derniere.data_quality)
     overall = _overall_depuis_qualite(qualite)
 
     if overall == "critical":

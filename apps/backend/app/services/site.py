@@ -1,15 +1,11 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
 
 from app.models.energy import Site
 from app.repositories.reading import ReadingRepository
 from app.repositories.site import SiteRepository
-
-DataQuality = Literal["good", "partial", "degraded", "critical"]
-
-QUALITES_CONNUES: frozenset[str] = frozenset({"good", "partial", "degraded", "critical"})
+from app.services.data_quality import DataQuality, qualite_ou_critique
 
 
 class SiteError(Exception):
@@ -70,9 +66,6 @@ class SiteService:
                 data_quality="critical",
             )
 
-        qualite: DataQuality = "critical"
-        if derniere.data_quality in QUALITES_CONNUES:
-            qualite = derniere.data_quality  # type: ignore[assignment]
         return SiteCurrentReading(
             timestamp=derniere.timestamp,
             site_id=site.site_id,
@@ -85,5 +78,5 @@ class SiteService:
             temperature_celsius=derniere.temperature_celsius,
             humidity_percent=derniere.humidity_percent,
             null_reasons=derniere.null_reasons or [],
-            data_quality=qualite,
+            data_quality=qualite_ou_critique(derniere.data_quality),
         )
