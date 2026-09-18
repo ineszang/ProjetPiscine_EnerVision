@@ -106,7 +106,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-coverage
-          path: apps/backend/cov.info
+          path: apps/backend/coverage.lcov
 
   sonarqube:
     needs: [build-front, build-back, test-front, test-back]
