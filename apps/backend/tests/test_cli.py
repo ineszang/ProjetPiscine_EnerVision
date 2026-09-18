@@ -118,3 +118,30 @@ def test_main_exports_the_contract_without_asking_for_a_password(
     assert code == 0
     assert destination.exists()
     assert str(destination) in capsys.readouterr().out
+
+
+def test_build_parser_reads_the_generate_recommendations_arguments() -> None:
+    arguments = cli.build_parser().parse_args(["generate-recommendations", "--site-id", "SITE002"])
+
+    assert arguments.commande == "generate-recommendations"
+    assert arguments.site_id == "SITE002"
+
+
+def test_build_parser_defaults_the_generation_to_every_site() -> None:
+    arguments = cli.build_parser().parse_args(["generate-recommendations"])
+
+    assert arguments.site_id is None
+
+
+def test_main_generates_the_recommendations_without_asking_for_a_password(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def fausse_generation(*, site_id: str | None) -> str:
+        return f"génération lancée pour {site_id}"
+
+    monkeypatch.setattr(cli, "generate_recommendations", fausse_generation)
+
+    code = cli.main(["generate-recommendations", "--site-id", "SITE002"])
+
+    assert code == 0
+    assert "SITE002" in capsys.readouterr().out

@@ -146,6 +146,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | GET | `/api/v1/alerts` | Liste les alertes, filtrable par `site_id` et `severity`. `lecteur` | 401, 403, 422, 500 |
 | GET | `/api/v1/recommendations` | Liste les recommandations. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation. `lecteur` | 401, 403, 404, 422, 500 |
+| POST | `/api/v1/recommendations/generate` | Applique le moteur de règles aux alertes, filtrable par `site_id`. `admin` | 401, 403, 422, 500 |
 | GET | `/api/v1/stats/summary` | Résume la consommation instantanée du parc. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/readings` | Historique des lectures, filtrable par `site_id`, fenêtre `start`/`end` (24h par défaut, 90 jours maximum) et paginé par `limit`/`offset`. `lecteur` | 400, 401, 403, 422, 500 |
 | GET | `/api/v1/sensors/status` | État de santé des capteurs par site, dérivé de la dernière lecture. `admin` | 401, 403, 500 |
@@ -193,6 +194,19 @@ plutôt qu'un statut inventé : le domaine `available`/`insufficient_data`/`erro
 `ck_prediction_status` n'a pas de valeur pour « pas encore de ligne ». L'API ne lance jamais
 LightGBM elle-même ; elle lit ce que le pipeline de scoring a déjà écrit, cf.
 [ML-START.md](../../ML-START.md) section 3.
+
+`POST /recommendations/generate` est la seule route d'écriture métier du contrat. Elle applique
+le moteur de règles d'`app/services/recommendation_rules.py` aux lignes d'`alert`, sans modèle ni
+feature ML : le catalogue `REGLES` associe à chaque type et à chaque gravité d'alerte une action et
+son explication, et une même alerte peut en déclencher plusieurs, comme le prévoit
+[40-data.md](40-data.md). L'idempotence est portée par la base, pas par le service :
+`RecommendationRepository.create_missing()` insère en `ON CONFLICT DO NOTHING` sur
+`uq_recommendation_alert_rule`, donc rejouer la génération sur les mêmes alertes ne crée rien et
+le rapport rendu distingue `recommendations_created` de `already_present`. Le même traitement est
+disponible hors HTTP par `python -m app.cli generate-recommendations` (cible `make
+recommendations`), sur le patron de `make ml-score`. Le choix de loger le moteur dans le backend
+plutôt que dans `ml/` est justifié par l'[ADR 0006](../adr/0006-moteur-de-regles-dans-le-backend.md).
+Tant qu'aucune source n'alimente `alert`, la route est fonctionnelle mais rend un rapport à zéro.
 
 `GET /readings` reprend le même gabarit mais s'en écarte sur un point : `reading` est l'hypertable,
 donc la seule table métier pouvant porter des années d'historique, ce que `docs/architecture/
