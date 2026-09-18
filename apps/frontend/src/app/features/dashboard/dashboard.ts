@@ -61,7 +61,6 @@ export class Dashboard implements OnInit {
   private alertsService = inject(AlertsService);
   public auth = inject(AuthService);
   private predictionsService = inject(PredictionsService);
-  private auth = inject(AuthService);
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
 
