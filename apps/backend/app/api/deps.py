@@ -173,7 +173,7 @@ UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 
 def get_site_service(session: SessionDep) -> SiteService:
-    return SiteService(sites=SiteRepository(session))
+    return SiteService(sites=SiteRepository(session), readings=ReadingRepository(session))
 
 
 SiteServiceDep = Annotated[SiteService, Depends(get_site_service)]
