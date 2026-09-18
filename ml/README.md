@@ -57,6 +57,46 @@ validation. La coupure est **chronologique**, jamais un tirage aleatoire de lign
 aleatoire laisserait des lignes de validation "voir" des lignes d'entrainement via leurs
 lags/moyennes glissantes, une fuite qui masquerait un surapprentissage.
 
+## Scoring
+
+```bash
+uv run python -m enervision_ml.score --csv data/all_sites_combined.csv
+# ou, une fois la base peuplee et ML_DATABASE_URL positionnee :
+uv run python -m enervision_ml.score
+```
+
+Calcule, pour chaque site (ou un seul avec `--site-id`), la consommation prevue de l'heure suivant
+sa derniere lecture connue, et ecrit une ligne dans `prediction`. Etapes, cf. `ML-START.md`
+section 2 :
+
+1. Lit une fenetre recente de `reading`+`site` (21 jours par defaut, une marge au-dessus des 168h
+   necessaires au lag hebdomadaire) plutot que tout l'historique -- le meme piege que celui deja
+   corrige sur `GET /readings` (fenetre non plafonnee sur une hypertable).
+2. Ajoute une ligne "future" par site (l'heure suivante) et calcule ses features avec
+   `enervision_ml.features.build_features`, **exactement** la meme fonction qu'a l'entrainement.
+3. Si le lag de 168h est absent (moins d'une semaine d'historique pour ce site) : ecrit
+   `status="insufficient_data"` directement, sans jamais appeler LightGBM.
+4. Sinon : appelle `booster.predict(...)` et ecrit `status="available"` avec la valeur predite.
+
+`--model` pointe vers le fichier entraine (`models/lightgbm-consumption.txt` par defaut).
+`model_reference` en base est le hache SHA-256 (tronque) du fichier modele, pas son nom de
+fichier : `train.py` reecrit toujours le meme chemin a chaque entrainement, donc le nom seul ne
+distinguerait pas deux versions du modele.
+
+En mode `--csv`, rien n'est ecrit en base : c'est un instantane historique fige (l'heure "future"
+calculee a partir de la fin du CSV n'existe dans aucune base reelle), utile pour valider le
+pipeline sans base joignable.
+
+**Limite assumee** : la feature `is_working_hours` de la ligne future est recopiee depuis la
+derniere lecture reelle, pas recalculee -- il n'existe aucune regle horaire ouvrable dans ce
+depot (elle vit dans le generateur du jeu de donnees d'origine). L'approximation n'est fausse
+qu'aux heures de bascule ouverture/fermeture, sur une seule feature parmi une dizaine, pour une
+prevision a un seul pas.
+
+`prediction` n'a pas de contrainte d'unicite sur `(site_id, target_at)` : chaque run de scoring
+insere une nouvelle ligne plutot que d'ecraser la precedente, pour garder une trace de chaque
+prevision (utile plus tard pour comparer prevision et realise, surveillance de derive #44/#45).
+
 ## Commandes
 
 ```bash
@@ -81,8 +121,14 @@ environnement de developpement pour le moment.
 ## Piege a connaitre
 
 `enervision_ml.features.build_features` est **le seul endroit** qui doit construire les features
-du modele, a l'entrainement comme au futur scoring (service #37, pas encore construit). Si les
-deux divergent meme legerement (une fenetre de moyenne glissante calculee differemment, par
-exemple), le modele recoit en production des features qui ne ressemblent plus a ce qu'il a
-appris, et ses predictions deviennent silencieusement mauvaises sans qu'aucune erreur ne se
-declenche. Ne jamais reecrire cette logique ailleurs : importer `enervision_ml.features`.
+du modele, a l'entrainement comme au scoring (`enervision_ml.score`). Si les deux divergent meme
+legerement (une fenetre de moyenne glissante calculee differemment, par exemple), le modele
+recoit en production des features qui ne ressemblent plus a ce qu'il a appris, et ses predictions
+deviennent silencieusement mauvaises sans qu'aucune erreur ne se declenche. Ne jamais reecrire
+cette logique ailleurs : importer `enervision_ml.features`.
+
+## Et cote API ?
+
+`GET /api/v1/predictions` (backend, `apps/backend`) lit ce que `enervision_ml.score` a ecrit dans
+`prediction` -- la derniere prevision par site, jamais un recalcul a la volee. FastAPI ne fait
+jamais tourner LightGBM lui-meme, cf. `ML-START.md` section 3.

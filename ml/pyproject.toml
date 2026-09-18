@@ -47,9 +47,9 @@ select = [
     "S",
     "PT",
 ]
-# N806 : `X`/`y` (donnees/cible) est la convention scikit-learn/LightGBM, pas une variable mal
-# nommee.
-ignore = ["B008", "N806"]
+# N806/N803 : `X`/`y` (donnees/cible) est la convention scikit-learn/LightGBM, pas une variable
+# ou un argument mal nomme.
+ignore = ["B008", "N806", "N803"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]

@@ -6,7 +6,7 @@ ML := ml
 .PHONY: help install install-backend install-frontend install-ml dev dev-backend dev-frontend \
         lint format typecheck test test-cov test-integration check \
         openapi docker-build db-up db-down db-reset db-logs db-psql migrate bootstrap-admin \
-        ml-lint ml-typecheck ml-test ml-check ml-train
+        ml-lint ml-typecheck ml-test ml-check ml-train ml-score
 
 help: ## Liste les cibles disponibles
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -73,6 +73,9 @@ ml-check: ml-lint ml-typecheck ml-test ## Chaîne de vérification complète du 
 
 ml-train: ## Entraine le modele LightGBM. CSV=chemin optionnel, sinon lit ML_DATABASE_URL
 	cd $(ML) && uv run python -m enervision_ml.train $(if $(CSV),--csv $(CSV),)
+
+ml-score: ## Score le prochain pas horaire et l'ecrit dans `prediction`. CSV=chemin optionnel
+	cd $(ML) && uv run python -m enervision_ml.score $(if $(CSV),--csv $(CSV),)
 
 docker-build: ## Construit l'image du backend
 	docker build -t enervision-backend:local $(BACKEND)

@@ -16,6 +16,7 @@ Deux chemins, qui doivent produire le meme schema de sortie (colonnes `site_id`,
   colonne est renvoyee a `NaN`, que LightGBM gere nativement comme valeur manquante.
 """
 
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -31,6 +32,14 @@ OUTPUT_COLUMNS = [
     "solar_irradiance_wm2",
     "is_working_hours",
     "site_type",
+    "capacity_kw",
+]
+
+NUMERIC_COLUMNS = [
+    "consumption_kwh",
+    "temperature_celsius",
+    "humidity_percent",
+    "solar_irradiance_wm2",
     "capacity_kw",
 ]
 
@@ -53,10 +62,43 @@ _READING_QUERY = text(
 )
 
 
+_RECENT_READING_QUERY = text(
+    """
+    SELECT
+        r.site_id,
+        r.timestamp,
+        r.consumption_kwh,
+        r.temperature_celsius,
+        r.humidity_percent,
+        r.solar_irradiance_wm2,
+        r.is_working_hours,
+        s.site_type,
+        s.capacity_kw
+    FROM reading r
+    JOIN site s ON s.site_id = r.site_id
+    WHERE r.timestamp >= :since
+    ORDER BY r.site_id, r.timestamp
+    """
+)
+
+
 def load_from_database(connection: Connectable) -> pd.DataFrame:
-    """Lit l'historique complet `reading` + `site` depuis PostgreSQL."""
+    """Lit l'historique complet `reading` + `site` depuis PostgreSQL. Entrainement seulement :
+    le scoring n'a besoin que d'une fenetre recente, cf. `load_recent_from_database`.
+    """
     frame = pd.read_sql(_READING_QUERY, connection)
-    return frame[OUTPUT_COLUMNS]
+    return _typer(frame[OUTPUT_COLUMNS])
+
+
+def load_recent_from_database(connection: Connectable, *, since: datetime) -> pd.DataFrame:
+    """Lit `reading` + `site` depuis `since` seulement, pour le scoring.
+
+    Piege evite : un `SELECT` sans borne sur l'hypertable complete juste pour scorer le prochain
+    pas horaire serait la meme erreur que celle corrigee sur `GET /readings` (fenetre non
+    plafonnee sur une table pouvant porter des annees d'historique).
+    """
+    frame = pd.read_sql(_RECENT_READING_QUERY, connection, params={"since": since})
+    return _typer(frame[OUTPUT_COLUMNS])
 
 
 def load_from_csv(csv_path: Path) -> pd.DataFrame:
@@ -65,4 +107,20 @@ def load_from_csv(csv_path: Path) -> pd.DataFrame:
     frame["capacity_kw"] = float("nan")
     frame["is_working_hours"] = frame["is_working_hours"].astype(bool)
 
-    return frame[OUTPUT_COLUMNS]
+    return _typer(frame[OUTPUT_COLUMNS])
+
+
+def _typer(frame: pd.DataFrame) -> pd.DataFrame:
+    """Force le typage numerique attendu par LightGBM.
+
+    Piege reel, pas theorique : `site.capacity_kw` n'est peuple par aucun pipeline d'ingestion
+    aujourd'hui (`historical_import.py` ne pose que `site_type`/`site_name`). Une colonne
+    entierement `NULL` revient de `pd.read_sql` en dtype `object` plutot que `float64`, ce que
+    LightGBM refuse ("pandas dtypes must be int, float or bool"). `pd.to_numeric` corrige aussi
+    n'importe quelle autre colonne mesuree entierement absente sur une fenetre de scoring, pas
+    seulement `capacity_kw`.
+    """
+    typee = frame.copy()
+    for colonne in NUMERIC_COLUMNS:
+        typee[colonne] = pd.to_numeric(typee[colonne], errors="coerce")
+    return typee
