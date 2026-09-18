@@ -57,6 +57,66 @@ jobs:
       - name: Tests et couverture
         run: uv run pytest --cov-fail-under=85
 
+  # Piège : l'image est celle de docker-compose.yml, pas une image `postgres` nue. La première
+  # migration (`5353c0e4f094`) échoue volontairement si l'extension TimescaleDB manque, et un
+  # écart d'image entre la CI et le poste rendrait ce job vert sur une base qui n'est pas la nôtre.
+  integration:
+    name: Tests exigeant une base
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+
+    services:
+      db:
+        image: timescale/timescaledb-ha:pg17
+        env:
+          POSTGRES_USER: enervision
+          POSTGRES_PASSWORD: change_me
+          POSTGRES_DB: enervision_test
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U enervision -d enervision_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 40s
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://enervision:change_me@localhost:5433/enervision_test
+      APP_SECRET_KEY: secret-de-test-assez-long-pour-le-validateur
+      PGPASSWORD: change_me
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        run: uv python install
+
+      - name: Synchronise les dépendances sans dévier du verrou
+        run: uv sync --all-groups --frozen
+
+      # Sur le poste, c'est db/init/110-test-database.sql qui pose l'extension. Ce fichier n'est
+      # pas monté ici, et sans lui `alembic upgrade head` s'arrête sur la garde de la révision 1.
+      - name: Active TimescaleDB sur la base de test
+        run: psql -h localhost -p 5433 -U enervision -d enervision_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
+
+      - name: Applique les migrations
+        run: uv run alembic upgrade head
+
+      # `-m` en ligne de commande écrase celui d'`addopts`. La couverture est désactivée : ce job
+      # ne joue qu'une partie de la suite, son taux n'aurait aucun sens face au seuil de 85 %.
+      - name: Tests d'intégration
+        run: uv run pytest -m integration --no-cov
+
   security-audit:
     name: Audit des dépendances
     runs-on: ubuntu-latest
