@@ -83,6 +83,13 @@ TAGS: Final[list[dict[str, Any]]] = [
         "name": "sensors",
         "description": "État de santé des capteurs par site. Réservé au rôle `admin`.",
     },
+    {
+        "name": "predictions",
+        "description": (
+            "Dernière prévision de consommation par site, calculée hors ligne par le pipeline "
+            "de scoring (`ml/`) et simplement lue ici. Accessible à partir du rôle `lecteur`."
+        ),
+    },
 ]
 
 cookie_de_rafraichissement = APIKeyCookie(

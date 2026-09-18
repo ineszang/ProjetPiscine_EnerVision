@@ -1,0 +1,85 @@
+<div class="site-detail">
+  <nav class="ev-breadcrumb">
+    <a routerLink="/dashboard">Tableau de bord</a>
+    <span>/</span>
+    <a routerLink="/sites">Sites</a>
+  </nav>
+
+  <header class="site-detail__header">
+    <a routerLink="/dashboard" class="ev-brand-link">
+      <ev-brand class="site-detail__logo" />
+    </a>
+    <div>
+      <h1>{{ site()?.site_name ?? siteId() }}</h1>
+      @if (site(); as s) {
+        <p class="site-detail__subtitle">
+          {{ s.site_type }} · {{ s.location || 'Localisation inconnue' }}
+        </p>
+      }
+    </div>
+    <div class="site-detail__badges">
+      @if (site(); as s) {
+        <ev-badge [tone]="badgeToneForStatus(s.status)">{{ s.status ?? '-' }}</ev-badge>
+      }
+      @if (hasMeasurement() && qualityLabel(); as label) {
+        <ev-badge [tone]="qualityTone()">{{ label }}</ev-badge>
+      }
+    </div>
+  </header>
+
+  @if (error(); as message) {
+    <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
+  }
+
+  @if (site(); as s) {
+    @if (hasMeasurement()) {
+      <section class="overview">
+        <ev-card class="card card--gauge">
+          <span class="card__label">Consommation vs capacité</span>
+          @let consumption = consumptionKw();
+          @if (consumption !== null) {
+            <app-consumption-gauge [consumption]="consumption" [capacity]="s.capacity_kw ?? 0" />
+            <span class="card__value">
+              {{ consumptionLabel() }} / {{ s.capacity_kw ?? '-' }} kW
+            </span>
+          } @else {
+            <p class="card__unavailable">
+              Consommation indisponible
+              <span class="metric__reason">({{ consumptionReason() }})</span>
+            </p>
+          }
+        </ev-card>
+
+        <ev-card class="metrics-card">
+          <span class="card__label">Mesure instantanée</span>
+          <dl class="metrics-grid">
+            @for (metric of metrics(); track metric.key) {
+              <div class="metric">
+                <dt>{{ metric.label }}</dt>
+                @if (metric.value !== null) {
+                  <dd>{{ metric.value }}</dd>
+                } @else {
+                  <dd class="metric__unavailable">
+                    Indisponible
+                    <span class="metric__reason">({{ metric.reason }})</span>
+                  </dd>
+                }
+              </div>
+            }
+          </dl>
+        </ev-card>
+      </section>
+
+      @if (history().length > 0) {
+        <section class="chart-section">
+          <h2>Historique de consommation</h2>
+          <app-reading-history-chart [readings]="history()" />
+        </section>
+      }
+    } @else {
+      <ev-alert severity="warning" class="banner-empty">{{ noMeasurementMessage }}</ev-alert>
+    }
+  }
+
+  <a routerLink="/sites" class="ev-link">Retour aux sites</a>
+</div>

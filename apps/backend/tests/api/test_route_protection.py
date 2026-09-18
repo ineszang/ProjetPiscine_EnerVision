@@ -1,6 +1,6 @@
 # Ce test est le garde-fou de l'autorisation : rendre une route publique oblige à modifier
-# `ROUTES_PUBLIQUES` ci-dessous, ce qui apparaît en clair dans la diff d'une pull request et
-# demande une justification au relecteur.
+# `ROUTES_PUBLIQUES` dans `tests/api/acces.py`, ce qui apparaît en clair dans la diff d'une pull
+# request et demande une justification au relecteur.
 # Pourquoi : il interroge réellement chaque route sans jeton au lieu d'inspecter l'arbre de
 # dépendances. L'arbre n'est accessible que par l'API privée de FastAPI, et surtout une route
 # peut porter la bonne dépendance tout en répondant quand même.
@@ -11,48 +11,55 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
-ROUTES_PUBLIQUES = frozenset(
-    {
-        ("GET", "/api/v1/health/live"),
-        ("GET", "/api/v1/health/ready"),
-        ("POST", "/api/v1/auth/login"),
-        # Sans cookie, la déconnexion ne fait rien et répond 204 : elle est idempotente.
-        ("POST", "/api/v1/auth/logout"),
-        ("POST", "/api/v1/auth/forgot-password"),
-        # Protégée par le jeton dans le corps de la requête, pas par un `Principal` : aucune
-        # authentification préalable ne s'applique, c'est la validité du jeton qui tranche.
-        ("POST", "/api/v1/auth/reset-password"),
-        # Même raison : lecture seule, protégée par le jeton passé en paramètre, pas par un
-        # `Principal`. Le jeton est un secret de 256 bits, non brute-forçable.
-        ("GET", "/api/v1/auth/reset-password/validate"),
-        ("GET", "/metrics"),
-    }
+from tests.api.acces import (
+    ROLE_MINIMUM,
+    ROUTE_COOKIE,
+    ROUTES_PUBLIQUES,
+    ROUTES_SANS_ROLE,
+    Route,
+    chemin_concret,
+    routes_du_schema,
 )
 
-VALEURS_DE_SUBSTITUTION = "00000000-0000-0000-0000-000000000000"
 STATUTS_DE_REFUS = {401, 403}
+HORS_SCHEMA = {("GET", "/metrics")}
 
 
-def routes_declarees(app: FastAPI) -> list[tuple[str, str]]:
+def routes_declarees(app: FastAPI) -> list[Route]:
     schema: dict[str, Any] = app.openapi()
-    return [
-        (methode.upper(), chemin)
-        for chemin, operations in schema["paths"].items()
-        for methode in operations
-        if methode.upper() in {"GET", "POST", "PATCH", "PUT", "DELETE"}
-    ]
+    return routes_du_schema(schema)
 
 
-def routes_protegees(app: FastAPI) -> list[tuple[str, str]]:
+def routes_protegees(app: FastAPI) -> list[Route]:
     return [route for route in routes_declarees(app) if route not in ROUTES_PUBLIQUES]
 
 
 def test_the_public_allow_list_has_no_stale_entry(app: FastAPI) -> None:
-    declarees = set(routes_declarees(app)) | {("GET", "/metrics")}
+    declarees = set(routes_declarees(app)) | HORS_SCHEMA
 
     inconnues = ROUTES_PUBLIQUES - declarees
 
     assert inconnues == set()
+
+
+# Sans lui, une route ajoutée sans être classée n'est vue par aucun test de rôle : elle hérite
+# du seul contrôle anonyme, et une garde posée au mauvais niveau passe inaperçue.
+def test_every_declared_route_is_classified(app: FastAPI) -> None:
+    classees = ROUTES_PUBLIQUES | ROUTE_COOKIE | ROUTES_SANS_ROLE | set(ROLE_MINIMUM)
+
+    non_classees = set(routes_declarees(app)) - classees
+    fantomes = classees - set(routes_declarees(app)) - HORS_SCHEMA
+
+    assert non_classees == set(), "classer la route dans tests/api/acces.py"
+    assert fantomes == set(), "entrée morte : la route n'existe plus sous ce chemin"
+
+
+def test_the_four_classes_of_routes_stay_disjoint() -> None:
+    classes = [ROUTES_PUBLIQUES, ROUTE_COOKIE, ROUTES_SANS_ROLE, frozenset(ROLE_MINIMUM)]
+
+    for rang, classe in enumerate(classes):
+        for autre in classes[rang + 1 :]:
+            assert classe & autre == frozenset()
 
 
 async def test_every_route_rejects_an_anonymous_caller_unless_explicitly_public(
@@ -61,8 +68,7 @@ async def test_every_route_rejects_an_anonymous_caller_unless_explicitly_public(
     ouvertes: list[tuple[str, str, int]] = []
 
     for methode, chemin in routes_protegees(app):
-        concret = chemin.replace("{user_id}", VALEURS_DE_SUBSTITUTION)
-        response = await client.request(methode, concret, json={})
+        response = await client.request(methode, chemin_concret(chemin), json={})
         if response.status_code not in STATUTS_DE_REFUS:
             ouvertes.append((methode, chemin, response.status_code))
 
@@ -95,4 +101,5 @@ async def test_the_documentation_routes_are_public_by_design(
     app: FastAPI, client: AsyncClient, chemin: str
 ) -> None:
     response = await client.get(chemin)
+
     assert response.status_code == 200

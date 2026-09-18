@@ -21,9 +21,7 @@ export const routes: Routes = [
     path: 'sites/:siteId',
     canActivate: [authGuard],
     loadComponent: () =>
-      import('./features/sites/site-detail-placeholder/site-detail-placeholder').then(
-        (m) => m.SiteDetailPlaceholder,
-      ),
+      import('./features/sites/site-detail/site-detail').then((m) => m.SiteDetail),
   },
   {
   path: 'monitoring/sensors',
