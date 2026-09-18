@@ -1,7 +1,7 @@
 locals {
   frontend_environments = {
     dev = {
-      source_dir = "${path.root}/../../../apps/frontend/dist/frontend-dev/browser"
+      source_dir = "${path.root}/../../../../apps/frontend/dist/frontend/browser"
       domain     = "dev.enervision"
     }
   }
@@ -9,15 +9,22 @@ locals {
   selected_frontend = local.frontend_environments[var.deployment_environment]
 }
 
-resource "null_resource" "frontend" {
+provider "docker" {
+  host = "npipe:////.//pipe//docker_cli"
+}
+
+resource "docker_image" "frontend" {
+  name         = "enervision-front:latest"
+  keep_locally = false
+
   depends_on = [module.k3s]
 
   triggers = {
     environment = var.deployment_environment
-    
+
     build_hash = sha256(join("", [
-      for file in fileset("${path.root}/../../../apps/frontend/dist/frontend/browser", "**") :
-      filesha256("${path.root}/../../../apps/frontend/dist/frontend/browser/${file}")
+      for file in fileset(local.selected_frontend.source_dir, "**") :
+      filesha256("${local.selected_frontend.source_dir}/${file}")
     ]))
   }
 
@@ -27,6 +34,7 @@ resource "null_resource" "frontend" {
     host        = var.ssh_host
     port        = var.ssh_port
     user        = var.ssh_user
+    password    = var.ssh_password
     private_key = file(pathexpand(var.ssh_private_key_path))
   }
 
@@ -43,15 +51,24 @@ resource "null_resource" "frontend" {
 
   // Copie des fichiers vers le serveur
   provisioner "file" {
-    source      = "${path.root}/../../../apps/frontend/dist/frontend/browser/"
+    source      = "${local.selected_frontend.source_dir}/"
     destination = "/tmp/enervision-frontend"
   }
 
   // Déplacement des fichiers 
   provisioner "remote-exec" {
     inline = [
-      "sudo cp -r /tmp/enervision-frontend/* /var/www/enervision/",
+      "sudo cp -r /tmp/enervision-frontend/ /var/www/enervision/",
       "sudo chown -R www-data:www-data /var/www/enervision"
     ]
+  }
+}
+
+resource "docker_container" "nginx" {
+  image = "enervision-front:latest"
+  name  = "front"
+  ports {
+    internal = 4200
+    external = 3000
   }
 }

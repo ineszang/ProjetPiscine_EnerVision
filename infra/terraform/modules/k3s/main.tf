@@ -7,17 +7,21 @@ locals {
 
 resource "null_resource" "k3s_install" {
   triggers = {
-    ssh_host            = var.ssh_host
-    k3s_version         = var.k3s_version
-    disable_components  = join(",", var.k3s_disable_components)
+    ssh_host           = var.ssh_host
+    ssh_port           = tostring(var.ssh_port)
+    ssh_user           = var.ssh_user
+    ssh_password       = var.ssh_password
+    k3s_version        = var.k3s_version
+    disable_components = join(",", var.k3s_disable_components)
+    sudo_prefix        = local.sudo_prefix
   }
 
   connection {
-    type        = "ssh"
-    host        = var.ssh_host
-    port        = var.ssh_port
-    user        = var.ssh_user
-    private_key = file(var.ssh_private_key_path)
+    type     = "ssh"
+    host     = self.triggers.ssh_host
+    port     = self.triggers.ssh_port
+    user     = self.triggers.ssh_user
+    password = self.triggers.ssh_password
   }
 
   provisioner "remote-exec" {
@@ -33,7 +37,7 @@ resource "null_resource" "k3s_install" {
     when       = destroy
     on_failure = continue
     inline = [
-      "${local.sudo_prefix}sh -c 'test -x /usr/local/bin/k3s-uninstall.sh && /usr/local/bin/k3s-uninstall.sh || true'",
+      "${self.triggers.sudo_prefix}sh -c 'test -x /usr/local/bin/k3s-uninstall.sh && /usr/local/bin/k3s-uninstall.sh || true'",
     ]
   }
 }
@@ -46,10 +50,13 @@ resource "null_resource" "fetch_kubeconfig" {
   }
 
   provisioner "local-exec" {
-    interpreter = ["bash", "-c"]
-    command     = <<-EOT
-      ssh -i "${var.ssh_private_key_path}" -p ${var.ssh_port} -o StrictHostKeyChecking=accept-new ${var.ssh_user}@${var.ssh_host} '${local.kubeconfig_cmd}' \
-        | sed 's/127.0.0.1/${var.ssh_host}/' > "${var.kubeconfig_output_path}"
+    interpreter = ["PowerShell", "-NoProfile", "-Command"]
+
+    command = <<-EOT
+      $content = ssh -i "${pathexpand(var.ssh_private_key_path)}" -p ${var.ssh_port} -o StrictHostKeyChecking=accept-new ${var.ssh_user}@${var.ssh_host} "cat /etc/rancher/k3s/k3s.yaml"
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      $content -replace "127.0.0.1", "${var.ssh_host}" |
+        Set-Content -Path "${var.kubeconfig_output_path}" -Encoding UTF8
     EOT
   }
 }
