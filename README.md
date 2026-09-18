@@ -25,6 +25,7 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | Backend en place |
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
+| ML         | LightGBM, MLflow                    | `ml`                | Entrainement initialise |
 
 Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Le frontend
 sert un tableau de bord sur `/dashboard`, dont les données proviennent de fixtures : les endpoints
@@ -53,6 +54,7 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 ├── infra/terraform/
 │   ├── modules/        Modules reutilisables
 │   └── environments/   Racines Terraform, une par environnement
+├── ml/                 Pipeline d'entrainement LightGBM, suivi MLflow
 ├── monitoring/
 │   ├── prometheus/     Collecte et regles d'alerte
 │   ├── grafana/        Provisioning et dashboards

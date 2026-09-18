@@ -16,6 +16,10 @@ Ce qui est en place :
 - `core/services` porte `StatsService` et `AlertsService`, `core/interceptors` l'intercepteur de
   fixtures, `features/dashboard` la page, `shared/components` la jauge de consommation et le
   graphique de charge par site, tous deux construits sur Chart.js.
+- Un système de design partagé (`shared/components/ui/` : `ev-button`, `ev-card`, `ev-alert`,
+  `ev-badge`, `ev-brand`, tokens CSS dans `styles/_tokens.scss`) que toute nouvelle page doit
+  réutiliser plutôt que redéfinir ses propres styles. Détail :
+  [32-design-systeme-frontend.md](32-design-systeme-frontend.md).
 - L'état vit dans des signaux, sans bibliothèque dédiée.
 - Vitest via le builder `@angular/build:unit-test`, couverture activée, sept fichiers de test.
 - Prettier configuré, parser `angular` pour les gabarits HTML.

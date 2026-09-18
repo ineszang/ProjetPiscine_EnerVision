@@ -76,6 +76,13 @@ Points à vérifier après toute regénération :
    côté backend. Le `docker-compose.yml` n'a aucun service frontend.
 4. Ajouter le `Dockerfile` multi-stage (build Angular puis service statique nginx).
 
+## Design système
+
+Tokens (couleurs, typo, espacements) et composants partagés (`ev-button`, `ev-card`,
+`ev-alert`, `ev-badge`) sont documentés dans
+[`docs/architecture/32-design-systeme-frontend.md`](../../docs/architecture/32-design-systeme-frontend.md).
+Toute nouvelle page doit les réutiliser plutôt que définir ses propres valeurs.
+
 ## Additional Resources
 
 For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.

@@ -5,7 +5,7 @@ import { Dashboard } from './dashboard';
 import { StatsService } from '../../core/services/stats.service';
 import { AlertsService } from '../../core/services/alerts.service';
 import {AuthService} from '../../core/services/auth.service';
-import {Router} from '@angular/router';
+import {Router, provideRouter} from '@angular/router';
 
 vi.mock('chart.js', () => {
   class ChartMock {
@@ -29,6 +29,7 @@ describe('Dashboard', () => {
       providers: [
         { provide: StatsService, useValue: statsMock },
         { provide: AlertsService, useValue: alertsMock },
+        provideRouter([]),
       ],
     });
 
@@ -60,6 +61,7 @@ describe('Dashboard', () => {
       providers: [
         { provide: StatsService, useValue: statsMock },
         { provide: AlertsService, useValue: alertsMock },
+        provideRouter([]),
       ],
     });
 
@@ -86,6 +88,7 @@ describe('Dashboard', () => {
       providers: [
         { provide: StatsService, useValue: statsMock },
         { provide: AlertsService, useValue: alertsMock },
+        provideRouter([]),
       ],
     });
 
@@ -99,7 +102,6 @@ describe('Dashboard', () => {
   const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
   const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
   const authMock = { logout: vi.fn().mockReturnValue(of(undefined)), clearSession: vi.fn() };
-  const routerMock = { navigate: vi.fn() };
 
   TestBed.configureTestingModule({
     imports: [Dashboard],
@@ -107,18 +109,21 @@ describe('Dashboard', () => {
       { provide: StatsService, useValue: statsMock },
       { provide: AlertsService, useValue: alertsMock },
       { provide: AuthService, useValue: authMock },
-      { provide: Router, useValue: routerMock },
+      provideRouter([]),
     ],
   });
 
   const fixture = TestBed.createComponent(Dashboard);
   fixture.detectChanges();
 
+  const router = TestBed.inject(Router);
+  const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
   const button = fixture.nativeElement.querySelector('.logout-button');
   button.click();
 
   expect(authMock.logout).toHaveBeenCalled();
-  expect(routerMock.navigate).toHaveBeenCalledWith(['/login']);
+  expect(navigateSpy).toHaveBeenCalledWith(['/login']);
   });
   it('déconnecte localement et redirige vers /login même si logout échoue côté réseau', () => {
   const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
@@ -127,25 +132,51 @@ describe('Dashboard', () => {
     logout: vi.fn().mockReturnValue(throwError(() => new Error('réseau indisponible'))),
     clearSession: vi.fn(),
   };
-  const routerMock = { navigate: vi.fn() };
-
   TestBed.configureTestingModule({
     imports: [Dashboard],
     providers: [
       { provide: StatsService, useValue: statsMock },
       { provide: AlertsService, useValue: alertsMock },
       { provide: AuthService, useValue: authMock },
-      { provide: Router, useValue: routerMock },
+      provideRouter([]),
     ],
   });
 
   const fixture = TestBed.createComponent(Dashboard);
   fixture.detectChanges();
 
+  const router = TestBed.inject(Router);
+  const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
   const button = fixture.nativeElement.querySelector('.logout-button');
   button.click();
 
   expect(authMock.clearSession).toHaveBeenCalled();
-  expect(routerMock.navigate).toHaveBeenCalledWith(['/login']);
+  expect(navigateSpy).toHaveBeenCalledWith(['/login']);
 });
+
+  it('distingue le ton des sévérités high et critical', () => {
+    const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
+    const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
+
+    TestBed.configureTestingModule({
+      imports: [Dashboard],
+      providers: [
+        { provide: StatsService, useValue: statsMock },
+        { provide: AlertsService, useValue: alertsMock },
+        provideRouter([]),
+      ],
+    });
+
+    const fixture = TestBed.createComponent(Dashboard);
+    const dashboard = fixture.componentInstance;
+
+    expect(dashboard.badgeToneForSeverity('low')).toBe('success');
+    expect(dashboard.badgeToneForSeverity('medium')).toBe('warning');
+    expect(dashboard.badgeToneForSeverity('high')).toBe('danger');
+    expect(dashboard.badgeToneForSeverity('critical')).toBe('critical');
+    expect(dashboard.badgeToneForSeverity('high')).not.toBe(
+      dashboard.badgeToneForSeverity('critical'),
+    );
+  });
 });

@@ -13,6 +13,7 @@ contredisent, c'est l'ADR qui fait foi et la vue qui est en retard.
 | [20-backend.md](20-backend.md) | Couches FastAPI, séquence de démarrage, routes, configuration, contrat OpenAPI |
 | [30-frontend.md](30-frontend.md) | Angular, arborescence cible, flux HTTP |
 | [31-contrat-authentification.md](31-contrat-authentification.md) | Ce que le frontend doit savoir pour coder la connexion |
+| [32-design-systeme-frontend.md](32-design-systeme-frontend.md) | Tokens CSS, composants `ev-*` partagés, règle anti-couleur-en-dur |
 | [40-data.md](40-data.md) | Frontières `db/` et `alembic/`, cycle de vie d'une mesure, modèle |
 
 L'observabilité et la CI/CD n'ont pas de document propre : ce sont des sections des documents

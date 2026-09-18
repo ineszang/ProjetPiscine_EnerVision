@@ -18,6 +18,13 @@ ROUTES_PUBLIQUES = frozenset(
         ("POST", "/api/v1/auth/login"),
         # Sans cookie, la déconnexion ne fait rien et répond 204 : elle est idempotente.
         ("POST", "/api/v1/auth/logout"),
+        ("POST", "/api/v1/auth/forgot-password"),
+        # Protégée par le jeton dans le corps de la requête, pas par un `Principal` : aucune
+        # authentification préalable ne s'applique, c'est la validité du jeton qui tranche.
+        ("POST", "/api/v1/auth/reset-password"),
+        # Même raison : lecture seule, protégée par le jeton passé en paramètre, pas par un
+        # `Principal`. Le jeton est un secret de 256 bits, non brute-forçable.
+        ("GET", "/api/v1/auth/reset-password/validate"),
         ("GET", "/metrics"),
     }
 )
@@ -74,3 +81,18 @@ async def test_the_declared_routes_are_actually_reachable(app: FastAPI) -> None:
 )
 def test_the_health_probes_stay_public(app: FastAPI, chemin: str) -> None:
     assert ("GET", chemin) in ROUTES_PUBLIQUES
+
+
+# Piège : ni les routes `include_in_schema=False` (/docs, /redoc) ni un `Mount` Starlette
+# (/static) n'apparaissent dans `app.openapi()["paths"]`. `routes_declarees()` ne les voit
+# donc jamais, et elles échapperaient silencieusement au garde-fou ci-dessus.
+@pytest.mark.parametrize(
+    "chemin",
+    ["/docs", "/redoc", "/static/logo-icon.png"],
+    ids=["swagger_ui", "redoc", "logo_statique"],
+)
+async def test_the_documentation_routes_are_public_by_design(
+    app: FastAPI, client: AsyncClient, chemin: str
+) -> None:
+    response = await client.get(chemin)
+    assert response.status_code == 200

@@ -41,7 +41,10 @@ describe('authInterceptor', () => {
     httpMock = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => httpMock.verify());
+  afterEach(() => {
+    httpMock.verify();
+    vi.restoreAllMocks();
+  });
 
   it('ajoute le header Authorization quand un token est disponible', () => {
     http.get('/api/v1/stats/summary').subscribe();
@@ -95,6 +98,19 @@ describe('authInterceptor', () => {
     req.flush({}, { status: 401, statusText: 'Unauthorized' });
     expect(authMock.clearSession).toHaveBeenCalled();
     expect(routerMock.navigate).toHaveBeenCalledWith(['/login']);
+  });
+
+  it("ne redirige pas vers /login sur un 401 de /auth/refresh si on est déjà sur /reset-password", () => {
+    vi.spyOn(window, 'location', 'get').mockReturnValue({
+      pathname: '/reset-password',
+    } as Location);
+
+    http.post('/api/v1/auth/refresh', {}).subscribe({ error: () => {} });
+    const req = httpMock.expectOne('/api/v1/auth/refresh');
+    req.flush({}, { status: 401, statusText: 'Unauthorized' });
+
+    expect(authMock.clearSession).toHaveBeenCalled();
+    expect(routerMock.navigate).not.toHaveBeenCalled();
   });
 
   it('rafraîchit puis rejoue la requête sur un 401 avec error="expired"', () => {
