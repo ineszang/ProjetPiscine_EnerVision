@@ -170,8 +170,11 @@ describe('Dashboard', () => {
   it('appelle logout et redirige vers /login au clic sur le bouton de déconnexion', () => {
   const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
   const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
-  const authMock = { logout: vi.fn().mockReturnValue(of(undefined)), clearSession: vi.fn() };
-
+  const authMock = {
+    logout: vi.fn().mockReturnValue(of(undefined)),
+    clearSession: vi.fn(),
+    principal: vi.fn().mockReturnValue({ role: 'admin' }),
+  };
   TestBed.configureTestingModule({
     imports: [Dashboard],
     providers: [
@@ -198,9 +201,10 @@ describe('Dashboard', () => {
   it('déconnecte localement et redirige vers /login même si logout échoue côté réseau', () => {
   const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
   const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
-  const authMock = {
+    const authMock = {
     logout: vi.fn().mockReturnValue(throwError(() => new Error('réseau indisponible'))),
     clearSession: vi.fn(),
+    principal: vi.fn().mockReturnValue({ role: 'admin' }),
   };
   TestBed.configureTestingModule({
     imports: [Dashboard],
