@@ -99,14 +99,14 @@ jobs:
           cache-dependency-glob: apps/backend/uv.lock
 
       - name : Lancement des tests et génénration du rapport de couverture (Back)
-        run: uv run pytest --cov-fail-under=85 --cov-report=lcov
+        run: uv run pytest --cov-fail-under=85 --cov-report=xml
         working-directory: apps/backend
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: backend-coverage
-          path: apps/backend/coverage.lcov
+          path: apps/backend/coverage.xml
 
   sonarqube:
     needs: [build-front, build-back, test-front, test-back]
