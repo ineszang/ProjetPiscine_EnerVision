@@ -86,15 +86,6 @@
               "text-summary",
               "lcov",
               "html"
-            ],
-            "reporters": [
-              "default",
-              [
-                "junit",
-                {
-                  "outputFile": "test-results/junit.xml"
-                }
-              ]
             ]
           }
         }
