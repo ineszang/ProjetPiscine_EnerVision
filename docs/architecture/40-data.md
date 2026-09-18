@@ -6,10 +6,14 @@ système qui en découle.
 
 ## Ce que couvre ce document
 
-**Dix tables applicatives existent** : quatre pour l'authentification, six pour les données
-d'énergie, dont l'hypertable `reading`. Les sections marquées `Fait` relèvent le code. Celles
-marquées `Cible` décrivent ce qui n'est pas écrit, au premier rang desquelles la chaîne
-d'ingestion, les agrégats continus, la compression et la rétention.
+**Douze tables applicatives existent** : six pour l'authentification et six pour les données
+d'énergie, dont l'hypertable `reading`.
+
+Les sections marquées `Fait` relèvent du code déjà implémenté. Les sections marquées `Cible`
+décrivent les éléments prévus mais pas encore réalisés.
+
+L'ingestion des deux sources de données du MVP est maintenant implémentée. L'orchestration
+Airflow, les agrégats continus, la compression et la rétention restent des cibles.
 
 ## Trois emplacements, trois rôles
 
@@ -35,8 +39,16 @@ Statut : `Fait`.
 - `db/init/100-extensions.sql` crée l'extension `timescaledb`.
 - `db/init/110-test-database.sql` crée `enervision_test`, dont le nom est attendu en dur par
   `apps/backend/tests/conftest.py`.
-- Cinq révisions Alembic. La première, `5353c0e4f094`, **ne crée aucune table** : elle
-  établit `alembic_version` et refuse de s'appliquer si l'extension manque :
+- Six révisions Alembic sont actuellement appliquées.
+- La première, `5353c0e4f094`, **ne crée aucune table** : elle établit `alembic_version`
+  et refuse de s'appliquer si l'extension TimescaleDB manque.
+- Les révisions suivantes créent les tables liées à l'authentification :
+  `app_user`, `login_attempt`, `audit_log` et `refresh_token`.
+- La révision `e6d2026091501` crée les six tables Data et déclare l'hypertable `reading`.
+- La révision `c0adab96238c` ajoute les tables `password_reset_attempt`
+  et `password_reset_token`.
+
+La garde de la première migration est :
 
 ```sql
 IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
@@ -47,37 +59,58 @@ END IF;
 Cette garde forme paire avec le 503 de `/api/v1/health/ready`. Un bootstrap sauté ne se voit pas
 au démarrage de l'API : ces deux gardes le rendent visible tôt, des deux côtés.
 
-Les trois suivantes créent les tables de l'authentification, décrites plus bas : `app_user`,
-puis `login_attempt` et `audit_log`, puis `refresh_token`. La cinquième, `e6d2026091501`, crée
-les six tables de données décrites en fin de document et déclare l'hypertable `reading`.
-
 ## Cycle de vie d'une mesure
 
-Statut : `Cible`, sauf l'hypertable `reading` qui existe. Ni l'ingestion, ni les agrégats
-continus, ni la compression, ni la rétention ne sont écrits.
+Statut : `Partiellement fait`.
+
+Les mécanismes d'ingestion sont maintenant implémentés pour les deux sources de données du MVP :
+
+- le dataset historique CSV/JSON avec `historical_import.py` ;
+- l'API Mock avec `mock_api_import.py`.
+
+Les traitements sont actuellement exécutables directement depuis le backend.
+
+L'orchestration avec Apache Airflow reste une cible, tout comme les agrégats continus,
+la compression et les politiques de rétention.
 
 ```mermaid
 flowchart LR
-  src["Source de mesures"] -.-> ing["Ingestion Airflow"]
-  ing -.-> hy[("Hypertable reading")]
+  csv["CSV + JSON"] --> hist["historical_import.py"]
+  mock["API Mock"] --> api["mock_api_import.py"]
+
+  hist --> hy[("Hypertable reading")]
+  api --> hy
+
+  airflow["Airflow"] -.-> hist
+  airflow -.-> api
+
   hy -.-> agg[("Agrégat continu")]
   hy -.-> comp["Compression"]
   hy -.-> ret["Rétention"]
-  agg -.-> api["API FastAPI"]
+
+  agg -.-> backend["API FastAPI"]
   agg -.-> graf["Grafana"]
 ```
 
-Les lectures de l'API et de Grafana visent l'agrégat continu, pas la table brute : c'est tout
-l'intérêt de TimescaleDB, et cela doit rester vrai quand les volumes augmenteront.
+Les flèches pleines représentent les traitements actuellement implémentés.
+
+Les flèches pointillées représentent les éléments encore prévus comme cibles.
+
+Les lectures futures de l'API et de Grafana visent l'agrégat continu plutôt que la table brute
+lorsque cette partie TimescaleDB sera mise en place.
 
 ## Tables d'authentification
 
-Statut : `Fait`. Elles ne sont pas des séries temporelles et n'ont donc rien à voir avec les
-hypertables ; elles vivent dans `apps/backend/alembic/`, qui porte le schéma exposé par l'API.
+Statut : `Fait`.
+
+Elles ne sont pas des séries temporelles et n'ont donc rien à voir avec les hypertables ;
+elles vivent dans `apps/backend/alembic/`, qui porte le schéma exposé par l'API.
 
 ```mermaid
 erDiagram
   APP_USER ||--o{ REFRESH_TOKEN : ouvre
+  APP_USER ||--o{ PASSWORD_RESET_TOKEN : recoit
+
   APP_USER {
     uuid id PK
     string email UK
@@ -88,6 +121,7 @@ erDiagram
     bool must_change_password
     timestamptz credentials_changed_at
   }
+
   REFRESH_TOKEN {
     uuid id PK
     uuid family_id
@@ -99,6 +133,7 @@ erDiagram
     text revoked_reason
     uuid replaced_by
   }
+
   LOGIN_ATTEMPT {
     bigint id PK
     timestamptz occurred_at
@@ -106,6 +141,7 @@ erDiagram
     inet client_ip
     text outcome
   }
+
   AUDIT_LOG {
     bigint id PK
     timestamptz occurred_at
@@ -114,31 +150,47 @@ erDiagram
     text action
     jsonb detail
   }
+
+  PASSWORD_RESET_ATTEMPT {
+    bigint id PK
+    timestamptz occurred_at
+    string email_tried
+    inet client_ip
+  }
+
+  PASSWORD_RESET_TOKEN {
+    uuid id PK
+    uuid user_id FK
+    bytea token_hash UK
+    timestamptz issued_at
+    timestamptz expires_at
+    timestamptz consumed_at
+    inet client_ip
+    text user_agent
+  }
 ```
 
-Quatre choix de modélisation portent une intention et se défendent seuls :
+Plusieurs choix de modélisation portent une intention précise :
 
 - **`app_user` et non `user`** : `user` est un mot réservé PostgreSQL, raccourci de
-  `CURRENT_USER`. Le nom rappelle en prime qu'il s'agit d'un compte applicatif, par opposition
-  au rôle PostgreSQL qui portera le cantonnement de l'ETL.
-- **`credentials_changed_at`, une seule colonne**, couvre le changement de mot de passe, le
-  changement de rôle et la désactivation. Un compteur de version ne dirait rien à un humain qui
-  lit un audit.
-- **`refresh_token.expires_at` est absolu et hérité** du prédécesseur à chaque rotation. S'il
-  glissait, la promesse de sept jours serait fictive et une session active ne finirait jamais.
-- **`audit_log.actor_id` n'a aucune clé étrangère**, et `actor_email` comme `actor_role` sont
-  dénormalisés. Une contrainte `ON DELETE SET NULL` déclencherait un `UPDATE` que le déclencheur
-  d'ajout seul refuserait. Voir l'[ADR 0004](../adr/0004-journal-d-audit-en-ajout-seul.md).
+  `CURRENT_USER`. Le nom rappelle aussi qu'il s'agit d'un compte applicatif.
+- **`credentials_changed_at`, une seule colonne**, couvre notamment le changement de mot de passe,
+  le changement de rôle et la désactivation.
+- **`refresh_token.expires_at` est absolu et hérité** du prédécesseur à chaque rotation.
+- **`audit_log.actor_id` n'a aucune clé étrangère** afin de conserver les informations d'audit
+  même si l'entité d'origine évolue.
+- `password_reset_token` ne stocke que l'empreinte du jeton et jamais sa valeur directement.
+- `password_reset_attempt` est séparée de `audit_log`, car son volume peut être piloté
+  par des demandes externes répétées.
 
-`audit_log` porte deux déclencheurs qui refusent `UPDATE`, `DELETE` et `TRUNCATE`. Elle n'est
-donc **pas** une hypertable : une politique de rétention émettrait des `DELETE` qu'ils
-refuseraient. `login_attempt`, à l'inverse, est faite pour se purger, puisque son volume est
-piloté par l'attaquant.
+`audit_log` porte des déclencheurs qui refusent `UPDATE`, `DELETE` et `TRUNCATE`.
+Elle n'est donc **pas** une hypertable.
 
 ## Gabarit de révision créant une hypertable
 
-Conforme à la règle de l'ADR 0001 : table et hypertable dans la même révision. La révision
-`e6d2026091501` en est l'exemple réel, réduit ici à l'essentiel.
+Conforme à la règle de l'ADR 0001 : table et hypertable dans la même révision.
+
+La révision `e6d2026091501` en est l'exemple réel, réduit ici à l'essentiel.
 
 ```python
 def upgrade() -> None:
@@ -182,24 +234,28 @@ colonne de temps : les index déclarés dans la révision le couvrent déjà.
 
 ## Questions ouvertes
 
-Elles relèvent du jalon J2, « valider le périmètre retenu ». Le schéma est livré : ce qui suit
-porte sur son exploitation, plus sur sa forme.
+Elles portent maintenant principalement sur l'exploitation du schéma :
 
-- **Quelle granularité** à l'ingestion : la seconde, la minute, le quart d'heure.
-- **Quels agrégats continus**, et sur quelles fenêtres.
-- **Quelle profondeur de rétention** en données brutes, et à partir de quand on compresse.
-- **Multi-tenant ou non** : un site appartient-il à un client, et faut-il cloisonner les lectures.
+- **Quelle granularité** conserver à long terme à l'ingestion : seconde, minute ou quart d'heure.
+- **Quels agrégats continus** créer et sur quelles fenêtres.
+- **Quelle profondeur de rétention** conserver en données brutes et à partir de quand compresser.
+- **Multi-tenant ou non** : un site appartient-il à un client et faut-il cloisonner les lectures.
 
 ## Modélisation détaillée des données
 
-Cette modélisation prend en compte les fichiers CSV historiques,
-leurs métadonnées JSON et les données de l’API Mock.
-Elle comprend six tables, depuis le stockage des mesures
-jusqu’aux recommandations proposées à l’utilisateur.
+Cette modélisation prend en compte :
+
+- les fichiers CSV historiques ;
+- leurs métadonnées JSON ;
+- les données de l'API Mock.
+
+Elle comprend six tables Data, depuis le stockage des mesures jusqu'aux recommandations proposées
+à l'utilisateur.
 
 ### Schéma de données
 
 Le diagramme ci-dessous présente les tables et leurs relations.
+
 La révision `e6d2026091501` les crée.
 
 ![Schéma de données EnerVision](images/EnerVision-schema-donnees.png)
@@ -208,21 +264,20 @@ La révision `e6d2026091501` les crée.
 
 ### Description des tables
 
-Chaque table remplit un rôle précis dans le traitement et l’exploitation
-des données.
+Chaque table remplit un rôle précis dans le traitement et l'exploitation des données.
 
 | Table | Rôle | Origine des informations |
 |---|---|---|
-| `dataset` | Identifier les jeux historiques, retrouver leurs fichiers et conserver leurs métadonnées | Archive CSV/JSON et informations ajoutées lors de l’import |
+| `dataset` | Identifier les jeux historiques, retrouver leurs fichiers et conserver leurs métadonnées | Archive CSV/JSON et informations ajoutées lors de l'import |
 | `site` | Regrouper les informations des sites : identifiant, nom, type et caractéristiques disponibles | CSV et API Mock `/api/v1/sites` |
 | `reading` | Stocker les mesures, leur provenance, leur qualité et les éventuelles valeurs imputées | CSV et API Mock `/current` et `/readings` |
-| `prediction` | Conserver les prévisions, leur période cible et la référence du modèle utilisé | Traitements ML d’EnerVision |
+| `prediction` | Conserver les prévisions, leur période cible et la référence du modèle utilisé | Traitements ML d'EnerVision |
 | `alert` | Enregistrer les alertes, leur type, leur gravité et leur message | API Mock `/alerts` et détections EnerVision |
-| `recommendation` | Proposer des actions et expliquer la règle qui les motive | Règles métier d’EnerVision |
+| `recommendation` | Proposer des actions et expliquer la règle qui les motive | Règles métier d'EnerVision |
 
-Les anomalies historiques décrites dans les JSON sont conservées
-dans `dataset.metadata`. Elles servent à l’analyse des données
-et ne sont pas considérées comme des alertes actuelles.
+Les anomalies historiques décrites dans les JSON sont conservées dans `dataset.metadata`.
+
+Elles servent à l'analyse des données et ne sont pas considérées comme des alertes actuelles.
 
 ### Relations entre les tables
 
@@ -232,15 +287,21 @@ et ne sont pas considérées comme des alertes actuelles.
 - Une alerte peut être associée à une prévision du même site.
 - Une alerte peut donner lieu à plusieurs recommandations.
 
-## Ingestion des données historiques
+# Ingestion des données historiques
 
-Le MVP EnerVision initialise les données énergétiques à partir du dataset fourni dans le cadre du projet.
+Statut : `Fait`.
 
-Le dataset de référence contient 122 647 mesures issues de 7 sites et couvre la période du 1er janvier 2023 au 31 décembre 2024.
+Le MVP EnerVision initialise les données énergétiques à partir du dataset fourni dans le cadre
+du projet.
 
-Les fichiers sources CSV et JSON sont nécessaires uniquement pour l'initialisation des données. Ils ne sont pas versionnés dans Git et sont placés localement dans `data/raw/`.
+Le dataset de référence contient 122 647 mesures issues de 7 sites et couvre la période
+du 1er janvier 2023 au 31 décembre 2024.
 
-### Architecture du flux
+Les fichiers sources CSV et JSON sont nécessaires uniquement pour l'initialisation des données.
+
+Ils ne sont pas versionnés dans Git et sont placés localement dans `data/raw/`.
+
+## Architecture du flux historique
 
 ```text
 Dataset CSV + métadonnées JSON
@@ -271,17 +332,26 @@ Dataset CSV + métadonnées JSON
 
 Le pipeline est développé en Python.
 
-Pandas est utilisé pour l'extraction, la validation et la préparation des données. SQLAlchemy Async assure le chargement transactionnel dans PostgreSQL/TimescaleDB.
+Pandas est utilisé pour l'extraction, la validation et la préparation des données.
+
+SQLAlchemy Async assure le chargement transactionnel dans PostgreSQL/TimescaleDB.
 
 Une empreinte SHA-256 permet d'identifier le dataset utilisé et d'assurer sa traçabilité.
 
-Les valeurs manquantes sont conservées pendant l'ingestion afin de préserver les données sources. Aucune imputation n'est réalisée à cette étape.
+Les valeurs manquantes sont conservées pendant l'ingestion afin de préserver les données sources.
+
+Aucune imputation n'est réalisée à cette étape.
 
 Le chargement des mesures est effectué par batches de 1 000 lignes.
 
-Les données provenant du dataset CSV sont identifiées par `source = "csv"` et associées à leur `dataset_id`.
+Les données provenant du dataset CSV sont identifiées par :
 
-### Résultats validés
+```text
+source = "csv"
+dataset_id = identifiant du dataset
+```
+
+## Résultats validés pour l'historique
 
 Le chargement de référence a permis d'obtenir :
 
@@ -290,14 +360,207 @@ Le chargement de référence a permis d'obtenir :
 - 122 647 mesures ;
 - 0 doublon détecté dans le dataset source.
 
-L'idempotence a également été vérifiée par une deuxième exécution du pipeline : aucune nouvelle mesure n'a été créée et le nombre de `reading` est resté à 122 647.
+L'idempotence a également été vérifiée par une deuxième exécution du pipeline :
+aucune nouvelle mesure n'a été créée et le nombre de `reading` est resté à 122 647.
 
-La procédure détaillée d'installation, d'exécution, de validation et de contrôle du pipeline est disponible dans `etl/README.md`.
+La procédure détaillée d'installation, d'exécution, de validation et de contrôle du pipeline
+est disponible dans `etl/README.md`.
 
-### Évolution prévue
+# Ingestion depuis l'API Mock
 
-L'étape suivante consiste à orchestrer les traitements Data avec Apache Airflow.
+Statut : `Fait`.
 
-L'orchestration réutilisera la logique ETL existante afin de séparer la logique de traitement de la planification, du suivi des exécutions et de la gestion des erreurs.
+La deuxième source du pipeline Data est l'API Mock EnerVision.
 
-Le pipeline servira ensuite de base à la préparation des données nécessaires au modèle de Machine Learning.
+Le traitement est implémenté dans :
+
+```text
+apps/backend/app/etl/mock_api_import.py
+```
+
+## Endpoints utilisés
+
+Le pipeline récupère les informations des sites depuis :
+
+```text
+GET /api/v1/sites
+```
+
+puis les mesures historiques simulées depuis :
+
+```text
+GET /api/v1/readings
+```
+
+Pour `/api/v1/readings`, les informations suivantes sont envoyées :
+
+```text
+site_id
+start_time
+end_time
+limit
+```
+
+Les paramètres de ligne de commande disponibles pour l'import sont :
+
+```text
+--start-time
+--end-time
+--limit
+--dry-run
+```
+
+## Flux d'ingestion API Mock
+
+```text
+        API Mock
+           |
+     +-----+------+
+     |            |
+     v            v
+   /sites      /readings
+     |            |
+     +-----+------+
+           |
+           v
+ mock_api_import.py
+           |
+           v
+ Transformation
+ + qualité data
+           |
+           v
+PostgreSQL / TimescaleDB
+     |          |
+     v          v
+   site       reading
+```
+
+Les informations des sites sont insérées ou mises à jour dans `site`.
+
+Les mesures sont enregistrées dans l'hypertable `reading` avec :
+
+```text
+source = "api_history"
+dataset_id = NULL
+```
+
+Les données provenant de l'API Mock ne sont donc pas associées à un enregistrement de la table
+`dataset`.
+
+La réponse source reçue depuis l'API est conservée dans :
+
+```text
+raw_data
+```
+
+## Qualité des données de l'API Mock
+
+Les valeurs `NULL` ne sont pas remplacées pendant l'ingestion.
+
+Les informations suivantes fournies par l'API sont conservées :
+
+```text
+data_quality
+null_reasons
+```
+
+Cette conservation permet de distinguer une valeur manquante d'une valeur réelle égale à zéro
+et de garder les informations liées aux éventuelles défaillances de capteurs.
+
+Aucune imputation n'est réalisée pendant cette phase :
+
+```text
+imputed_values = NULL
+imputation_method = NULL
+```
+
+## Validation de l'import API Mock
+
+Un scénario de validation a été exécuté pour les 7 sites sur la période :
+
+```text
+15/06/2024 12:00 UTC
+à
+15/06/2024 13:00 UTC
+```
+
+avec :
+
+```text
+limit = 60
+```
+
+Résultat :
+
+```text
+7 sites
+60 lectures par site
+420 lectures récupérées
+```
+
+Les données ont été chargées dans PostgreSQL/TimescaleDB puis contrôlées directement en base.
+
+Les contrôles ont confirmé :
+
+- `source = "api_history"` ;
+- `dataset_id = NULL` ;
+- la conservation des valeurs `NULL` ;
+- la conservation de `data_quality` ;
+- la conservation de `null_reasons` ;
+- la conservation de `raw_data`.
+
+L'idempotence a été vérifiée en rejouant le même import.
+
+Une mesure déjà présente n'est pas ajoutée une seconde fois.
+
+Les tests automatisés couvrent également :
+
+- la récupération des sites ;
+- les paramètres envoyés à `/api/v1/readings` ;
+- les réponses HTTP en erreur ;
+- le format de la réponse ;
+- la transformation des mesures ;
+- les valeurs manquantes ;
+- la qualité des données ;
+- la conservation des données sources ;
+- l'idempotence en base.
+
+# Évolution prévue
+
+La prochaine étape consiste à orchestrer les deux mécanismes d'ingestion avec Apache Airflow.
+
+```text
+CSV / JSON ----------------+
+                           |
+                           v
+                 +------------------+
+                 |     Airflow      |
+                 +------------------+
+                           |
+          +----------------+----------------+
+          |                                 |
+          v                                 v
+historical_import.py               mock_api_import.py
+          |                                 |
+          +----------------+----------------+
+                           |
+                           v
+                PostgreSQL / TimescaleDB
+```
+
+Airflow servira à :
+
+- planifier les traitements ;
+- définir leur ordre d'exécution ;
+- suivre leur état ;
+- gérer et remonter les erreurs ;
+- faciliter les exécutions récurrentes.
+
+Airflow ne remplacera pas la logique ETL déjà implémentée.
+
+Les scripts Python resteront responsables de l'extraction, de la validation, de la transformation
+et du chargement des données.
+
+Le pipeline servira ensuite de base à la préparation des données nécessaires au modèle
+de Machine Learning.
