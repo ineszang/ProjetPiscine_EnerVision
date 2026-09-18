@@ -1,9 +1,14 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
+from starlette.requests import Request
+from starlette.responses import HTMLResponse
 
 from app.api.errors import register_error_handlers
 from app.api.middleware import SecurityHeadersMiddleware
@@ -18,6 +23,8 @@ logger = get_logger(__name__)
 
 METHODES_AUTORISEES = ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"]
 EN_TETES_AUTORISES = ["Authorization", "Content-Type"]
+STATIC_DIR = Path(__file__).parent / "static"
+LOGO_URL = "/static/logo-icon.png"
 
 
 @asynccontextmanager
@@ -43,10 +50,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_tags=TAGS,
         debug=resolved.debug,
         lifespan=lifespan,
-        docs_url="/docs" if documentee else None,
-        redoc_url="/redoc" if documentee else None,
+        docs_url=None,
+        redoc_url=None,
         openapi_url="/openapi.json" if documentee else None,
     )
+
+    if documentee:
+        application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+        # ReDoc supporte nativement `info.x-logo` (extension Redocly) pour afficher un logo
+        # en en-tête ; Swagger UI n'a pas d'equivalent, il ne reprend que le favicon.
+        openapi_original = application.openapi
+
+        def openapi_avec_logo() -> dict[str, object]:
+            schema = openapi_original()
+            schema["info"]["x-logo"] = {"url": LOGO_URL, "altText": "EnerVision"}
+            return schema
+
+        application.openapi = openapi_avec_logo  # type: ignore[method-assign]
+
+        @application.get("/docs", include_in_schema=False)
+        async def docs_swagger(_: Request) -> HTMLResponse:
+            return get_swagger_ui_html(
+                openapi_url="/openapi.json",
+                title=f"{application.title} · Swagger UI",
+                swagger_favicon_url=LOGO_URL,
+            )
+
+        @application.get("/redoc", include_in_schema=False)
+        async def docs_redoc(_: Request) -> HTMLResponse:
+            return get_redoc_html(
+                openapi_url="/openapi.json",
+                title=f"{application.title} · ReDoc",
+                redoc_favicon_url=LOGO_URL,
+            )
 
     application.add_middleware(SecurityHeadersMiddleware)
 

@@ -1,20 +1,6 @@
 name: Frontend
-# Pipeline à choix multiple
 
 on:
-  # workflow_dispatch -> lancement manuel des jobs
-  workflow_dispatch:
-    inputs:
-      job_choice:
-        required: true
-        description: "Choix du job"
-        type: choice
-        default: all
-        options:
-            - build
-            - sonarqube
-            - test
-            - all # lancer tous les jobs
   push:
     paths:
       - "apps/frontend/**"
@@ -23,8 +9,9 @@ on:
     paths:
       - "apps/frontend/**"
       - ".github/workflows/frontend.yml"
-# Ordre de lancement des jobs
-# build -> test -> sonarqube -> deploy
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -42,6 +29,18 @@ jobs:
       - run: npm run build
         working-directory: apps/frontend
 
+  security-audit:
+    name: Audit des dépendances
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      # Seuil high : une vulnérabilité moderate de devDependency ne doit pas bloquer une livraison.
+      - run: npm audit --audit-level=high --package-lock-only
+        working-directory: apps/frontend
+
   test:
     needs: build
     runs-on: ubuntu-latest
@@ -56,22 +55,26 @@ jobs:
         working-directory: apps/frontend
       - run: npm test -- --watch=false --coverage
         working-directory: apps/frontend
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: apps/frontend/coverage/frontend/lcov.info
 
   sonarqube:
     needs: [build, test]
     name: SonarQube
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@v6
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          fetch-depth: 0
+      - name: Download coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: apps/frontend/coverage/frontend
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-
-  # deploy:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - run: echo "DEPLOY job is running"

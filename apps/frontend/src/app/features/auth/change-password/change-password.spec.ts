@@ -32,10 +32,19 @@ describe('ChangePassword', () => {
     expect(authMock.changePassword).not.toHaveBeenCalled();
   });
 
+  it('ne soumet pas si le mot de passe ne couvre pas les 4 classes de caractères', () => {
+    const fixture = TestBed.createComponent(ChangePassword);
+    const component = fixture.componentInstance;
+    component.form.setValue({ current_password: 'old', new_password: 'longueur-suffisante-sans-majuscule-ni-chiffre' });
+
+    component.onSubmit();
+    expect(authMock.changePassword).not.toHaveBeenCalled();
+  });
+
   it('redirige vers /dashboard après un changement réussi', () => {
     const fixture = TestBed.createComponent(ChangePassword);
     const component = fixture.componentInstance;
-    component.form.setValue({ current_password: 'ancien-mot-de-passe', new_password: 'un-nouveau-mot-de-passe-valide' });
+    component.form.setValue({ current_password: 'ancien-mot-de-passe', new_password: 'Un-nouveau-mot-de-passe1!' });
 
     authMock.changePassword.mockReturnValue(of({ principal: { role: 'admin' } }));
 
@@ -46,7 +55,7 @@ describe('ChangePassword', () => {
   it("affiche un message d'erreur si le mot de passe actuel est incorrect", () => {
   const fixture = TestBed.createComponent(ChangePassword);
   const component = fixture.componentInstance;
-  component.form.setValue({ current_password: 'mauvais-mot-de-passe', new_password: 'un-nouveau-mot-de-passe-valide' });
+  component.form.setValue({ current_password: 'mauvais-mot-de-passe', new_password: 'Un-nouveau-mot-de-passe1!' });
 
   authMock.changePassword.mockReturnValue(throwError(() => new Error('401')));
 
@@ -54,7 +63,7 @@ describe('ChangePassword', () => {
   fixture.detectChanges(); // rend le bloc @if (errorMessage())
 
   expect(component.errorMessage()).toContain('incorrect');
-  const errorEl = fixture.nativeElement.querySelector('.auth-error');
+  const errorEl = fixture.nativeElement.querySelector('.ev-alert');
   expect(errorEl?.textContent).toContain('incorrect');
   });
 
@@ -64,13 +73,13 @@ describe('ChangePassword', () => {
 
   const button = fixture.nativeElement.querySelector('button[type="submit"]');
   expect(button.disabled).toBe(true);
-  expect(fixture.nativeElement.querySelector('.auth-error')).toBeNull();
+  expect(fixture.nativeElement.querySelector('.ev-alert')).toBeNull();
   });
 
   it('déclenche onSubmit via la soumission réelle du formulaire (ngSubmit)', () => {
   const fixture = TestBed.createComponent(ChangePassword);
   const component = fixture.componentInstance;
-  component.form.setValue({ current_password: 'ancien-mot-de-passe', new_password: 'un-nouveau-mot-de-passe-valide' });
+  component.form.setValue({ current_password: 'ancien-mot-de-passe', new_password: 'Un-nouveau-mot-de-passe1!' });
   fixture.detectChanges();
 
   authMock.changePassword.mockReturnValue(of({ principal: { role: 'admin' } }));
@@ -81,7 +90,7 @@ describe('ChangePassword', () => {
 
   expect(authMock.changePassword).toHaveBeenCalledWith({
     current_password: 'ancien-mot-de-passe',
-    new_password: 'un-nouveau-mot-de-passe-valide',
+    new_password: 'Un-nouveau-mot-de-passe1!',
   });
 });
 
