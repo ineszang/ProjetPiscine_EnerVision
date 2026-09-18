@@ -207,6 +207,46 @@ par exemple `limit` hors bornes). Un datetime sans fuseau dans `start`/`end` est
 l'UTC plutôt que rejeté : le comparer tel quel à `reading.timestamp` (`timestamptz`) échouerait
 côté pilote, en `500` plutôt qu'un refus propre.
 
+### Détection d'alertes internes
+
+`AlertService` n'est plus lecture seule : `AlertService.detect()` compare les `reading` (et, pour
+le type `anomaly`, les `prediction`) des dernières 48h (`LOOKBACK`) à cinq règles et enregistre une
+ligne `alert` par déclenchement, avec `source="enervision"`. `metric`/`value`/`threshold` gardent
+leur sens dans chaque règle plutôt que d'être laissés à `null` par commodité :
+
+| `type` | Règle | `value` / `threshold` |
+|---|---|---|
+| `threshold` | `reading.consumption_kw` dépasse `site.capacity_kw` (site sans capacité déclarée : ignoré) | mesure / capacité du site |
+| `spike` | Variation relative ≥ 50% (`SPIKE_RELATIVE_THRESHOLD`) entre deux lectures consécutives du même site, ou redémarrage direct à une valeur positive depuis zéro (`critical`) | mesure actuelle / mesure précédente |
+| `anomaly` | Écart relatif ≥ 30% (`ANOMALY_RELATIVE_THRESHOLD`) entre `reading.consumption_kwh` et la `prediction` du même site dont `target_at == timestamp` | mesure réelle / valeur prédite |
+| `outage` | Aucune lecture depuis plus de 3h (`OUTAGE_THRESHOLD`, 3x la cadence horaire nominale), ou site jamais lu | `null` / `null` |
+| `sensor` | `reading.data_quality` ∈ `partial`/`degraded`/`critical` | `null` / `null` |
+
+La sévérité de chaque alerte (hors `sensor`, dérivée directement de `data_quality`) suit le même
+barème par ratio observé/seuil : `low` sous 1.2, `medium` sous 1.5, `high` sous 2.0, `critical`
+au-delà. `AlertRepository.create_many()` insère par lot avec `ON CONFLICT DO NOTHING` sur
+`uq_alert_source_reference`, et `source_alert_id` est construit de façon déterministe (règle +
+horodatage) : rejouer la détection sur une fenêtre déjà analysée ne duplique donc jamais une
+alerte.
+
+**Pièges de tri corrigés en revue** : `reading`/`prediction` n'ont pas d'unicité sur leur couple
+métier (`uq_reading_source` autorise deux `source` différentes au même `site_id`+`timestamp`,
+`prediction` n'a aucune contrainte sur `(site_id, target_at)`, chaque run de scoring gardant sa
+propre ligne). `ReadingRepository.list_since()`/`PredictionRepository.list_since()` départagent
+donc les égalités par `reading_id`/`prediction_id` croissant, comme le font déjà
+`latest_by_site()`/`latest_for_site()` sur les mêmes tables ; sans ce départage, l'ordre entre
+lignes à égalité n'est pas garanti d'un appel à l'autre, et `_detect_spike`/`_detect_anomaly`
+auraient pu comparer des lectures/choisir une prévision au hasard. `_detect_spike` ignore en plus
+explicitement les paires de lectures qui partagent le même horodatage (deux `source` pour un seul
+instant réel, pas une variation).
+
+Comme `enervision_ml.score`, la détection est un script lancé à la main, pas encore ordonnancé par
+Airflow : `uv run python -m app.detection.internal_alerts [--site-id ...] [--now ...]`, dans
+`apps/backend` puisque les règles s'appuient sur les repositories ORM de l'API plutôt que sur une
+connexion SQL directe (contrairement à `app/etl/historical_import.py`). Cette issue (#104)
+débloquait #38 (moteur de règles pour recommandations), dont la FK `alert_id` `NOT NULL` n'avait
+jusqu'ici rien à référencer côté `source="enervision"`.
+
 ### `/health/ready`
 
 Cette sonde porte une garde décrite dans l'[ADR 0001](../adr/0001-postgresql-timescaledb.md) : un
