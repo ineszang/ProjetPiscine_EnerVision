@@ -76,7 +76,7 @@ const LIBELLE_PAR_RAISON: Record<string, string> = {
   consumption_sensor_failure: 'capteur de consommation en panne',
   electrical_sensor_failure: 'capteur électrique en panne',
   temperature_sensor_failure: 'capteur de température en panne',
-  humidity_sensor_failure: 'capteur d\'humidité en panne',
+  humidity_sensor_failure: "capteur d'humidité en panne",
   network_loss: 'perte réseau',
 };
 

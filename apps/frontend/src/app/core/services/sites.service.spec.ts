@@ -57,4 +57,31 @@ describe('SitesService', () => {
 
     expect((result as { site_id: string }).site_id).toBe('SITE001');
   });
+
+  it('appelle le bon endpoint et retourne la mesure courante du site', () => {
+    let result: unknown;
+    service.getCurrent('SITE001').subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(`${environment.apiUrl}/sites/SITE001/current`);
+    expect(req.request.method).toBe('GET');
+
+    req.flush({
+      timestamp: '2026-09-17T10:00:00Z',
+      site_id: 'SITE001',
+      site_type: 'industriel',
+      consumption_kw: 120,
+      consumption_kwh: null,
+      voltage_v: null,
+      current_a: null,
+      power_factor: null,
+      temperature_celsius: 22,
+      humidity_percent: 55,
+      null_reasons: ['electrical_sensor_failure'],
+      data_quality: 'partial',
+    });
+
+    expect((result as { null_reasons: string[] }).null_reasons).toEqual([
+      'electrical_sensor_failure',
+    ]);
+  });
 });

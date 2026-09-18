@@ -15,12 +15,39 @@ const SITE = {
   status: 'actif',
 };
 
-const READING_COMPLETE = {
+const CURRENT_COMPLET = {
+  timestamp: '2026-09-17T10:00:00Z',
+  site_id: 'SITE001',
+  site_type: 'industriel',
+  consumption_kw: 120,
+  consumption_kwh: null,
+  voltage_v: 230,
+  current_a: 12,
+  power_factor: 0.95,
+  temperature_celsius: 22,
+  humidity_percent: 55,
+  null_reasons: [] as string[],
+  data_quality: 'good' as const,
+};
+
+const SANS_MESURE = {
+  ...CURRENT_COMPLET,
+  timestamp: null,
+  consumption_kw: null,
+  voltage_v: null,
+  current_a: null,
+  power_factor: null,
+  temperature_celsius: null,
+  humidity_percent: null,
+  data_quality: 'critical' as const,
+};
+
+const LECTURE = {
   reading_id: 1,
   site_id: 'SITE001',
-  timestamp: '2026-09-17T10:00:00Z',
-  source: 'api_current' as const,
-  consumption_kw: 120,
+  timestamp: '2026-09-17T09:00:00Z',
+  source: 'api_history' as const,
+  consumption_kw: 118,
   consumption_kwh: null,
   consumption_euros: null,
   voltage_v: 230,
@@ -55,20 +82,20 @@ function setup(
 }
 
 describe('SiteDetail', () => {
-  it('charge le site, la dernière lecture et son historique au démarrage', () => {
+  it('charge le site, la mesure courante et son historique au démarrage', () => {
     const { fixture } = setup(
       'SITE001',
-      { getSite: vi.fn().mockReturnValue(of(SITE)) },
       {
-        getLatest: vi.fn().mockReturnValue(of(READING_COMPLETE)),
-        getHistory: vi.fn().mockReturnValue(of([READING_COMPLETE])),
+        getSite: vi.fn().mockReturnValue(of(SITE)),
+        getCurrent: vi.fn().mockReturnValue(of(CURRENT_COMPLET)),
       },
+      { getHistory: vi.fn().mockReturnValue(of([LECTURE])) },
     );
 
     fixture.detectChanges();
 
     expect(fixture.componentInstance.site()?.site_id).toBe('SITE001');
-    expect(fixture.componentInstance.latestReading()?.consumption_kw).toBe(120);
+    expect(fixture.componentInstance.current()?.consumption_kw).toBe(120);
     expect(fixture.componentInstance.history().length).toBe(1);
     expect(fixture.componentInstance.error()).toBeNull();
   });
@@ -76,11 +103,11 @@ describe('SiteDetail', () => {
   it("signale l'indisponibilité quand un des appels échoue", () => {
     const { fixture } = setup(
       'SITE001',
-      { getSite: vi.fn().mockReturnValue(throwError(() => new Error('nope'))) },
       {
-        getLatest: vi.fn().mockReturnValue(of(READING_COMPLETE)),
-        getHistory: vi.fn().mockReturnValue(of([])),
+        getSite: vi.fn().mockReturnValue(throwError(() => new Error('nope'))),
+        getCurrent: vi.fn().mockReturnValue(of(CURRENT_COMPLET)),
       },
+      { getHistory: vi.fn().mockReturnValue(of([])) },
     );
 
     fixture.detectChanges();
@@ -90,44 +117,41 @@ describe('SiteDetail', () => {
   });
 
   it('affiche explicitement les champs null avec leur raison plutôt que de les masquer', () => {
-    const readingPartielle = {
-      ...READING_COMPLETE,
+    const partielle = {
+      ...CURRENT_COMPLET,
       voltage_v: null,
       current_a: null,
       power_factor: null,
       null_reasons: ['electrical_sensor_failure'],
+      data_quality: 'partial' as const,
     };
     const { fixture } = setup(
       'SITE001',
-      { getSite: vi.fn().mockReturnValue(of(SITE)) },
       {
-        getLatest: vi.fn().mockReturnValue(of(readingPartielle)),
-        getHistory: vi.fn().mockReturnValue(of([readingPartielle])),
+        getSite: vi.fn().mockReturnValue(of(SITE)),
+        getCurrent: vi.fn().mockReturnValue(of(partielle)),
       },
+      { getHistory: vi.fn().mockReturnValue(of([LECTURE])) },
     );
 
     fixture.detectChanges();
 
-    const tension = fixture.componentInstance
-      .metrics()
-      .find((m) => m.key === 'voltage_v');
+    const tension = fixture.componentInstance.metrics().find((m) => m.key === 'voltage_v');
     expect(tension?.value).toBeNull();
     expect(tension?.reason).toBe('capteur électrique en panne');
 
-    const html = fixture.nativeElement.textContent;
-    expect(html).toContain('Indisponible');
-    expect(html).toContain('capteur électrique en panne');
+    const texte = fixture.nativeElement.textContent;
+    expect(texte).toContain('Indisponible');
+    expect(texte).toContain('capteur électrique en panne');
+    expect(texte).toContain('Données partielles');
   });
 
   it('recharge les données quand le paramètre de route siteId change', () => {
     const getSite = vi.fn().mockReturnValue(of(SITE));
     const { fixture, paramMap } = setup(
       'SITE001',
-      { getSite },
-      {
-        getLatest: vi.fn().mockReturnValue(of(READING_COMPLETE)),
-        getHistory: vi.fn().mockReturnValue(of([])),
-      },
+      { getSite, getCurrent: vi.fn().mockReturnValue(of(CURRENT_COMPLET)) },
+      { getHistory: vi.fn().mockReturnValue(of([])) },
     );
 
     fixture.detectChanges();
@@ -141,8 +165,11 @@ describe('SiteDetail', () => {
     const getHistory = vi.fn().mockReturnValue(of([]));
     const { fixture } = setup(
       'SITE001',
-      { getSite: vi.fn().mockReturnValue(of(SITE)) },
-      { getLatest: vi.fn().mockReturnValue(of(READING_COMPLETE)), getHistory },
+      {
+        getSite: vi.fn().mockReturnValue(of(SITE)),
+        getCurrent: vi.fn().mockReturnValue(of(CURRENT_COMPLET)),
+      },
+      { getHistory },
     );
 
     fixture.detectChanges();
@@ -154,17 +181,21 @@ describe('SiteDetail', () => {
     );
   });
 
-  it("ne fixe aucune fenêtre d'historique quand le site n'a aucune lecture", () => {
+  it("annonce l'absence de mesure sans interroger l'historique quand timestamp est null", () => {
     const getHistory = vi.fn().mockReturnValue(of([]));
     const { fixture } = setup(
       'SITE001',
-      { getSite: vi.fn().mockReturnValue(of(SITE)) },
-      { getLatest: vi.fn().mockReturnValue(of(null)), getHistory },
+      {
+        getSite: vi.fn().mockReturnValue(of(SITE)),
+        getCurrent: vi.fn().mockReturnValue(of(SANS_MESURE)),
+      },
+      { getHistory },
     );
 
     fixture.detectChanges();
 
-    expect(getHistory).toHaveBeenCalledWith('SITE001', undefined, undefined);
-    expect(fixture.componentInstance.latestReading()).toBeNull();
+    expect(getHistory).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.hasMeasurement()).toBe(false);
+    expect(fixture.nativeElement.textContent).toContain('Aucune mesure remontée pour ce site.');
   });
 });

@@ -28,7 +28,19 @@
   color: var(--color-text-muted);
 }
 
+.site-detail__badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 .banner-error {
+  display: block;
+  margin: 0 0 1.5rem;
+}
+
+.banner-empty {
   display: block;
   margin: 0 0 1.5rem;
 }
