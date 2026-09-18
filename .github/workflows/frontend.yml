@@ -51,30 +51,14 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
-      - run: npm ci
+      - name : Installation des dépendances (Front)
+        run: npm ci 
         working-directory: apps/frontend
-      - run: npm test -- --watch=false --coverage
+      - name : Lancement des tests et génénration du rapport de couverture (Front)
+        run: npm test --watch=false --code-coverage --coverageReporters=lcov
         working-directory: apps/frontend
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage
           path: apps/frontend/coverage/frontend/lcov.info
-
-  sonarqube:
-    needs: [build, test]
-    name: SonarQube
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Download coverage
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-coverage
-          path: apps/frontend/coverage/frontend
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v8
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
