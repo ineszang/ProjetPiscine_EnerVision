@@ -40,12 +40,15 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
+
       - name : Installation des dépendances (Front)
         run: npm ci 
         working-directory: apps/frontend
+
       - name : Lancement des tests et génénration du rapport de couverture (Front)
         run: npm test --watch=false --code-coverage --coverageReporters=lcov
         working-directory: apps/frontend
+
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
@@ -63,8 +66,23 @@ jobs:
           cache-dependency-glob: apps/backend/uv.lock
       - name: Installe l'interpréteur déclaré par .python-version
         run: uv python install
+        working-directory: apps/backend
+
       - name: Synchronise les dépendances sans dévier du verrou
         run: uv sync --all-groups --frozen
+        working-directory: apps/backend
+
+      - name: Vérifie le formatage
+        run: uv run ruff format --check .
+        working-directory: apps/backend
+
+      - name: Analyse statique
+        run: uv run ruff check --output-format=github .
+        working-directory: apps/backend
+
+      - name: Typage
+        run: uv run mypy app
+
 
   test-back:
     needs: build-back
@@ -76,13 +94,11 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
-      - name: Installe l'interpréteur déclaré par .python-version
-        run: uv python install
-      - name: Synchronise les dépendances sans dévier du verrou
-        run: uv sync --all-groups --frozen
+
       - name : Lancement des tests et génénration du rapport de couverture (Back)
         run: uv run pytest --cov-fail-under=85 --cov-report=lcov
         working-directory: apps/backend
+
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
