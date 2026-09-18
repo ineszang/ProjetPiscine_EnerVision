@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import LecteurDep, ReadingServiceDep, SiteServiceDep
+from app.api.deps import LecteurDep, SiteServiceDep
 from app.api.openapi import REPONSE_VALIDATION, Reponses
 from app.schemas.errors import ErrorResponse
-from app.schemas.reading import ReadingResponse
-from app.schemas.site import SiteResponse
+from app.schemas.site import SiteCurrentResponse, SiteResponse
 from app.services.site import SiteNotFoundError
 
 router = APIRouter()
@@ -39,18 +38,15 @@ async def get_site(site_id: str, _: LecteurDep, service: SiteServiceDep) -> Site
 
 @router.get(
     "/{site_id}/current",
-    response_model=ReadingResponse | None,
-    summary="Dernière mesure connue d'un site",
+    response_model=SiteCurrentResponse,
+    summary="Dernière mesure d'un site",
     responses=REPONSES_INTROUVABLE,
 )
-async def get_current(
-    site_id: str, _: LecteurDep, sites: SiteServiceDep, readings: ReadingServiceDep
-) -> ReadingResponse | None:
+async def get_current(site_id: str, _: LecteurDep, service: SiteServiceDep) -> SiteCurrentResponse:
     try:
-        await sites.get_by_id(site_id)
+        actuel = await service.current(site_id)
     except SiteNotFoundError as erreur:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Site introuvable"
         ) from erreur
-    derniere = await readings.get_latest(site_id)
-    return ReadingResponse.model_validate(derniere) if derniere is not None else None
+    return SiteCurrentResponse.model_validate(actuel)

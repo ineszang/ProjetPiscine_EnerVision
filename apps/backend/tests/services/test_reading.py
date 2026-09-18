@@ -28,11 +28,6 @@ class FakeRepository:
     def __init__(self, readings: list[Reading]) -> None:
         self._readings = readings
         self.appels: list[tuple[str | None, datetime, datetime, int, int]] = []
-        self.site_interroge: str | None = None
-
-    async def latest_for_site(self, site_id: str) -> Reading | None:
-        self.site_interroge = site_id
-        return self._readings[0] if self._readings else None
 
     async def list_history(
         self,
@@ -45,25 +40,6 @@ class FakeRepository:
     ) -> list[Reading]:
         self.appels.append((site_id, start, end, limit, offset))
         return self._readings
-
-
-async def test_get_latest_relays_the_repository_reading() -> None:
-    depot = FakeRepository([reading(1)])
-    service = ReadingService(readings=depot)
-
-    lecture = await service.get_latest("site-1")
-
-    assert lecture is not None
-    assert lecture.reading_id == 1
-    assert depot.site_interroge == "site-1"
-
-
-async def test_get_latest_returns_none_when_the_site_has_no_reading() -> None:
-    service = ReadingService(readings=FakeRepository([]))
-
-    lecture = await service.get_latest("site-1")
-
-    assert lecture is None
 
 
 async def test_list_history_returns_the_repository_readings() -> None:

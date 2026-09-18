@@ -6,11 +6,13 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
-from app.api.deps import get_current_principal, get_reading_service, get_site_service
+from app.api.deps import get_current_principal, get_site_service
 from app.core.principal import Principal
 from app.core.roles import AccountKind, Role
-from app.models.energy import Reading, Site
-from app.services.site import SiteNotFoundError
+from app.models.energy import Site
+from app.services.site import SiteCurrentReading, SiteNotFoundError
+
+TIMESTAMP = datetime(2026, 9, 16, 12, 0, tzinfo=UTC)
 
 
 def principal(role: Role = Role.LECTEUR) -> Principal:
@@ -34,10 +36,28 @@ def site(site_id: str = "site-1") -> Site:
     )
 
 
+def lecture_actuelle(site_id: str = "site-1") -> SiteCurrentReading:
+    return SiteCurrentReading(
+        timestamp=TIMESTAMP,
+        site_id=site_id,
+        site_type="industriel",
+        consumption_kw=87.34,
+        consumption_kwh=87.34,
+        voltage_v=401.2,
+        current_a=132.5,
+        power_factor=0.923,
+        temperature_celsius=22.1,
+        humidity_percent=58.4,
+        null_reasons=[],
+        data_quality="good",
+    )
+
+
 class FauxService:
     def __init__(self, erreur: Exception | None = None) -> None:
         self._erreur = erreur
         self.site = site()
+        self.actuel = lecture_actuelle()
 
     async def list_all(self) -> list[Site]:
         return [self.site]
@@ -47,25 +67,10 @@ class FauxService:
             raise self._erreur
         return self.site
 
-
-def reading(site_id: str = "site-1") -> Reading:
-    return Reading(
-        reading_id=1,
-        site_id=site_id,
-        timestamp=datetime(2026, 9, 16, tzinfo=UTC),
-        source="csv",
-        consumption_kw=42.5,
-        data_quality="good",
-        raw_data={},
-    )
-
-
-class FauxReadingService:
-    def __init__(self, derniere: Reading | None) -> None:
-        self._derniere = derniere
-
-    async def get_latest(self, site_id: str) -> Reading | None:
-        return self._derniere
+    async def current(self, site_id: str) -> SiteCurrentReading:
+        if self._erreur is not None:
+            raise self._erreur
+        return self.actuel
 
 
 @pytest.fixture
@@ -86,19 +91,6 @@ def servi(
 
     yield installe
     app.dependency_overrides.pop(get_site_service, None)
-
-
-@pytest.fixture
-def readings_servis(
-    app: FastAPI, lecteur_connecte: None
-) -> Iterator[Callable[[Reading | None], FauxReadingService]]:
-    def installe(derniere: Reading | None) -> FauxReadingService:
-        service = FauxReadingService(derniere)
-        app.dependency_overrides[get_reading_service] = lambda: service
-        return service
-
-    yield installe
-    app.dependency_overrides.pop(get_reading_service, None)
 
 
 async def test_list_sites_returns_the_sites(
@@ -143,6 +135,30 @@ async def test_get_site_returns_404_for_an_unknown_site(
     assert response.status_code == 404
 
 
+async def test_get_current_returns_the_latest_reading(
+    servi: Callable[..., FauxService], client: AsyncClient
+) -> None:
+    servi()
+
+    response = await client.get("/api/v1/sites/site-1/current")
+
+    assert response.status_code == 200
+    corps = response.json()
+    assert corps["site_id"] == "site-1"
+    assert corps["data_quality"] == "good"
+    assert corps["consumption_kw"] == 87.34
+
+
+async def test_get_current_returns_404_for_an_unknown_site(
+    servi: Callable[..., FauxService], client: AsyncClient
+) -> None:
+    servi(SiteNotFoundError("site-inconnu"))
+
+    response = await client.get("/api/v1/sites/site-inconnu/current")
+
+    assert response.status_code == 404
+
+
 async def test_list_sites_reaches_the_repository_through_the_session(
     lecteur_connecte: None, fake_session: Callable[..., None], client: AsyncClient
 ) -> None:
@@ -171,47 +187,5 @@ async def test_get_site_returns_404_when_the_session_finds_nothing(
     fake_session(result=None)
 
     response = await client.get("/api/v1/sites/inconnu")
-
-    assert response.status_code == 404
-
-
-async def test_get_current_returns_the_latest_reading_regardless_of_its_age(
-    servi: Callable[..., FauxService],
-    readings_servis: Callable[[Reading | None], FauxReadingService],
-    client: AsyncClient,
-) -> None:
-    servi()
-    readings_servis(reading())
-
-    response = await client.get("/api/v1/sites/site-1/current")
-
-    assert response.status_code == 200
-    corps = response.json()
-    assert corps["consumption_kw"] == 42.5
-
-
-async def test_get_current_returns_null_when_the_site_has_no_reading(
-    servi: Callable[..., FauxService],
-    readings_servis: Callable[[Reading | None], FauxReadingService],
-    client: AsyncClient,
-) -> None:
-    servi()
-    readings_servis(None)
-
-    response = await client.get("/api/v1/sites/site-1/current")
-
-    assert response.status_code == 200
-    assert response.json() is None
-
-
-async def test_get_current_returns_404_for_an_unknown_site(
-    servi: Callable[..., FauxService],
-    readings_servis: Callable[[Reading | None], FauxReadingService],
-    client: AsyncClient,
-) -> None:
-    servi(SiteNotFoundError("site-inconnu"))
-    readings_servis(None)
-
-    response = await client.get("/api/v1/sites/site-inconnu/current")
 
     assert response.status_code == 404

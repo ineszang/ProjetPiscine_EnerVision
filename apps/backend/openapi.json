@@ -1120,7 +1120,7 @@
         "tags": [
           "sites"
         ],
-        "summary": "Dernière mesure connue d'un site",
+        "summary": "Dernière mesure d'un site",
         "operationId": "get_current_api_v1_sites__site_id__current_get",
         "security": [
           {
@@ -1144,15 +1144,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/ReadingResponse"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "title": "Response Get Current Api V1 Sites  Site Id  Current Get"
+                  "$ref": "#/components/schemas/SiteCurrentResponse"
                 }
               }
             }
@@ -2391,6 +2383,140 @@
           "sites"
         ],
         "title": "SensorStatusResponse"
+      },
+      "SiteCurrentResponse": {
+        "properties": {
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "site_id": {
+            "type": "string",
+            "title": "Site Id"
+          },
+          "site_type": {
+            "type": "string",
+            "title": "Site Type"
+          },
+          "consumption_kw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumption Kw"
+          },
+          "consumption_kwh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumption Kwh"
+          },
+          "voltage_v": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voltage V"
+          },
+          "current_a": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current A"
+          },
+          "power_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power Factor"
+          },
+          "temperature_celsius": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature Celsius"
+          },
+          "humidity_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Humidity Percent"
+          },
+          "null_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Null Reasons"
+          },
+          "data_quality": {
+            "type": "string",
+            "enum": [
+              "good",
+              "partial",
+              "degraded",
+              "critical"
+            ],
+            "title": "Data Quality"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "site_id",
+          "site_type",
+          "consumption_kw",
+          "consumption_kwh",
+          "voltage_v",
+          "current_a",
+          "power_factor",
+          "temperature_celsius",
+          "humidity_percent",
+          "null_reasons",
+          "data_quality"
+        ],
+        "title": "SiteCurrentResponse"
       },
       "SiteResponse": {
         "properties": {
