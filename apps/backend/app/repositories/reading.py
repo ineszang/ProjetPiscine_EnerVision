@@ -13,11 +13,12 @@ class ReadingRepository:
 
     async def latest_by_site(self) -> Sequence[Reading]:
         # `.distinct(site_id)` compile en `DISTINCT ON (site_id)` sous PostgreSQL : une seule
-        # ligne par site, la plus récente grâce à l'ordre composite qui suit.
+        # ligne par site, la plus récente grâce à l'ordre composite qui suit. `reading_id` départage
+        # les égalités de timestamp, que `uq_reading_source` autorise à `source` différente.
         requete = (
             select(Reading)
             .distinct(Reading.site_id)
-            .order_by(Reading.site_id, Reading.timestamp.desc())
+            .order_by(Reading.site_id, Reading.timestamp.desc(), Reading.reading_id.desc())
         )
         return (await self._session.execute(requete)).scalars().all()
 

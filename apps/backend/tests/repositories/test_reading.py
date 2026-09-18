@@ -88,6 +88,26 @@ async def test_latest_by_site_returns_one_row_per_site(session: AsyncSession) ->
     assert identifiants == {premier, second}
 
 
+async def test_latest_by_site_breaks_a_timestamp_tie_on_the_last_written_reading(
+    session: AsyncSession,
+) -> None:
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    horodatage = datetime(2026, 9, 15, tzinfo=UTC)
+    await creer_lecture(
+        session, site_id=site.site_id, timestamp=horodatage, source="api_history", consumption_kw=10
+    )
+    derniere = await creer_lecture(
+        session, site_id=site.site_id, timestamp=horodatage, source="api_current", consumption_kw=42
+    )
+
+    resultats = await depot.latest_by_site()
+    retenues = [r.reading_id for r in resultats if r.site_id == site.site_id]
+    await session.rollback()
+
+    assert retenues == [derniere.reading_id]
+
+
 async def test_latest_for_site_returns_the_most_recent_reading(session: AsyncSession) -> None:
     site = await creer_site(session)
     depot = ReadingRepository(session)
