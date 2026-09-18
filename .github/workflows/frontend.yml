@@ -41,7 +41,7 @@ jobs:
           cache-dependency-path: apps/frontend/package-lock.json
       - run: npm ci 
         working-directory: apps/frontend
-      - run: npm test -- --watch=false --code-coverage --coverageReporters=lcov
+      - run: npm test --watch=false --code-coverage --coverageReporters=lcov
         working-directory: apps/frontend
       - name: Upload coverage
         uses: actions/upload-artifact@v4
