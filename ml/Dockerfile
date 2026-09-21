@@ -1,3 +1,7 @@
 FROM python:3.12-slim
-RUN pip install --no-cache-dir mlflow==3.16.1 psycopg2-binary
+RUN pip install --no-cache-dir --only-binary :all: mlflow==3.16.1 psycopg2-binary==2.9.10
+RUN useradd --create-home --uid 1000 mlflow \
+    && mkdir /mlartifacts \
+    && chown mlflow /mlartifacts
+USER mlflow
 EXPOSE 5000
