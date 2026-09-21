@@ -1,0 +1,37 @@
+<svg
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  focusable="false"
+  [attr.role]="label() ? 'img' : null"
+  [attr.aria-label]="label()"
+  [attr.aria-hidden]="label() ? null : 'true'"
+>
+  @switch (name()) {
+    @case ('spike') {
+      <polyline points="3 17 8 12 11 15 21 5" />
+      <polyline points="15 5 21 5 21 11" />
+    }
+    @case ('threshold') {
+      <line x1="3" y1="10" x2="21" y2="10" stroke-dasharray="3 3" />
+      <polyline points="4 19 9 13 13 15 20 6" />
+    }
+    @case ('anomaly') {
+      <polyline points="3 12 7 12 9.5 6 12.5 18 15 12 21 12" />
+    }
+    @case ('outage') {
+      <path d="M7.5 6.5a7 7 0 1 0 9 0" />
+      <line x1="12" y1="3" x2="12" y2="11" />
+    }
+    @case ('sensor') {
+      <circle cx="12" cy="13" r="2" />
+      <path d="M8.5 9.5a5 5 0 0 0 0 7" />
+      <path d="M15.5 9.5a5 5 0 0 1 0 7" />
+      <path d="M5.5 6.5a9 9 0 0 0 0 13" />
+      <path d="M18.5 6.5a9 9 0 0 1 0 13" />
+    }
+  }
+</svg>
