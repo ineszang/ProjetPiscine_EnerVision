@@ -374,9 +374,12 @@ Le reste, par ordre de surface :
   de secret au logger, la deuxième de ne jamais mettre un jeton dans une URL.
 - En-têtes posés par l'application : `X-Content-Type-Options`, `X-Frame-Options`,
   `Referrer-Policy`, plus `Cache-Control: no-store` sur `/auth/*`. HSTS et CSP appartiennent au
-  terminateur TLS, que l'application ne connaît pas.
+  terminateur TLS, que l'application ne connaît pas : le reverse proxy les pose
+  ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)).
 - Le conteneur tourne en utilisateur non-root, avec un `HEALTHCHECK` sur `/api/v1/health/live`.
-- Ni limitation de débit au frontal, ni TLS, ni journalisation des accès applicative.
+- TLS, limitation de débit au frontal et journal d'accès sont portés par le reverse proxy.
+  `APP_TRUST_PROXY_HEADERS` doit alors valoir vrai, sinon le compteur par IP devient global.
+- Pas de journalisation des accès applicative.
 
 ## Observabilité
 

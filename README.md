@@ -23,6 +23,7 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | Initialise    |
 | ETL        | Apache Airflow                      | `etl/airflow`       | A initialiser |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
+| Reverse proxy | Nginx, TLS                       | `infra/proxy`       | En place      |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | Backend en place |
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
 | ML         | LightGBM, MLflow                    | `ml`                | Entrainement initialise |
@@ -51,9 +52,11 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   ├── plugins/        Operateurs et hooks maison
 │   ├── include/        Requetes SQL et ressources des DAGs
 │   └── tests/          Tests d'integrite des DAGs
-├── infra/terraform/
-│   ├── modules/        Modules reutilisables
-│   └── environments/   Racines Terraform, une par environnement
+├── infra/
+│   ├── proxy/          Reverse proxy Nginx : terminaison TLS et routage
+│   └── terraform/
+│       ├── modules/        Modules reutilisables
+│       └── environments/   Racines Terraform, une par environnement
 ├── ml/                 Pipeline d'entrainement LightGBM, suivi MLflow
 ├── monitoring/
 │   ├── prometheus/     Collecte et regles d'alerte
@@ -97,6 +100,20 @@ Verifier que la base repond et que l'extension est chargee :
 ```bash
 curl -s localhost:8000/api/v1/health/ready
 ```
+
+## Stack complète derrière le reverse proxy
+
+Pour servir l'application comme sur la machine cible, en HTTPS et sous une seule origine :
+
+```bash
+make tls-selfsigned PUBLIC_HOST=enervision.local   # certificat de démonstration
+make stack-up PUBLIC_HOST=enervision.local         # nginx en 80/443, rien d'autre n'est publié
+```
+
+Le navigateur avertit d'un émetteur inconnu : Let's Encrypt reste hors d'atteinte tant qu'aucun
+nom de domaine public ne résout vers la machine. Routage, mode ACME et renouvellement dans
+[`infra/proxy/README.md`](infra/proxy/README.md) ; la décision et ses motifs dans
+[l'ADR 0007](docs/adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
 
 ## Conventions
 

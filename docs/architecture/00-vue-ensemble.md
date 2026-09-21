@@ -46,6 +46,7 @@ flowchart TB
   navigateur["Navigateur"]
 
   subgraph machine["Machine on-premise"]
+    proxy["Reverse proxy Nginx<br/>:80 et :443"]
     front["Frontend Angular 22<br/>apps/frontend"]
     api["API FastAPI<br/>apps/backend"]
     db[("PostgreSQL 17<br/>TimescaleDB")]
@@ -54,7 +55,9 @@ flowchart TB
     grafana["Grafana"]
   end
 
-  navigateur --> front
+  navigateur --> proxy
+  proxy --> front
+  proxy --> api
   front -.-> api
   api --> db
   airflow -.-> db
@@ -78,7 +81,7 @@ collecteur ne vient le lire.
 | Frontend | Angular 22, Node 24 | `apps/frontend` | `En cours` | Tableau de bord sur route `/dashboard`, authentification complète (garde de route, intercepteur de jeton), cinq services HTTP, graphiques Chart.js. `stats`/`alerts` sur fixtures, `predictions` branché sur l'API réelle |
 | Base | PostgreSQL 17 + TimescaleDB | `db` | `Fait` | Bootstrap de l'extension, base de test, chaîne Alembic. Schéma applicatif créé (`site`, `dataset`, `reading` en hypertable, `prediction`, `alert`, `recommendation`) |
 | ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`. Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../../ML-START.md). Automatisation (Airflow) et surveillance de dérive (EC06, #44/#45) pas encore construites |
-| Infra | Terraform, k3s single-node | `infra/terraform` | `En cours` | Module d'installation du cluster. Jamais appliqué, aucune ressource Kubernetes déclarée |
+| Infra | Docker Compose, Nginx, Terraform, k3s single-node | `infra`, `docker-compose.prod.yml` | `En cours` | Reverse proxy et overlay de déploiement écrits et validés, jamais lancés sur le serveur ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)). Module d'installation k3s jamais appliqué, aucune ressource Kubernetes déclarée |
 | Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Cible` | Rien, hors le `/metrics` exposé par l'API |
 | ETL | Apache Airflow | `etl/airflow` | `Cible` | Rien |
 | CI/CD | GitHub Actions | `.github/workflows` | `Cible` | Rien |
@@ -137,6 +140,11 @@ consolidée.
   jeton facultatif, sonde de disponibilité qui ne publie plus la version de TimescaleDB.
 - **CI backend bloquante** : format, lint, typage strict et tests avec seuil de couverture.
 - **Conteneur backend non-root**, déclaré dans `apps/backend/Dockerfile`.
+- **Terminaison TLS au frontal** : un reverse proxy Nginx est le seul service publié, il redirige
+  80 vers 443, sert le SPA et l'API sous la même origine, pose **HSTS** et **CSP** que
+  l'application refuse délibérément de poser, et ajoute une **limitation de débit au frontal**
+  distincte de celle de l'application. Voir
+  [ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
 - **Côté infrastructure** : la clé SSH est marquée `sensitive`, le kubeconfig reste en `600/root`
   sur la machine cible et n'est lu que par `sudo`, `*.tfvars` est ignoré par git sauf les
   `.example`.
@@ -150,13 +158,10 @@ consolidée.
   arrêteraient une application compromise. Même raison de report.
 - **Portée par site** dans l'autorisation : les rôles sont globaux, un opérateur du site A peut
   agir sur le site B. C'est la limite connue du modèle.
-- **TLS, HSTS et CSP** : ils appartiennent au terminateur TLS, qui n'existe pas encore.
-- **Limitation de débit au frontal** : celle de l'application protège les identifiants, pas
-  l'infrastructure.
+- **Certificat reconnu** : aucun nom de domaine public ne résout vers la machine, donc le défi
+  HTTP-01 de Let's Encrypt ne peut pas aboutir. Le certificat servi est auto-signé, le chemin ACME
+  est livré et documenté mais pas exercé.
 - **Analyse de dépendances et de conteneurs** dans la CI, qui relève du chantier CI/CD.
-- **Le fichier `environment.ts` de production** pointe encore sur `http://localhost:8000` en HTTP
-  simple : dans cet état, le cookie `Secure` ne sera pas posé. Voir
-  [31-contrat-authentification.md](31-contrat-authentification.md).
 
 ## Décisions structurantes
 
