@@ -57,6 +57,37 @@ validation. La coupure est **chronologique**, jamais un tirage aleatoire de lign
 aleatoire laisserait des lignes de validation "voir" des lignes d'entrainement via leurs
 lags/moyennes glissantes, une fuite qui masquerait un surapprentissage.
 
+## Serveur MLflow (conteneur)
+
+Un serveur MLflow (PostgreSQL pour les metadonnees, volume pour les artefacts) se lance avec
+Docker. Prerequis : Docker Desktop demarre.
+
+```
+cd ml
+docker compose -f docker-compose.mlflow.yml up -d --build
+```
+
+Interface : http://localhost:5000. Entrainer vers ce serveur :
+
+```
+uv run python -m enervision_ml.train --csv data/all_sites_combined.csv --mlflow-tracking-uri http://localhost:5000
+```
+
+Arreter : `docker compose -f docker-compose.mlflow.yml down` (ajouter `-v` pour effacer aussi les
+runs et les modeles).
+
+Pour voir les runs dans l'interface (MLflow 3.x) :
+
+- Passer le selecteur en haut a gauche sur **Model training**. Le mode **GenAI** affiche des
+  traces LLM et reste vide pour un entrainement LightGBM.
+- **Runs** liste les entrainements, **Models** les artefacts de modele de chaque run (tous nommes
+  `model`), et **Model registry** les versions numerotees de `consumption-forecast-lightgbm`.
+
+Limites : les identifiants PostgreSQL (`mlflow` / `mlflow`) du compose ne conviennent qu'au
+developpement local. Un deploiement partage demandera des secrets, de l'authentification et un
+stockage d'artefacts dedie (S3/MinIO). Le port 5000 doit etre libre : arreter `mlflow ui` avant,
+ou changer le mapping (`"5001:5000"`) dans le compose.
+
 ## Commandes
 
 ```bash

@@ -64,7 +64,7 @@ ml/models/*
 !ml/models/.gitkeep
 ml/mlruns/
 ml/mlartifacts/
-ml/mlflow.db
+ml/mlflow.db*
 
 # IDE et OS
 .idea/
