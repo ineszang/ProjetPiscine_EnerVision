@@ -17,6 +17,7 @@ dev = [
     "ruff>=0.16.7",
     "mypy>=2.3.1",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
     "pandas-stubs>=3.0.5.260914",
 ]
 
@@ -75,5 +76,14 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers -m 'not integration'"
+addopts = "-q --strict-markers -m 'not integration' --cov=enervision_ml --cov-report=term-missing"
 markers = ["integration: requiert une base PostgreSQL joignable"]
+
+# Rapport lu par SonarCloud (`ml/coverage.xml`, cf. sonar-project.properties), meme mecanisme que
+# apps/backend. Pas de seuil ici : celui de la quality gate porte sur le code nouveau.
+[tool.coverage.run]
+source = ["enervision_ml"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true

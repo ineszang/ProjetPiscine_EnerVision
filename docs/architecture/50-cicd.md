@@ -44,6 +44,7 @@ flowchart TB
   subgraph sq["SonarQube · sonarqube.yml"]
     sb1["build-front / test-front"]
     sb2["build-back / test-back"]
+    sb3["test-ml"]
     sscan["sonarqube<br/>quality gate SonarCloud"]
   end
 
@@ -132,10 +133,18 @@ partie de la suite, et son taux n'aurait aucun sens face au seuil de 85 %.
 
 ## SonarCloud, et l'incident qui a immobilisé trois PR
 
-Le workflow `sonarqube.yml` exécute quatre jobs de préparation (`build-front`, `test-front`,
-`build-back`, `test-back`) qui produisent chacun un rapport de couverture en artefact, puis un
-cinquième job qui les télécharge et lance `SonarSource/sonarqube-scan-action@v8` avec le secret
-`SONAR_TOKEN`. Le périmètre est décrit par `sonar-project.properties` à la racine.
+Le workflow `sonarqube.yml` exécute cinq jobs de préparation (`build-front`, `test-front`,
+`build-back`, `test-back`, `test-ml`) dont les tests produisent chacun un rapport de couverture en
+artefact, puis un dernier job qui les télécharge et lance `SonarSource/sonarqube-scan-action@v8`
+avec le secret `SONAR_TOKEN`. Le périmètre est décrit par `sonar-project.properties` à la racine.
+
+Le périmètre couvre `apps/frontend`, `apps/backend`, `ml/` et `etl/airflow` (les deux derniers
+ajoutés après coup : ils n'étaient pas analysés, une PR qui ne touchait qu'eux ne lançait pas
+Sonar). `ml/` publie `ml/coverage.xml` (`pytest-cov`, même mécanisme que le backend, sans seuil
+propre : la gate porte sur le code neuf). `etl/airflow` est exclu de la **couverture**
+(`sonar.coverage.exclusions`) : ses tests ne font que charger les DAGs, ils ne mesurent rien.
+Piège : tout nouveau dossier de tests doit être déclaré dans `sonar.tests`, faute de quoi il est
+compté comme code de production non couvert (cf. l'incident ci-dessous).
 
 **L'incident, à raconter tel quel.** Les 18 et 19 septembre, trois PR (#103, #105, #107) sont
 restées bloquées sur une quality gate rouge annonçant une couverture du code neuf à 0 %, alors que

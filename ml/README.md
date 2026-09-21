@@ -103,7 +103,7 @@ prevision (utile plus tard pour comparer prevision et realise, surveillance de d
 uv run ruff check .                       # lint
 uv run ruff format .                      # format
 uv run mypy enervision_ml tests           # typage strict
-uv run pytest                             # tests
+uv run pytest                             # tests + couverture (ml/coverage.xml avec --cov-report=xml, lu par Sonar)
 ```
 
 Depuis la racine du monorepo, via le `Makefile` : `make install-ml`, `make ml-lint`,
