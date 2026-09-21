@@ -64,4 +64,13 @@ describe('mockApiInterceptor', () => {
     httpMock.expectNone(`${environment.apiUrl}/alerts`);
     expect((result as unknown[]).length).toBeGreaterThan(0);
   });
+
+  it('laisse toujours passer /predictions vers le réseau, même avec useMockFixtures activé', () => {
+    environment.useMockFixtures = true;
+
+    http.get(`${environment.apiUrl}/predictions`).subscribe();
+
+    const req = httpMock.expectOne(`${environment.apiUrl}/predictions`);
+    req.flush({ timestamp: '2026-09-18T09:00:00Z', sites: [] });
+  });
 });

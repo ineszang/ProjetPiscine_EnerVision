@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     alerts,
     auth,
     health,
+    predictions,
     readings,
     recommendations,
     sensors,
@@ -33,4 +34,7 @@ api_router.include_router(
 )
 api_router.include_router(
     sensors.router, prefix="/sensors", tags=["sensors"], responses=REPONSES_ADMIN
+)
+api_router.include_router(
+    predictions.router, prefix="/predictions", tags=["predictions"], responses=REPONSES_LECTEUR
 )

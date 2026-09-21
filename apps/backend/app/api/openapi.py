@@ -63,7 +63,7 @@ TAGS: Final[list[dict[str, Any]]] = [
         "name": "recommendations",
         "description": (
             "Consultation des recommandations issues des alertes. Accessible à partir du rôle "
-            "`lecteur`."
+            "`lecteur`. Leur génération par le moteur de règles est réservée au rôle `admin`."
         ),
     },
     {
@@ -82,6 +82,13 @@ TAGS: Final[list[dict[str, Any]]] = [
     {
         "name": "sensors",
         "description": "État de santé des capteurs par site. Réservé au rôle `admin`.",
+    },
+    {
+        "name": "predictions",
+        "description": (
+            "Dernière prévision de consommation par site, calculée hors ligne par le pipeline "
+            "de scoring (`ml/`) et simplement lue ici. Accessible à partir du rôle `lecteur`."
+        ),
     },
 ]
 

@@ -31,14 +31,12 @@ async def test_the_database_refuses_an_email_written_in_upper_case(
 ) -> None:
     saisie = adresse().upper()
 
+    requete = text(
+        "insert into app_user (email, password_hash, role) values (:e, '$argon2id$x', 'lecteur')"
+    )
+
     with pytest.raises(IntegrityError):
-        await session.execute(
-            text(
-                "insert into app_user (email, password_hash, role) "
-                "values (:e, '$argon2id$x', 'lecteur')"
-            ),
-            {"e": saisie},
-        )
+        await session.execute(requete, {"e": saisie})
     await session.rollback()
 
 
