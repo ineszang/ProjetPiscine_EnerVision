@@ -193,7 +193,7 @@ mécanisme que `ReadingRepository.latest_by_site()`. Un site jamais scoré rend 
 plutôt qu'un statut inventé : le domaine `available`/`insufficient_data`/`error` de la contrainte
 `ck_prediction_status` n'a pas de valeur pour « pas encore de ligne ». L'API ne lance jamais
 LightGBM elle-même ; elle lit ce que le pipeline de scoring a déjà écrit, cf.
-[ML-START.md](../../ML-START.md) section 3.
+[ML-START.md](../ML-START.md) section 3.
 
 `POST /recommendations/generate` est la seule route d'écriture métier du contrat. Elle applique
 le moteur de règles d'`app/services/recommendation_rules.py` aux lignes d'`alert`, sans modèle ni
@@ -256,12 +256,19 @@ auraient pu comparer des lectures/choisir une prévision au hasard. `_detect_spi
 explicitement les paires de lectures qui partagent le même horodatage (deux `source` pour un seul
 instant réel, pas une variation).
 
-Comme `enervision_ml.score`, la détection est un script lancé à la main, pas encore ordonnancé par
-Airflow : `uv run python -m app.detection.internal_alerts [--site-id ...] [--now ...]`, dans
-`apps/backend` puisque les règles s'appuient sur les repositories ORM de l'API plutôt que sur une
-connexion SQL directe (contrairement à `app/etl/historical_import.py`). Cette issue (#104)
-débloquait #38 (moteur de règles pour recommandations), dont la FK `alert_id` `NOT NULL` n'avait
-jusqu'ici rien à référencer côté `source="enervision"`.
+La détection s'exécute dans `apps/backend`, puisque les règles s'appuient sur les repositories ORM
+de l'API plutôt que sur une connexion SQL directe (contrairement à
+`app/etl/historical_import.py`) : `uv run python -m app.detection.internal_alerts [--site-id ...]
+[--now ...]`, ou `make detect-alerts`. Cette issue (#104) débloquait #38 (moteur de règles pour
+recommandations), dont la FK `alert_id` `NOT NULL` n'avait jusqu'ici rien à référencer côté
+`source="enervision"`.
+
+Depuis l'issue #116, le lancement n'est plus manuel : le DAG Airflow `alertes` enchaîne cette
+détection et la génération des recommandations, toutes les heures à la quinzième minute. Airflow
+exécute le code du backend en sous-processus, dans son propre environnement, ce que décide
+l'[ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md) ; le détail de l'ordonnancement est
+dans [10-infra.md](10-infra.md). La ligne de commande reste le moyen de rejouer une fenêtre
+passée, ce que `--now` permet et que le DAG ne fait pas.
 
 ### `/health/ready`
 
@@ -390,9 +397,12 @@ Le reste, par ordre de surface :
   de secret au logger, la deuxième de ne jamais mettre un jeton dans une URL.
 - En-têtes posés par l'application : `X-Content-Type-Options`, `X-Frame-Options`,
   `Referrer-Policy`, plus `Cache-Control: no-store` sur `/auth/*`. HSTS et CSP appartiennent au
-  terminateur TLS, que l'application ne connaît pas.
+  terminateur TLS, que l'application ne connaît pas : le reverse proxy les pose
+  ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)).
 - Le conteneur tourne en utilisateur non-root, avec un `HEALTHCHECK` sur `/api/v1/health/live`.
-- Ni limitation de débit au frontal, ni TLS, ni journalisation des accès applicative.
+- TLS, limitation de débit au frontal et journal d'accès sont portés par le reverse proxy.
+  `APP_TRUST_PROXY_HEADERS` doit alors valoir vrai, sinon le compteur par IP devient global.
+- Pas de journalisation des accès applicative.
 
 ## Observabilité
 

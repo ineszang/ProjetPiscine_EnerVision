@@ -46,6 +46,7 @@ flowchart TB
   navigateur["Navigateur"]
 
   subgraph machine["Machine on-premise"]
+    proxy["Reverse proxy Nginx<br/>:80 et :443"]
     front["Frontend Angular 22<br/>apps/frontend"]
     api["API FastAPI<br/>apps/backend"]
     db[("PostgreSQL 17<br/>TimescaleDB")]
@@ -54,10 +55,12 @@ flowchart TB
     grafana["Grafana"]
   end
 
-  navigateur --> front
+  navigateur --> proxy
+  proxy --> front
+  proxy --> api
   front -.-> api
   api --> db
-  airflow -.-> db
+  airflow --> db
   prom -.-> api
   grafana -.-> db
   grafana -.-> prom
@@ -66,6 +69,11 @@ flowchart TB
 Le lien `front -.-> api` reste en pointillé : le frontend appelle bien une API, mais un
 intercepteur répond à sa place tant que les endpoints n'existent pas. Voir
 [30-frontend.md](30-frontend.md).
+
+Le lien `airflow --> db` est maintenant en trait plein : trois DAGs tournent, deux pour
+l'entraînement et le scoring du modèle ML (issue #115), un pour la détection d'alertes et la
+génération des recommandations (issue #116), cf. plus bas et [20-backend.md](20-backend.md). Le
+reste du périmètre Airflow envisagé (ingestion, issues #15/#16) reste en pointillé, non construit.
 
 Le lien `prom -.-> api` de même : l'API expose bien `/metrics` au format Prometheus, mais aucun
 collecteur ne vient le lire.
@@ -77,15 +85,18 @@ collecteur ne vient le lire.
 | Backend | FastAPI, Python 3.14 | `apps/backend` | `En cours` | Factory, configuration, journalisation, 2 sondes de santé, `/metrics`, contrat OpenAPI versionné, routes `sites`, `alerts`, `recommendations`, `stats/summary`, `readings`, `sensors/status` et `predictions` en lecture (endpoints → services → repositories → models) |
 | Frontend | Angular 22, Node 24 | `apps/frontend` | `En cours` | Tableau de bord sur route `/dashboard`, authentification complète (garde de route, intercepteur de jeton), cinq services HTTP, graphiques Chart.js. `stats`/`alerts` sur fixtures, `predictions` branché sur l'API réelle |
 | Base | PostgreSQL 17 + TimescaleDB | `db` | `Fait` | Bootstrap de l'extension, base de test, chaîne Alembic. Schéma applicatif créé (`site`, `dataset`, `reading` en hypertable, `prediction`, `alert`, `recommendation`) |
-| ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`. Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../../ML-START.md). Automatisation (Airflow) et surveillance de dérive (EC06, #44/#45) pas encore construites |
-| Infra | Terraform, k3s single-node | `infra/terraform` | `En cours` | Module d'installation du cluster. Jamais appliqué, aucune ressource Kubernetes déclarée |
+| ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`, orchestré par Airflow (`ml_train`/`ml_score`). Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../ML-START.md). Surveillance de dérive (EC06, #44/#45) pas encore construite |
+| Infra | Docker Compose, Nginx, Terraform, k3s single-node | `infra`, `docker-compose.prod.yml` | `En cours` | Reverse proxy et overlay de déploiement écrits et validés, jamais lancés sur le serveur ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)). Module d'installation k3s jamais appliqué, aucune ressource Kubernetes déclarée |
 | Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Cible` | Rien, hors le `/metrics` exposé par l'API |
-| ETL | Apache Airflow | `etl/airflow` | `Cible` | Rien |
-| CI/CD | GitHub Actions | `.github/workflows` | `Cible` | Rien |
+| ETL | Apache Airflow | `etl/airflow` | `En cours` | Webserver + scheduler (LocalExecutor) tournent via docker-compose, base de métadonnées Postgres dédiée. Trois DAGs en sous-processus `uv run` : `ml_train` manuel et `ml_score` `@hourly` pour le pipeline ML (issue #115), `alertes` à `15 * * * *` pour la détection et les recommandations (issue #116, [ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md)). L'ingestion (issues #15/#16) n'a pas encore de DAG |
+| CI/CD | GitHub Actions | `.github/workflows` | `En cours` | 5 workflows, 16 jobs : lint, typage, tests avec seuil de couverture bloquant, tests d'intégration sur TimescaleDB réel, audit de dépendances, SAST Bandit, quality gate SonarCloud, intégrité des DAGs Airflow. Détail dans [50-cicd.md](50-cicd.md). **Aucun job de déploiement** (#21) |
 
 ## Flux bout en bout
 
-Statut : `Cible`. Aucun maillon de cette chaîne n'existe aujourd'hui, à l'exception de la base.
+Statut : `En cours`. **Le chemin de lecture tourne** : base, API et frontend. **Le chemin
+d'ingestion dessiné ci-dessous n'existe pas** : les trois DAGs livrés (`ml_train`, `ml_score`,
+issue #115 ; `alertes`, issue #116) orchestrent le pipeline ML et la détection d'alertes, pas
+l'ingestion, qui reste lancée à la main par les scripts d'import (issues #15 et #16).
 
 ```mermaid
 sequenceDiagram
@@ -137,6 +148,11 @@ consolidée.
   jeton facultatif, sonde de disponibilité qui ne publie plus la version de TimescaleDB.
 - **CI backend bloquante** : format, lint, typage strict et tests avec seuil de couverture.
 - **Conteneur backend non-root**, déclaré dans `apps/backend/Dockerfile`.
+- **Terminaison TLS au frontal** : un reverse proxy Nginx est le seul service publié, il redirige
+  80 vers 443, sert le SPA et l'API sous la même origine, pose **HSTS** et **CSP** que
+  l'application refuse délibérément de poser, et ajoute une **limitation de débit au frontal**
+  distincte de celle de l'application. Voir
+  [ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
 - **Côté infrastructure** : la clé SSH est marquée `sensitive`, le kubeconfig reste en `600/root`
   sur la machine cible et n'est lu que par `sudo`, `*.tfvars` est ignoré par git sauf les
   `.example`.
@@ -150,13 +166,12 @@ consolidée.
   arrêteraient une application compromise. Même raison de report.
 - **Portée par site** dans l'autorisation : les rôles sont globaux, un opérateur du site A peut
   agir sur le site B. C'est la limite connue du modèle.
-- **TLS, HSTS et CSP** : ils appartiennent au terminateur TLS, qui n'existe pas encore.
-- **Limitation de débit au frontal** : celle de l'application protège les identifiants, pas
-  l'infrastructure.
-- **Analyse de dépendances et de conteneurs** dans la CI, qui relève du chantier CI/CD.
-- **Le fichier `environment.ts` de production** pointe encore sur `http://localhost:8000` en HTTP
-  simple : dans cet état, le cookie `Secure` ne sera pas posé. Voir
-  [31-contrat-authentification.md](31-contrat-authentification.md).
+- **Certificat reconnu** : aucun nom de domaine public ne résout vers la machine, donc le défi
+  HTTP-01 de Let's Encrypt ne peut pas aboutir. Le certificat servi est auto-signé, le chemin ACME
+  est livré et documenté mais pas exercé.
+- **Analyse des images de conteneur** dans la CI. Celle des dépendances, elle, est en place
+  (`pip-audit`, `npm audit`, Dependabot sur 5 écosystèmes), de même que le SAST Bandit. Voir
+  [50-cicd.md](50-cicd.md).
 
 ## Décisions structurantes
 
@@ -170,3 +185,4 @@ Elles vivent dans `../adr/`, pas ici.
 | [0004](../adr/0004-journal-d-audit-en-ajout-seul.md) | Journal d'audit en ajout seul, garanti par PostgreSQL |
 | [0005](../adr/0005-modele-prediction-lightgbm.md) | Modèle de prédiction de consommation : LightGBM |
 | [0006](../adr/0006-moteur-de-regles-dans-le-backend.md) | Le moteur de règles de recommandation vit dans le backend, pas dans `ml/` |
+| [0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md) | Terminaison TLS par un reverse proxy Nginx, en Docker Compose |

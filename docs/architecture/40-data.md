@@ -14,8 +14,10 @@ décrivent les éléments prévus mais pas encore réalisés.
 
 L'ingestion des **mesures** est implémentée pour les deux sources du MVP, le dataset CSV/JSON et
 l'API Mock. Celle des **alertes** de l'API Mock, `/alerts`, reste à faire : voir
-l'[ADR 0006](../adr/0006-moteur-de-regles-dans-le-backend.md). L'orchestration Airflow, les
-agrégats continus, la compression et la rétention restent des cibles.
+l'[ADR 0006](../adr/0006-moteur-de-regles-dans-le-backend.md). Les alertes `source='enervision'`,
+elles, sont produites par la détection interne, désormais ordonnancée par le DAG Airflow `alertes`
+(issue #116). L'orchestration de l'ingestion, les agrégats continus, la compression et la
+rétention restent des cibles.
 
 ## Trois emplacements, trois rôles
 
@@ -290,10 +292,10 @@ Les anomalies historiques décrites dans les JSON sont conservées dans `dataset
 Elles servent à l'analyse des données et ne sont pas considérées comme des alertes actuelles.
 
 Les lignes de `recommendation` sont écrites par le moteur de règles du backend
-(`app/services/recommendation_rules.py`), déclenché par `POST /api/v1/recommendations/generate`
-ou par `make recommendations`, à partir des alertes déjà en base. Le couple
-`(alert_id, rule_reference)` est unique : rejouer le moteur sur les mêmes alertes n'ajoute aucune
-ligne.
+(`app/services/recommendation_rules.py`), déclenché par `POST /api/v1/recommendations/generate`,
+par `make recommendations`, ou par la seconde tâche du DAG `alertes`, à partir des alertes déjà en
+base. Le couple `(alert_id, rule_reference)` est unique : rejouer le moteur sur les mêmes alertes
+n'ajoute aucune ligne.
 
 ### Relations entre les tables
 

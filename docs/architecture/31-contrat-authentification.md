@@ -129,18 +129,18 @@ n'est pas envoyé et le rafraîchissement échoue toujours.
 En développement, `proxy.conf.json` fait passer `/api` par `localhost:4200`, donc tout est
 **même origine** et le cookie marche sans rien configurer.
 
-En production, `src/environments/environment.ts` contient encore le gabarit
-`http://localhost:8000/api/v1`, en HTTP simple et sur une autre origine. **Dans cet état, aucun
-cookie `Secure` ne sera posé et l'authentification ne fonctionnera pas.**
+En déploiement, les deux conditions sont désormais remplies par le reverse proxy
+([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)) : `environment.ts` porte un
+`apiUrl` relatif, `/api/v1`, et le proxy sert le SPA sur `/` et l'API sur `/api/` **sous la même
+origine, en HTTPS**. C'est cela, et rien d'autre, qui rend le cookie `__Secure-ev_refresh`
+utilisable : servi en HTTP simple ou depuis une autre origine, il n'est jamais posé et
+l'authentification ne survit pas à un rechargement de page.
 
-Deux corrections, à faire avant la démonstration :
-
-1. passer `apiUrl` à `/api/v1` et servir le SPA et l'API sous la même origine, via un
-   `location /api` dans le `nginx.conf` du conteneur frontend ou via l'ingress ;
-2. servir en HTTPS.
+Ce qui reste à surveiller : le certificat est auto-signé tant qu'aucun domaine public ne résout
+vers la machine. Un navigateur qui refuse l'exception refusera aussi le cookie.
 
 Et au moins une fois avant la soutenance, lancer le front **sans le proxy**, en cross-origin
-réel : c'est le seul moyen d'exercer le préflight CORS et `SameSite`, que le proxy masque.
+réel : c'est le seul moyen d'exercer le préflight CORS et `SameSite`, que la même origine masque.
 
 ## Origines autorisées
 
