@@ -22,6 +22,9 @@ qu'une section de plus dans une autre vue devienne illisible. L'observabilité, 
 toujours pas : `monitoring/` ne contient que des `.gitkeep`. Elle en sortira le jour où elle aura
 de la matière. Un fichier vide de plus n'aide personne.
 
+L'orchestration Airflow, elle, en a depuis les issues #115 et #116 : trois DAGs, leur image et
+leurs contraintes sont décrits dans [10-infra.md](10-infra.md).
+
 La sécurité applicative, elle, a désormais de la matière : la vue consolidée reste dans
 [00-vue-ensemble.md](00-vue-ensemble.md), le détail dans [20-backend.md](20-backend.md), la
 traçabilité OWASP dans [owasp-traceabilite.md](owasp-traceabilite.md), et les décisions dans les

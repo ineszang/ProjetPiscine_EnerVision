@@ -51,7 +51,7 @@ Trois pièges sont documentés en tête du `docker-compose.yml`, ils ne se devin
 - `LocalExecutor` exécute les tâches comme sous-processus du **scheduler**, jamais du webserver :
   c'est le scheduler qui a besoin du volume `airflow_ml_state` (modèle, magasin MLflow).
 
-### Airflow (`ml_train`/`ml_score`, issue #115)
+### Airflow (issues #115 et #116)
 
 Trois services, `docker compose profiles` non utilisés (démarrage explicite via `make
 airflow-up`, pas dans `make dev`) :
@@ -60,13 +60,37 @@ airflow-up`, pas dans `make dev`) :
 |---|---|---|
 | `airflow-init` | Migre la base de métadonnées, crée le compte admin | Conteneur jetable (`restart: "no"`), ne redémarre jamais. `webserver`/`scheduler` attendent qu'il se termine avec succès |
 | `airflow-webserver` | UI, port `8080` | `LocalExecutor` : n'exécute aucune tâche lui-même |
-| `airflow-scheduler` | Planifie et **exécute** les tâches (`LocalExecutor`) | Les DAGs y tournent en sous-processus (`uv run --frozen --no-dev python -m enervision_ml...`), c'est lui qui a besoin du volume `airflow_ml_state` |
+| `airflow-scheduler` | Planifie et **exécute** les tâches (`LocalExecutor`) | Les DAGs y tournent en sous-processus (`uv run --no-sync python -m ...`), c'est lui qui a besoin du volume `airflow_ml_state` |
 
 Construits depuis `etl/airflow/Dockerfile`, contexte `.` (racine du repo, pas `etl/airflow/`) :
-l'image doit pouvoir `COPY` `ml/pyproject.toml`/`ml/uv.lock`/`ml/enervision_ml` pour se
-synchroniser un second environnement Python **3.14** (`/opt/ml/.venv`, `uv sync --locked` à la
-construction), distinct du Python 3.12 qui fait tourner Airflow lui-même. Les DAGs shellent vers
-ce venv plutôt que d'importer LightGBM/MLflow dans le process Airflow.
+l'image doit pouvoir `COPY` les sources de `ml/` **et** de `apps/backend/` pour se synchroniser
+deux environnements Python **3.14** (`/opt/ml/.venv` et `/opt/backend/.venv`, `uv sync --locked` à
+la construction), distincts du Python 3.12 qui fait tourner Airflow lui-même. Les DAGs shellent
+vers ces venvs plutôt que d'importer LightGBM, MLflow ou SQLAlchemy dans le process Airflow.
+Le choix et ses contreparties sont dans
+l'[ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md).
+
+| DAG | Planification | Ce qu'il lance, et où |
+|---|---|---|
+| `ml_train` | manuelle | `enervision_ml.train`, dans `/opt/ml/.venv` |
+| `ml_score` | `0 * * * *` | `enervision_ml.score`, dans `/opt/ml/.venv` |
+| `alertes` | `15 * * * *` | `app.detection.internal_alerts` puis `app.cli generate-recommendations`, dans `/opt/backend/.venv` |
+
+**Pourquoi `alertes` tourne à la quinzième minute.** Sa règle `anomaly` compare une lecture à la
+`prediction` du même instant, que `ml_score` écrit à l'heure pile. Le décalage laisse le scoring
+finir. Aucune dépendance n'est déclarée entre les deux DAGs pour autant, ni `ExternalTaskSensor` ni
+tâche greffée : quatre règles de détection sur cinq ne touchent pas au modèle, et un modèle jamais
+entraîné ne doit pas priver le parc de ses alertes. Le décalage est donc une convention et non une
+garantie : le plafond de `ml_score` est de 30 minutes, et un scoring qui déborde de `:15` prive
+`anomaly` de la `prediction` de l'heure, qu'elle ne retrouvera au passage suivant que si sa fenêtre
+la couvre encore. Les quatre autres règles ne s'en aperçoivent pas.
+
+Ses deux tâches s'enchaînent en revanche (`recommendation.alert_id` est une clé étrangère `NOT
+NULL`), et toutes deux sont rejouables sans risque : l'idempotence est portée par la base,
+`uq_alert_source_reference` et `uq_recommendation_alert_rule`. Chacune a 2 tentatives, 2 minutes
+d'attente entre elles et un plafond de 5 minutes **par tentative** : au pire, reprises comprises,
+l'enchaînement occupe 38 minutes, ce qui le garde sous le pas horaire qu'un `max_active_runs=1`
+rend contraignant.
 
 `airflow-init` s'appuie sur l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`,
 `_AIRFLOW_WWW_USER_*`) plutôt que sur un script maison : l'entrypoint porte le code de sortie, une
@@ -77,7 +101,15 @@ passe par l'environnement, jamais par `argv` (ni `ps`, ni `docker compose config
 Les variables `AIRFLOW_*` ne sont volontairement pas en `${VAR:?}` : Compose interpole le fichier
 entier avant de filtrer les services, une variable requise manquante casserait `make db-up`,
 `make dev`... pour tout poste dont le `.env` est antérieur. Elles valent `${VAR:-}` et c'est
-`airflow-init` qui refuse de démarrer (clé Fernet, clé Flask ou mot de passe vides).
+`airflow-init` qui refuse de démarrer (clé Fernet, clé Flask, mot de passe ou
+`AIRFLOW_APP_SECRET_KEY` vides).
+
+Le conteneur reçoit deux variables du backend en plus de `ML_DATABASE_URL` : `DATABASE_URL`, en
+dialecte asyncpg, et `APP_SECRET_KEY`, alimentée par `AIRFLOW_APP_SECRET_KEY`. Cette dernière est
+**délibérément différente** de celle de l'API. La configuration du backend refuse de se construire
+sans clé, mais la détection ne signe ni ne vérifie aucun jeton : un Airflow compromis, qui permet
+déjà d'exécuter du code depuis son interface, ne doit pas livrer par-dessus la clé de signature
+des JWT.
 
 **Pourquoi `ml_train` est manuel.** Réentraîner est coûteux et sa cadence n'est pas une décision
 prise. Surtout, `train.py` écrase le modèle sans comparer ses métriques à celles de l'ancien : un
@@ -86,8 +118,9 @@ déclenchement reste humain. `ml_score`, lui, est planifié à l'heure, avec `ma
 (pas deux scorings simultanés dans `prediction`), 2 tentatives et un plafond de 30 minutes.
 
 CI : `.github/workflows/airflow.yml` (Python 3.12 via `etl/airflow/.python-version`) lance lint et
-tests d'intégrité des DAGs, et construit l'image (elle `COPY` `ml/`, une modification de `ml/`
-peut donc la casser) avant de vérifier que le pipeline s'y importe sans réseau.
+tests d'intégrité des DAGs, et construit l'image (elle `COPY` `ml/` et `apps/backend/`, une
+modification de l'un ou de l'autre peut donc la casser, d'où leurs chemins dans les déclencheurs)
+avant de vérifier que les deux environnements s'y importent sans réseau.
 
 Piège à connaître : sur un volume `pgdata` déjà peuplé (poste de dev existant plutôt que premier
 `make db-up`), `db/init/120-airflow-database.sql` ne se rejoue pas (PostgreSQL n'exécute
