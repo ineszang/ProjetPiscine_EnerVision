@@ -229,12 +229,13 @@ renomme dans cette copie, sans toucher au contrat versionné, les deux schémas 
 accentués (`Jeton d'accès`, `Cookie de rafraîchissement`) que l'analyseur de ZAP peut refuser. La
 cause exacte du 400 n'est pas confirmée : si l'import échoue encore, `zap-logs/zap.log` la donne.
 Deuxième diagnostic (contrat importé, 81 endpoints) : **toutes** les requêtes de ZAP recevaient un 400
-`Invalid HTTP request received` d'uvicorn, y compris `/api/v1/health/live` sans authentification,
-et le job restait vert. Un second garde-fou fait donc échouer le job si 100 % des réponses sont des
-4xx. Tant que la cause n'est pas établie, le job intercale `socat -v` entre ZAP et l'API (octets
-échangés publiés dans `zap-logs/`, jeton masqué) et lance uvicorn avec `--http h11` : uvicorn n'indique
-pas ce que son analyseur a refusé. Ce diagnostic est à retirer une fois le scan authentifié qui
-fonctionne.
+`Invalid HTTP request received` d'uvicorn, y compris `/api/v1/health/live` sans authentification, et
+le job restait vert. Un dump des octets échangés (`socat -v`, retiré depuis) a montré la cause : ZAP
+ajoutait à chaque requête une ligne d'en-tête au **nom vide**, `: Bearer <jeton>`. La clé de
+configuration du nom d'en-tête pour la règle Replacer est **`matchstr`** ; le job écrivait
+`matchstring` (nom utilisé par le job d'automatisation ZAP, pas par `-config`). ZAP accepte
+n'importe quelle clé `-config` sans erreur, il a donc laissé le nom vide. Le job porte deux garde-fous
+qui font échouer un scan qui n'a rien testé : moins de 10 URL importées, ou 100 % de réponses 4xx.
 
 Piège de permissions : le dossier `zap-out` appartient à l'uid 1000 du conteneur, le runner n'y écrit
 plus après le `chown` ; les journaux vont donc dans `zap-logs/`, que le runner possède.

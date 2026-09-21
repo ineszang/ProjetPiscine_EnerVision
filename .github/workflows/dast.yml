@@ -94,22 +94,10 @@ jobs:
         run: uv run --frozen --no-sync --no-build alembic upgrade head
         working-directory: apps/backend
 
-      # Diagnostic (à retirer une fois le scan authentifié qui fonctionne) : au deuxième passage
-      # ZAP importait bien le contrat (81 endpoints) mais TOUTES ses requêtes recevaient un 400
-      # « Invalid HTTP request received » d'uvicorn, y compris `/health/live` sans authentification.
-      # uvicorn (httptools) ne dit pas ce qui l'a fait refuser. `socat -v` s'intercale sur le port
-      # 8000 et journalise les octets échangés, sans rien modifier.
-      - name: Installe socat
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq socat
-
-      # L'API écoute sur 8001, `socat` relaie 8000 vers elle. `--http h11` : autre analyseur que
-      # httptools (llhttp, strict), au cas où c'est lui qui refuse les requêtes de ZAP.
       - name: Démarre l'API
         run: |
           nohup uv run --frozen --no-sync --no-build uvicorn app.main:create_app --factory \
-            --http h11 --host 127.0.0.1 --port 8001 > "$RUNNER_TEMP/api.log" 2>&1 &
-          nohup socat -v -d TCP-LISTEN:8000,fork,reuseaddr TCP:127.0.0.1:8001 \
-            > /dev/null 2> "$RUNNER_TEMP/socat.log" &
+            --host 0.0.0.0 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
           for _ in $(seq 1 30); do
             curl -fsS http://localhost:8000/api/v1/health/ready >/dev/null 2>&1 && exit 0
             sleep 2
@@ -130,6 +118,11 @@ jobs:
       # `--network host` : ZAP atteint l'API sur le localhost du runner. Le dossier de sortie
       # appartient à l'utilisateur du conteneur (uid 1000), sans droits d'écriture pour les autres
       # (règle Sonar S2612 : pas de `chmod 777`).
+      #
+      # Piège : la clé du nom d'en-tête est `matchstr`, pas `matchstring`. ZAP accepte n'importe quelle
+      # clé `-config` sans erreur ; avec la mauvaise, il ajoutait à TOUTES les requêtes un en-tête au
+      # nom vide (`: Bearer <jeton>`), que uvicorn refuse par un 400 (« Invalid HTTP request
+      # received »), y compris sur les routes publiques.
       #
       # Les routes d'authentification qui changent l'état du compte du scan sont exclues : un
       # scan actif y déclencherait la limitation de débit du login, la réinitialisation de mots de
@@ -167,7 +160,7 @@ jobs:
             -z "-config replacer.full_list(0).description=auth \
                 -config replacer.full_list(0).enabled=true \
                 -config replacer.full_list(0).matchtype=REQ_HEADER \
-                -config replacer.full_list(0).matchstring=Authorization \
+                -config replacer.full_list(0).matchstr=Authorization \
                 -config replacer.full_list(0).regex=false \
                 -config replacer.full_list(0).replacement='Bearer ${{ steps.jeton.outputs.jeton }}' \
                 -config globalexcludeurl.url_list.url(0).description=auth-etat \
@@ -182,11 +175,6 @@ jobs:
           cp "$RUNNER_TEMP/zap-stdout.log" zap-logs/zap-stdout.log || true
           docker cp zap:/home/zap/.ZAP/zap.log zap-logs/zap.log || true
           cp "$RUNNER_TEMP/api.log" zap-logs/api.log || true
-          # Octets échangés entre ZAP et l'API : début du dump, et contexte du premier 400. Le
-          # jeton (valable une heure, base jetable) est masqué avant publication.
-          masque() { sed -E 's/(Authorization: Bearer )[A-Za-z0-9._-]+/\1[MASQUE]/Ig'; }
-          head -c 200000 "$RUNNER_TEMP/socat.log" | masque > zap-logs/socat-debut.log || true
-          grep -n -m3 -B14 -A3 "400 Bad Request" "$RUNNER_TEMP/socat.log" | masque > zap-logs/socat-premier-400.log || true
           docker rm -f zap >/dev/null 2>&1 || true
 
       # `continue-on-error` sur le scan ne doit pas faire passer pour vert un scan qui n'a rien
@@ -213,7 +201,7 @@ jobs:
             exit 1
           fi
           if grep -q "status code 4xx | 100 %" zap-out/zap-report.md; then
-            echo "::error::100 % des réponses sont des erreurs client (4xx) : le scan n'a rien testé de l'API. Voir zap-logs/socat-premier-400.log dans l'artefact zap-report."
+            echo "::error::100 % des réponses sont des erreurs client (4xx) : le scan n'a rien testé de l'API. Voir zap-logs/api.log et zap-logs/zap.log dans l'artefact zap-report."
             exit 1
           fi
 
