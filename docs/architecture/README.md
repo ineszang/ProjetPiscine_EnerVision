@@ -15,10 +15,12 @@ contredisent, c'est l'ADR qui fait foi et la vue qui est en retard.
 | [31-contrat-authentification.md](31-contrat-authentification.md) | Ce que le frontend doit savoir pour coder la connexion |
 | [32-design-systeme-frontend.md](32-design-systeme-frontend.md) | Tokens CSS, composants `ev-*` partagés, règle anti-couleur-en-dur |
 | [40-data.md](40-data.md) | Frontières `db/` et `alembic/`, cycle de vie d'une mesure, modèle |
+| [50-cicd.md](50-cicd.md) | Workflows, gates bloquantes, SonarCloud, Dependabot, ce qui manque |
 
-L'observabilité et la CI/CD n'ont pas de document propre : ce sont des sections des documents
-ci-dessus, tant que `monitoring/` et `etl/airflow/` ne contiennent que des `.gitkeep`. Elles en
-sortiront le jour où elles auront de la matière. Un fichier vide de plus n'aide personne.
+La CI/CD a désormais son document : quatre workflows et quatorze jobs, c'est assez de matière pour
+qu'une section de plus dans une autre vue devienne illisible. L'observabilité, elle, n'en a
+toujours pas : `monitoring/` ne contient que des `.gitkeep`. Elle en sortira le jour où elle aura
+de la matière. Un fichier vide de plus n'aide personne.
 
 La sécurité applicative, elle, a désormais de la matière : la vue consolidée reste dans
 [00-vue-ensemble.md](00-vue-ensemble.md), le détail dans [20-backend.md](20-backend.md), la

@@ -77,15 +77,17 @@ collecteur ne vient le lire.
 | Backend | FastAPI, Python 3.14 | `apps/backend` | `En cours` | Factory, configuration, journalisation, 2 sondes de santé, `/metrics`, contrat OpenAPI versionné, routes `sites`, `alerts`, `recommendations`, `stats/summary`, `readings`, `sensors/status` et `predictions` en lecture (endpoints → services → repositories → models) |
 | Frontend | Angular 22, Node 24 | `apps/frontend` | `En cours` | Tableau de bord sur route `/dashboard`, authentification complète (garde de route, intercepteur de jeton), cinq services HTTP, graphiques Chart.js. `stats`/`alerts` sur fixtures, `predictions` branché sur l'API réelle |
 | Base | PostgreSQL 17 + TimescaleDB | `db` | `Fait` | Bootstrap de l'extension, base de test, chaîne Alembic. Schéma applicatif créé (`site`, `dataset`, `reading` en hypertable, `prediction`, `alert`, `recommendation`) |
-| ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`. Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../../ML-START.md). Automatisation (Airflow) et surveillance de dérive (EC06, #44/#45) pas encore construites |
+| ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`. Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../ML-START.md). Automatisation (Airflow) et surveillance de dérive (EC06, #44/#45) pas encore construites |
 | Infra | Terraform, k3s single-node | `infra/terraform` | `En cours` | Module d'installation du cluster. Jamais appliqué, aucune ressource Kubernetes déclarée |
 | Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Cible` | Rien, hors le `/metrics` exposé par l'API |
 | ETL | Apache Airflow | `etl/airflow` | `Cible` | Rien |
-| CI/CD | GitHub Actions | `.github/workflows` | `Cible` | Rien |
+| CI/CD | GitHub Actions | `.github/workflows` | `En cours` | 4 workflows, 14 jobs : lint, typage, tests avec seuil de couverture bloquant, tests d'intégration sur TimescaleDB réel, audit de dépendances, SAST Bandit, quality gate SonarCloud. Détail dans [50-cicd.md](50-cicd.md). **Aucun job de déploiement** (#21) |
 
 ## Flux bout en bout
 
-Statut : `Cible`. Aucun maillon de cette chaîne n'existe aujourd'hui, à l'exception de la base.
+Statut : `En cours`. Tout le chemin de lecture existe (base, API, frontend), ainsi que l'ingestion
+par import depuis un CSV historique et depuis l'API Mock. **Le seul maillon absent est
+l'orchestration** : Airflow ne tourne pas, l'ingestion et le scoring sont lancés à la main.
 
 ```mermaid
 sequenceDiagram
@@ -153,7 +155,9 @@ consolidée.
 - **TLS, HSTS et CSP** : ils appartiennent au terminateur TLS, qui n'existe pas encore.
 - **Limitation de débit au frontal** : celle de l'application protège les identifiants, pas
   l'infrastructure.
-- **Analyse de dépendances et de conteneurs** dans la CI, qui relève du chantier CI/CD.
+- **Analyse des images de conteneur** dans la CI. Celle des dépendances, elle, est en place
+  (`pip-audit`, `npm audit`, Dependabot sur 5 écosystèmes), de même que le SAST Bandit. Voir
+  [50-cicd.md](50-cicd.md).
 - **Le fichier `environment.ts` de production** pointe encore sur `http://localhost:8000` en HTTP
   simple : dans cet état, le cookie `Secure` ne sera pas posé. Voir
   [31-contrat-authentification.md](31-contrat-authentification.md).
