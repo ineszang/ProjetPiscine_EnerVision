@@ -228,6 +228,14 @@ donc le contrat **depuis un fichier** (`-t /zap/wrk/openapi.json -O http://local
 renomme dans cette copie, sans toucher au contrat versionné, les deux schémas de sécurité aux noms
 accentués (`Jeton d'accès`, `Cookie de rafraîchissement`) que l'analyseur de ZAP peut refuser. La
 cause exacte du 400 n'est pas confirmée : si l'import échoue encore, `zap-logs/zap.log` la donne.
+Deuxième diagnostic (contrat importé, 81 endpoints) : **toutes** les requêtes de ZAP recevaient un 400
+`Invalid HTTP request received` d'uvicorn, y compris `/api/v1/health/live` sans authentification,
+et le job restait vert. Un second garde-fou fait donc échouer le job si 100 % des réponses sont des
+4xx. Tant que la cause n'est pas établie, le job intercale `socat -v` entre ZAP et l'API (octets
+échangés publiés dans `zap-logs/`, jeton masqué) et lance uvicorn avec `--http h11` : uvicorn n'indique
+pas ce que son analyseur a refusé. Ce diagnostic est à retirer une fois le scan authentifié qui
+fonctionne.
+
 Piège de permissions : le dossier `zap-out` appartient à l'uid 1000 du conteneur, le runner n'y écrit
 plus après le `chown` ; les journaux vont donc dans `zap-logs/`, que le runner possède.
 

@@ -94,10 +94,22 @@ jobs:
         run: uv run --frozen --no-sync --no-build alembic upgrade head
         working-directory: apps/backend
 
+      # Diagnostic (à retirer une fois le scan authentifié qui fonctionne) : au deuxième passage
+      # ZAP importait bien le contrat (81 endpoints) mais TOUTES ses requêtes recevaient un 400
+      # « Invalid HTTP request received » d'uvicorn, y compris `/health/live` sans authentification.
+      # uvicorn (httptools) ne dit pas ce qui l'a fait refuser. `socat -v` s'intercale sur le port
+      # 8000 et journalise les octets échangés, sans rien modifier.
+      - name: Installe socat
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq socat
+
+      # L'API écoute sur 8001, `socat` relaie 8000 vers elle. `--http h11` : autre analyseur que
+      # httptools (llhttp, strict), au cas où c'est lui qui refuse les requêtes de ZAP.
       - name: Démarre l'API
         run: |
-          nohup uv run --frozen --no-sync --no-build uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 \
-            > "$RUNNER_TEMP/api.log" 2>&1 &
+          nohup uv run --frozen --no-sync --no-build uvicorn app.main:create_app --factory \
+            --http h11 --host 127.0.0.1 --port 8001 > "$RUNNER_TEMP/api.log" 2>&1 &
+          nohup socat -v -d TCP-LISTEN:8000,fork,reuseaddr TCP:127.0.0.1:8001 \
+            > /dev/null 2> "$RUNNER_TEMP/socat.log" &
           for _ in $(seq 1 30); do
             curl -fsS http://localhost:8000/api/v1/health/ready >/dev/null 2>&1 && exit 0
             sleep 2
@@ -169,6 +181,12 @@ jobs:
           mkdir -p zap-logs
           cp "$RUNNER_TEMP/zap-stdout.log" zap-logs/zap-stdout.log || true
           docker cp zap:/home/zap/.ZAP/zap.log zap-logs/zap.log || true
+          cp "$RUNNER_TEMP/api.log" zap-logs/api.log || true
+          # Octets échangés entre ZAP et l'API : début du dump, et contexte du premier 400. Le
+          # jeton (valable une heure, base jetable) est masqué avant publication.
+          masque() { sed -E 's/(Authorization: Bearer )[A-Za-z0-9._-]+/\1[MASQUE]/Ig'; }
+          head -c 200000 "$RUNNER_TEMP/socat.log" | masque > zap-logs/socat-debut.log || true
+          grep -n -m3 -B14 -A3 "400 Bad Request" "$RUNNER_TEMP/socat.log" | masque > zap-logs/socat-premier-400.log || true
           docker rm -f zap >/dev/null 2>&1 || true
 
       # `continue-on-error` sur le scan ne doit pas faire passer pour vert un scan qui n'a rien
@@ -182,6 +200,20 @@ jobs:
           echo "URL importées depuis le contrat OpenAPI : ${importees:-aucune}"
           if [ "${importees:-0}" -lt "$minimum" ]; then
             echo "::error::ZAP n'a importé que ${importees:-0} URL du contrat OpenAPI (minimum attendu : $minimum). Le scan n'a pas testé l'API, voir zap-logs/zap.log dans l'artefact zap-report."
+            exit 1
+          fi
+
+      # Deuxième garde-fou : le contrat peut être importé et ZAP n'obtenir que des 4xx (constaté au
+      # deuxième passage : 81 endpoints, 100 % de 400, job vert). Un scan dont toutes les réponses
+      # sont des erreurs client n'a rien testé de l'API.
+      - name: Vérifie que l'API a répondu autre chose que des erreurs client
+        run: |
+          if [ ! -f zap-out/zap-report.md ]; then
+            echo "::error::Aucun rapport ZAP produit : le scan n'a rien testé."
+            exit 1
+          fi
+          if grep -q "status code 4xx | 100 %" zap-out/zap-report.md; then
+            echo "::error::100 % des réponses sont des erreurs client (4xx) : le scan n'a rien testé de l'API. Voir zap-logs/socat-premier-400.log dans l'artefact zap-report."
             exit 1
           fi
 
