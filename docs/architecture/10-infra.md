@@ -40,13 +40,15 @@ seule la base tourne en conteneur, l'API et `ng serve` tournent sur le poste ave
 des deux seul). Le service `backend` sert la stack complète et la recette. Les deux occupent le
 port 8000, ils ne se lancent donc pas ensemble.
 
-Deux pièges sont documentés en tête du `docker-compose.yml`, ils ne se devinent pas :
+Trois pièges sont documentés en tête du `docker-compose.yml`, ils ne se devinent pas :
 
 - `PGDATA` vaut `/home/postgres/pgdata/data` pour l'image `-ha`, et non le chemin habituel de
   l'image `postgres`. Monté ailleurs, le volume ne retient rien, sans le moindre message.
 - `db/init` est monté **fichier par fichier**. Monter le dossier masquerait les scripts d'init de
   l'image, dont `timescaledb-tune`. Ajouter un fichier dans `db/init/` impose donc une ligne dans
   le compose. Voir [`db/README.md`](../../db/README.md).
+- `LocalExecutor` exécute les tâches comme sous-processus du **scheduler**, jamais du webserver :
+  c'est le scheduler qui a besoin du volume `airflow_ml_state` (modèle, magasin MLflow).
 
 ### Airflow (`ml_train`/`ml_score`, issue #115)
 
@@ -64,6 +66,27 @@ l'image doit pouvoir `COPY` `ml/pyproject.toml`/`ml/uv.lock`/`ml/enervision_ml` 
 synchroniser un second environnement Python **3.14** (`/opt/ml/.venv`, `uv sync --locked` à la
 construction), distinct du Python 3.12 qui fait tourner Airflow lui-même. Les DAGs shellent vers
 ce venv plutôt que d'importer LightGBM/MLflow dans le process Airflow.
+
+`airflow-init` s'appuie sur l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`,
+`_AIRFLOW_WWW_USER_*`) plutôt que sur un script maison : l'entrypoint porte le code de sortie, une
+migration ratée (typiquement la base `airflow` absente, cf. ci-dessous) fait échouer le service et
+`webserver`/`scheduler` ne démarrent pas sur une base non migrée. Le mot de passe du compte admin
+passe par l'environnement, jamais par `argv` (ni `ps`, ni `docker compose config`).
+
+Les variables `AIRFLOW_*` ne sont volontairement pas en `${VAR:?}` : Compose interpole le fichier
+entier avant de filtrer les services, une variable requise manquante casserait `make db-up`,
+`make dev`... pour tout poste dont le `.env` est antérieur. Elles valent `${VAR:-}` et c'est
+`airflow-init` qui refuse de démarrer (clé Fernet, clé Flask ou mot de passe vides).
+
+**Pourquoi `ml_train` est manuel.** Réentraîner est coûteux et sa cadence n'est pas une décision
+prise. Surtout, `train.py` écrase le modèle sans comparer ses métriques à celles de l'ancien : un
+cron déploierait silencieusement un modèle dégradé. Tant que ce garde-fou n'existe pas, le
+déclenchement reste humain. `ml_score`, lui, est planifié à l'heure, avec `max_active_runs=1`
+(pas deux scorings simultanés dans `prediction`), 2 tentatives et un plafond de 30 minutes.
+
+CI : `.github/workflows/airflow.yml` (Python 3.12 via `etl/airflow/.python-version`) lance lint et
+tests d'intégrité des DAGs, et construit l'image (elle `COPY` `ml/`, une modification de `ml/`
+peut donc la casser) avant de vérifier que le pipeline s'y importe sans réseau.
 
 Piège à connaître : sur un volume `pgdata` déjà peuplé (poste de dev existant plutôt que premier
 `make db-up`), `db/init/120-airflow-database.sql` ne se rejoue pas (PostgreSQL n'exécute

@@ -8,7 +8,7 @@ ce DAG ne reentraine jamais rien. Si aucun modele n'a encore ete entraine, la ta
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from airflow.models.dag import DAG
 from airflow.operators.bash import BashOperator
@@ -21,13 +21,21 @@ with DAG(
     schedule="@hourly",
     start_date=datetime(2026, 1, 1),
     catchup=False,
+    # Deux scorings qui se chevauchent inseraient en meme temps dans `prediction` (pas de contrainte
+    # d'unicite sur `(site_id, target_at)`, chaque run garde sa ligne).
+    max_active_runs=1,
     tags=["ml"],
 ) as dag:
-    # `--frozen --no-dev` : cf. `ml_train.py`, meme raisonnement.
+    # `--no-sync`, `env -u VIRTUAL_ENV` : cf. `ml_train.py`, meme raisonnement.
     BashOperator(
         task_id="score",
         bash_command=(
-            "cd /opt/ml && uv run --frozen --no-dev python -m enervision_ml.score "
+            "cd /opt/ml && env -u VIRTUAL_ENV uv run --no-sync python -m enervision_ml.score "
             f"--model {MODEL_PATH}"
         ),
+        # Un incident transitoire sur Postgres ne doit pas faire perdre le creneau horaire.
+        retries=2,
+        retry_delay=timedelta(minutes=2),
+        # Bien en dessous du pas horaire : un scoring pendu ne doit pas empieter sur le suivant.
+        execution_timeout=timedelta(minutes=30),
     )

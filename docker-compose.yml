@@ -16,17 +16,20 @@ x-airflow-common: &airflow-common
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?}
-    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?}
+    # Piege : pas de `:?` sur les secrets Airflow. Compose interpole le fichier entier avant de
+    # filtrer les services : une variable requise manquante casserait aussi `make db-up`,
+    # `make dev`... pour quiconque n'a pas encore complete son `.env`. Le refus est porte par
+    # `airflow-init` (ci-dessous), dont `webserver` et `scheduler` dependent.
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-}
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/airflow
-    # Role `enervision_ml` dedie pas encore provisionne (dette assumee, cf. ADR 0003/CLAUDE.md) :
+    # Role `enervision_ml` dedie pas encore provisionne (dette assumee, cf. ADR 0003) :
     # memes identifiants que le backend en attendant.
     ML_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     MLFLOW_TRACKING_URI: sqlite:////opt/ml/state/mlflow.db
   volumes:
     - ./etl/airflow/dags:/opt/airflow/dags
     - ./etl/airflow/plugins:/opt/airflow/plugins
-    - ./etl/airflow/include:/opt/airflow/include
     - airflow_logs:/opt/airflow/logs
     - airflow_ml_state:/opt/ml/state
   restart: unless-stopped
@@ -98,25 +101,35 @@ services:
       - "${FRONTEND_PORT:-3000}:80"
     restart: unless-stopped
 
-  # Conteneur unique, jamais redemarre : migre la base de metadonnees puis cree le premier compte
-  # (idempotent, `|| true` sur la creation qui echoue si le compte existe deja). `webserver` et
-  # `scheduler` attendent qu'il se termine avec succes avant de demarrer.
+  # Conteneur unique, jamais redemarre. La migration et la creation du premier compte sont
+  # portees par l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`, `_AIRFLOW_WWW_USER_*`), qui porte
+  # aussi leur code de sortie : une migration ratee (ex. base `airflow` absente sur un volume
+  # `pgdata` deja peuple) fait echouer ce service, et `webserver`/`scheduler`, qui attendent son
+  # succes, ne demarrent pas sur une base non migree. Le mot de passe passe par l'environnement,
+  # jamais par `argv` (ni `ps`, ni `docker compose config`).
+  # Sans mot de passe, l'entrypoint refuse lui-meme de creer le compte ; la commande ci-dessous
+  # refuse en plus les deux cles de chiffrement vides.
   airflow-init:
     <<: *airflow-common
     restart: "no"
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-}
+      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@enervision.fr}
+    depends_on:
+      db:
+        condition: service_healthy
     command:
       - bash
       - -c
       - |
-        airflow db migrate
-        airflow users create \
-          --username "${AIRFLOW_ADMIN_USERNAME:-admin}" \
-          --password "${AIRFLOW_ADMIN_PASSWORD:?}" \
-          --firstname Admin \
-          --lastname EnerVision \
-          --role Admin \
-          --email "${AIRFLOW_ADMIN_EMAIL:-admin@enervision.fr}" \
-          || true
+        set -euo pipefail
+        : "$${AIRFLOW__CORE__FERNET_KEY:?AIRFLOW_FERNET_KEY manquant dans .env}"
+        : "$${AIRFLOW__WEBSERVER__SECRET_KEY:?AIRFLOW_WEBSERVER_SECRET_KEY manquant dans .env}"
+        exec airflow version
 
   airflow-webserver:
     <<: *airflow-common

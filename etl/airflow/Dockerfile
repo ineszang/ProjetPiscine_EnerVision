@@ -1,8 +1,7 @@
 # Image Airflow EnerVision : ajoute le projet ml/ dans son propre environnement Python 3.14,
-# distinct du Python 3.12 qui fait tourner Airflow lui-meme, pour que les DAGs puissent lancer
-# `uv run python -m enervision_ml.train`/`.score` en sous-processus (cf. docs/architecture/
-# 20-backend.md, section Détection d'alertes internes pour le meme raisonnement applique a
-# app/detection). Airflow ne devient jamais un consommateur direct de LightGBM/MLflow.
+# distinct du Python 3.12 qui fait tourner Airflow lui-meme (apache-airflow 2.10 ne supporte pas
+# 3.14), pour que les DAGs puissent lancer `uv run python -m enervision_ml.train`/`.score` en
+# sous-processus. Airflow ne devient jamais un consommateur direct de LightGBM/MLflow.
 FROM apache/airflow:2.10.4-python3.12
 
 # LightGBM est compile contre libgomp (OpenMP), absent de l'image de base (minimale, sans
