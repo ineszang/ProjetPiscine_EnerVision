@@ -1,4 +1,4 @@
-# Conventions de tests unitaires — Frontend
+# Conventions de tests unitaires : Frontend
 
 ## Outil
 Vitest (intégré nativement à Angular CLI, pas d'installation à faire).
@@ -83,3 +83,6 @@ describe('MonComposant', () => {
 ## Lancer les tests
 - Développement (mode watch) : `npm test`
 - Rapport de couverture (CI) : `npm run test:ci -- --coverage`, puis ouvrir `coverage/index.html`
+- Un fichier ou un dossier seulement :
+  `npx ng test --watch=false --coverage=false --include=src/app/core/services/alerts.service.spec.ts`
+  (répéter `--include` pour plusieurs cibles ; un dossier joue tous ses specs)

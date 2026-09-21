@@ -24,12 +24,13 @@ seule fois dans `src/styles.scss`. Disponibles partout sans import supplémentai
 | `--shadow-card` | Ombre portée des cartes |
 | `--space-1` à `--space-5` | Échelle d'espacement (0.35rem à 2.5rem) |
 
-Les classes de formulaire partagées (`.form-label`, `.form-input`, `.form-hint`) sont dans
-`apps/frontend/src/styles/_forms.scss`, importées globalement de la même façon. Elles
-s'appliquent directement à des `<label>`/`<input>` natifs liés par `formControlName` : pas de
-composant `ControlValueAccessor` dédié, le gain n'en vaut pas la complexité pour des formulaires
-aussi simples que ceux de ce projet. Les erreurs de formulaire, elles, s'affichent via
-`<ev-alert severity="danger">`, pas une classe dédiée.
+Les classes de formulaire partagées (`.form-label`, `.form-input`, `.form-select`, `.form-hint`)
+sont dans `apps/frontend/src/styles/_forms.scss`, importées globalement de la même façon. Elles
+s'appliquent directement à des `<label>`/`<input>`/`<select>` natifs, liés par `formControlName` ou
+par un simple `(change)` : pas de composant `ControlValueAccessor` dédié, le gain n'en vaut pas la
+complexité pour des formulaires aussi simples que ceux de ce projet. `.form-select` habille un
+`<select>` natif avec la bordure et le focus de `.form-input`, plus un chevron. Les erreurs de
+formulaire, elles, s'affichent via `<ev-alert severity="danger">`, pas une classe dédiée.
 
 La classe `.auth-page` (`apps/frontend/src/styles/_auth-page.scss`, importée globalement) porte
 le fond dégradé et le centrage commun aux pages d'authentification (`login`, `change-password`,
