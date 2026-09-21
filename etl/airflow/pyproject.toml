@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "DAGs d'orchestration EnerVision (Airflow)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "apache-airflow==2.10.4",
+    "apache-airflow==3.3.0",
 ]
 
 [dependency-groups]
