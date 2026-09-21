@@ -57,3 +57,27 @@ jobs:
       # synthetiques ou un magasin SQLite local jetable (cf. ml/tests/test_train.py).
       - name: Tests
         run: uv run pytest
+
+  sast:
+    name: Analyse statique de sécurité
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: ml/uv.lock
+
+      - name: Analyse le code livré (bloquant à partir de MEDIUM)
+        run: uvx bandit --recursive enervision_ml --severity-level medium --confidence-level medium
+
+      - name: Rapport complet, tous niveaux
+        continue-on-error: true
+        run: uvx bandit --recursive enervision_ml
