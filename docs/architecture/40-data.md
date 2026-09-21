@@ -226,8 +226,9 @@ et ne sont pas considérées comme des alertes actuelles.
 
 Les lignes de `recommendation` sont écrites par le moteur de règles du backend
 (`app/services/recommendation_rules.py`), déclenché par `POST /api/v1/recommendations/generate`
-ou par `make recommendations`. Le couple `(alert_id, rule_reference)` est unique : rejouer le
-moteur sur les mêmes alertes n'ajoute aucune ligne.
+ou par `make recommendations`, à partir des alertes déjà en base. Le couple
+`(alert_id, rule_reference)` est unique : rejouer le moteur sur les mêmes alertes n'ajoute aucune
+ligne.
 
 ### Relations entre les tables
 

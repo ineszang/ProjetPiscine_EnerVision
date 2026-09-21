@@ -57,9 +57,13 @@ n'oblige à exposer un port pour régénérer des recommandations.
   fenêtre entre le contrôle et l'insertion. Corollaire : `rule_reference` est une clé fonctionnelle.
   Une règle dont le sens change prend une référence `-v2` ; renommer une référence livrée
   ferait réapparaître ses recommandations à côté des anciennes.
-- **Le moteur ne produira rien tant que `alert` restera vide.** Aucun code ne produit aujourd'hui
-  de ligne d'alerte : ni détection interne (#104), ni ingestion de l'API Mock `/alerts`. La chaîne
-  s'allume d'elle-même le jour où l'une des deux existe, sans retoucher le moteur.
+- **Le moteur est branché sur la détection interne, et sur elle seule.** `alert` est alimentée
+  par `app/detection/internal_alerts.py` (#104), lancée à la main comme `enervision_ml.score` ;
+  l'ingestion de l'API Mock `/alerts` reste à faire. Le rapport de génération est donc à zéro tant
+  que la détection n'a pas tourné, sans que le moteur soit à retoucher.
+- **L'insertion est découpée en lots.** `create_missing()` écrit par paquets de `TAILLE_DE_LOT`
+  lignes : asyncpg plafonne une requête à 32 767 paramètres, soit 8 191 lignes de quatre colonnes,
+  et la détection interne peut alimenter `alert` au fil de l'eau.
 - Si le projet devait un jour pondérer les recommandations par un score appris, la décision serait
   à rouvrir : le moteur redeviendrait consommateur du pipeline ML.
 

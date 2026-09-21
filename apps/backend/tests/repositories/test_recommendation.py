@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.energy import Alert, Recommendation, Site
+from app.repositories import recommendation as module_recommendation
 from app.repositories.recommendation import NouvelleRecommandation, RecommendationRepository
 
 pytestmark = pytest.mark.integration
@@ -123,3 +124,19 @@ async def test_create_missing_returns_zero_without_any_proposal(session: AsyncSe
     creees = await RecommendationRepository(session).create_missing([])
 
     assert creees == 0
+
+
+async def test_create_missing_inserts_every_proposal_across_several_batches(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(module_recommendation, "TAILLE_DE_LOT", 2)
+    depot = RecommendationRepository(session)
+    alert_id = await creer_alerte(session)
+    propositions = [nouvelle(alert_id, f"regle-{index}-v1") for index in range(5)]
+
+    creees = await depot.create_missing(propositions)
+    enregistrees = [r for r in await depot.list_all() if r.alert_id == alert_id]
+    await session.rollback()
+
+    assert creees == 5
+    assert len(enregistrees) == 5

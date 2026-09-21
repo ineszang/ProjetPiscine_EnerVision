@@ -206,7 +206,9 @@ le rapport rendu distingue `recommendations_created` de `already_present`. Le m�
 disponible hors HTTP par `python -m app.cli generate-recommendations` (cible `make
 recommendations`), sur le patron de `make ml-score`. Le choix de loger le moteur dans le backend
 plutôt que dans `ml/` est justifié par l'[ADR 0006](../adr/0006-moteur-de-regles-dans-le-backend.md).
-Tant qu'aucune source n'alimente `alert`, la route est fonctionnelle mais rend un rapport à zéro.
+Les alertes traitées sont celles qu'écrit la détection interne (#104, section ci-dessous) : la
+génération ne rend donc de recommandations qu'une fois la détection passée. L'insertion est
+découpée en lots de `TAILLE_DE_LOT` lignes, asyncpg plafonnant une requête à 32 767 paramètres.
 
 `GET /readings` reprend le même gabarit mais s'en écarte sur un point : `reading` est l'hypertable,
 donc la seule table métier pouvant porter des années d'historique, ce que `docs/architecture/
