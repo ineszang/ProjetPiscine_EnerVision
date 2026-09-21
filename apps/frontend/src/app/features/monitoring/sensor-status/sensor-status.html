@@ -28,15 +28,17 @@
 
           <ul class="sensor-list">
             @for (entry of sensorEntries; track entry[0]) {
+              @let diagnostic = sensorOf(site.sensors, entry[0]);
               <li class="sensor-item">
-                <span
-                  class="sensor-dot"
-                  [class]="'sensor-dot--' + sensorOf(site.sensors, entry[0]).status"
-                ></span>
+                <span class="sensor-dot" [class]="'sensor-dot--' + diagnostic.status"></span>
                 <span class="sensor-item__label">{{ entry[1] }}</span>
-                @if (sensorOf(site.sensors, entry[0]).status === 'failing') {
+                @if (diagnostic.status === 'failing') {
                   <span class="sensor-item__since">
-                    depuis {{ sensorOf(site.sensors, entry[0]).since | date: 'short' }}
+                    @if (diagnostic.since; as since) {
+                      dernière lecture le {{ since | date: 'dd/MM/yyyy HH:mm' }}
+                    } @else {
+                      aucune lecture reçue
+                    }
                   </span>
                 }
               </li>

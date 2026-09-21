@@ -24,10 +24,10 @@ export const routes: Routes = [
       import('./features/sites/site-detail/site-detail').then((m) => m.SiteDetail),
   },
   {
-  path: 'monitoring/sensors',
-  canActivate: [authGuard],
-  data: { role: 'admin' },
-  loadComponent: () =>
-    import('./features/monitoring/sensor-status/sensor-status').then((m) => m.SensorStatusView),
-},
+    path: 'monitoring/sensors',
+    canActivate: [authGuard],
+    data: { role: 'admin' },
+    loadComponent: () =>
+      import('./features/monitoring/sensor-status/sensor-status').then((m) => m.SensorStatusView),
+  },
 ];

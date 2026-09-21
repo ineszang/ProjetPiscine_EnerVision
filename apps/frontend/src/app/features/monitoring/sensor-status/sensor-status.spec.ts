@@ -79,21 +79,44 @@ describe('SensorStatusView', () => {
     expect(component.sensorOf(OK_SENSORS, 'temperature')).toEqual({ status: 'ok', since: null });
   });
 
-  it('affiche la date depuis quand un capteur est en panne', () => {
-  const sensors: SiteSensors = {
-    ...OK_SENSORS,
-    temperature: { status: 'failing', since: '2026-09-18T08:00:00' },
-  };
-  sensorsMock.getStatus.mockReturnValue(
-    of({
-      timestamp: '2026-09-18T08:00:00',
-      sites: [{ site_id: 'SITE001', site_name: 'Bureau Test', overall: 'degraded', sensors }],
-    })
-  );
+  it('affiche la date de la dernière lecture reçue pour un capteur en panne', () => {
+    const sensors: SiteSensors = {
+      ...OK_SENSORS,
+      temperature: { status: 'failing', since: '2026-09-18T08:00:00' },
+    };
+    sensorsMock.getStatus.mockReturnValue(
+      of({
+        timestamp: '2026-09-18T08:00:00',
+        sites: [{ site_id: 'SITE001', site_name: 'Bureau Test', overall: 'degraded', sensors }],
+      })
+    );
 
-  const fixture = TestBed.createComponent(SensorStatusView);
-  fixture.detectChanges();
+    const fixture = TestBed.createComponent(SensorStatusView);
+    fixture.detectChanges();
 
-  expect(fixture.nativeElement.textContent).toContain('depuis');
+    expect(fixture.nativeElement.textContent).toContain('dernière lecture le');
+    expect(fixture.nativeElement.textContent).toContain('18/09/2026 08:00');
+  });
+
+  it("annonce l'absence de lecture quand un site n'en a jamais reçu", () => {
+    const sensors: SiteSensors = {
+      consumption: { status: 'failing', since: null },
+      electrical: { status: 'failing', since: null },
+      temperature: { status: 'failing', since: null },
+      humidity: { status: 'failing', since: null },
+      network: { status: 'failing', since: null },
+    };
+    sensorsMock.getStatus.mockReturnValue(
+      of({
+        timestamp: '2026-09-18T08:00:00',
+        sites: [{ site_id: 'SITE001', site_name: 'Bureau Test', overall: 'critical', sensors }],
+      })
+    );
+
+    const fixture = TestBed.createComponent(SensorStatusView);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('aucune lecture reçue');
+    expect(fixture.nativeElement.textContent).not.toContain('dernière lecture le');
   });
 });
