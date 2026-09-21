@@ -89,3 +89,60 @@ async def test_list_all_returns_an_empty_list_when_there_is_nothing(
     alertes = await depot.list_all(site_id=identifiant_site())
 
     assert list(alertes) == []
+
+
+def _alerte_a_inserer(*, site_id: str, source_alert_id: str) -> Alert:
+    return Alert(
+        source_alert_id=source_alert_id,
+        site_id=site_id,
+        source="enervision",
+        timestamp=datetime(2026, 9, 16, tzinfo=UTC),
+        type="threshold",
+        severity="high",
+        message="Dépassement du seuil configuré",
+        value=812.5,
+        threshold=720.0,
+        metric="consumption_kw",
+        prediction_id=None,
+        raw_data={},
+    )
+
+
+async def test_create_many_inserts_every_alert(session: AsyncSession) -> None:
+    site = await creer_site(session)
+    depot = AlertRepository(session)
+
+    creees = await depot.create_many(
+        [
+            _alerte_a_inserer(site_id=site.site_id, source_alert_id="threshold:a"),
+            _alerte_a_inserer(site_id=site.site_id, source_alert_id="threshold:b"),
+        ]
+    )
+    identifiants = [a.alert_id for a in creees]
+    await session.rollback()
+
+    assert len(identifiants) == 2
+    assert all(identifiant is not None for identifiant in identifiants)
+
+
+async def test_create_many_skips_a_duplicate_source_alert_id(session: AsyncSession) -> None:
+    site = await creer_site(session)
+    depot = AlertRepository(session)
+    await depot.create_many(
+        [_alerte_a_inserer(site_id=site.site_id, source_alert_id="threshold:rejouee")]
+    )
+
+    rejouees = await depot.create_many(
+        [_alerte_a_inserer(site_id=site.site_id, source_alert_id="threshold:rejouee")]
+    )
+    await session.rollback()
+
+    assert rejouees == []
+
+
+async def test_create_many_does_nothing_for_an_empty_list(session: AsyncSession) -> None:
+    depot = AlertRepository(session)
+
+    creees = await depot.create_many([])
+
+    assert creees == []

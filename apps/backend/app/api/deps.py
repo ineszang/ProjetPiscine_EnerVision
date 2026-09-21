@@ -180,7 +180,12 @@ SiteServiceDep = Annotated[SiteService, Depends(get_site_service)]
 
 
 def get_alert_service(session: SessionDep) -> AlertService:
-    return AlertService(alerts=AlertRepository(session))
+    return AlertService(
+        alerts=AlertRepository(session),
+        readings=ReadingRepository(session),
+        predictions=PredictionRepository(session),
+        sites=SiteRepository(session),
+    )
 
 
 AlertServiceDep = Annotated[AlertService, Depends(get_alert_service)]
