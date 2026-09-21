@@ -8,7 +8,7 @@ AIRFLOW := etl/airflow
         dev dev-backend dev-frontend \
         lint format typecheck test test-cov test-integration check \
         openapi docker-build db-up db-down db-reset db-logs db-psql migrate bootstrap-admin \
-        ml-lint ml-typecheck ml-test ml-check ml-train ml-score \
+        ml-lint ml-typecheck ml-test ml-check ml-train ml-score recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs
 
 help: ## Liste les cibles disponibles
@@ -82,6 +82,9 @@ ml-train: ## Entraine le modele LightGBM. CSV=chemin optionnel, sinon lit ML_DAT
 
 ml-score: ## Score le prochain pas horaire et l'ecrit dans `prediction`. CSV=chemin optionnel
 	cd $(ML) && uv run python -m enervision_ml.score $(if $(CSV),--csv $(CSV),)
+
+recommendations: ## Genere les recommandations depuis les alertes en base. SITE=identifiant optionnel
+	cd $(BACKEND) && uv run python -m app.cli generate-recommendations $(if $(SITE),--site-id $(SITE),)
 
 airflow-lint: ## Analyse statique des DAGs Airflow
 	cd $(AIRFLOW) && uv run ruff check .

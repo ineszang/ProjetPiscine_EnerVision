@@ -192,7 +192,11 @@ AlertServiceDep = Annotated[AlertService, Depends(get_alert_service)]
 
 
 def get_recommendation_service(session: SessionDep) -> RecommendationService:
-    return RecommendationService(recommendations=RecommendationRepository(session))
+    return RecommendationService(
+        recommendations=RecommendationRepository(session),
+        alerts=AlertRepository(session),
+        transaction=session,
+    )
 
 
 RecommendationServiceDep = Annotated[RecommendationService, Depends(get_recommendation_service)]

@@ -1453,6 +1453,90 @@
         }
       }
     },
+    "/api/v1/recommendations/generate": {
+      "post": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "Génère les recommandations à partir des alertes",
+        "operationId": "generate_recommendations_api_v1_recommendations_generate_post",
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "site_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationGenerationResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droits insuffisants, ou mot de passe provisoire à changer quand `detail` vaut `password_change_required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps invalide. Le détail nomme le champ fautif et le type d'erreur, jamais la valeur envoyée.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/stats/summary": {
       "get": {
         "tags": [
@@ -2344,6 +2428,29 @@
         ],
         "title": "ReadingSource"
       },
+      "RecommendationGenerationResponse": {
+        "properties": {
+          "alerts_examined": {
+            "type": "integer",
+            "title": "Alerts Examined"
+          },
+          "recommendations_created": {
+            "type": "integer",
+            "title": "Recommendations Created"
+          },
+          "already_present": {
+            "type": "integer",
+            "title": "Already Present"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alerts_examined",
+          "recommendations_created",
+          "already_present"
+        ],
+        "title": "RecommendationGenerationResponse"
+      },
       "RecommendationResponse": {
         "properties": {
           "recommendation_id": {
@@ -3153,7 +3260,7 @@
     },
     {
       "name": "recommendations",
-      "description": "Consultation des recommandations issues des alertes. Accessible à partir du rôle `lecteur`."
+      "description": "Consultation des recommandations issues des alertes. Accessible à partir du rôle `lecteur`. Leur génération par le moteur de règles est réservée au rôle `admin`."
     },
     {
       "name": "stats",
