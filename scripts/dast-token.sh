@@ -28,8 +28,10 @@ nouveau_mot_de_passe() { echo "Dast-$(openssl rand -hex 12)-Aa1!"; }
 journal() { echo "dast-token: $*" >&2; }
 
 connexion() {
+    local email="$1" mot_de_passe="$2"
     curl -fsS -X POST "$API/auth/login" -H 'Content-Type: application/json' \
-        -d "$(jq -n --arg e "$1" --arg p "$2" '{email:$e, password:$p}')" | jq -r '.access_token'
+        -d "$(jq -n --arg e "$email" --arg p "$mot_de_passe" '{email:$e, password:$p}')" \
+        | jq -r '.access_token'
 }
 
 changer_mot_de_passe() {
@@ -40,7 +42,7 @@ changer_mot_de_passe() {
 }
 
 journal "création de l'administrateur $EMAIL_ADMIN"
-SORTIE="$(uv run python -m app.cli create-admin --email "$EMAIL_ADMIN" --generate)"
+SORTIE="$(uv run --frozen --no-sync --no-build python -m app.cli create-admin --email "$EMAIL_ADMIN" --generate)"
 MDP_ADMIN="$(sed -n 's/^Mot de passe généré, il ne sera plus affiché : //p' <<<"$SORTIE")"
 [[ -n "$MDP_ADMIN" ]] || { journal "mot de passe administrateur introuvable dans la sortie"; exit 1; }
 

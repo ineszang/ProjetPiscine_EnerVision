@@ -214,7 +214,14 @@ Les routes d'authentification qui changent l'état du compte (`login`, `password
 `forgot-password`, `reset-password`) sont exclues du scan actif : elles y déclencheraient la
 limitation de débit et fermeraient les sessions sans rien apprendre de plus.
 
-**Non bloquant pour l'instant** (`continue-on-error`). Le volume d'alertes d'un premier passage est
+**Un scan vert n'est pas un scan qui a testé quelque chose.** Au premier passage, le job était vert
+alors que ZAP n'avait importé que **2 URL sur 26 opérations** du contrat (`Number of Imported URLs:
+2`) : il n'avait envoyé que des requêtes vouées au 404, sans jamais atteindre une route gardée
+(rapport : 100 % de réponses 4xx, zéro alerte). ZAP « réussit » dans ce cas. Le job porte donc un
+garde-fou qui, lui, **bloque** : il échoue si moins de 10 URL sont importées. Le journal interne de
+ZAP (`zap.log`) est publié dans l'artefact `zap-report` pour diagnostiquer un import raté.
+
+**Non bloquant pour l'instant** (`continue-on-error`) pour ce qui est des alertes. Le volume d'alertes d'un premier passage est
 inconnu ; le rapport HTML/JSON/Markdown est publié en artefact `zap-report` et dans le résumé du
 job. Fixer un seuil viendra une fois les alertes triées.
 

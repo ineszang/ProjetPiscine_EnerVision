@@ -69,7 +69,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        # Épinglé sur le commit du tag v5 (règle Sonar githubactions:S7637).
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
@@ -78,20 +79,24 @@ jobs:
         run: uv python install
         working-directory: apps/backend
 
+      # `--no-build` : aucune dépendance n'est construite depuis ses sources, donc aucun script de
+      # build exécuté (règle Sonar S8541). Le projet lui-même n'est pas installé : il tourne depuis
+      # `apps/backend`, comme dans son Dockerfile. Les `uv run` suivants portent `--frozen
+      # --no-sync` pour ne rien résoudre ni reconstruire (règle S8544).
       - name: Synchronise les dépendances sans dévier du verrou
-        run: uv sync --frozen --no-dev
+        run: uv sync --frozen --no-dev --no-install-project --no-build
         working-directory: apps/backend
 
       - name: Active TimescaleDB sur la base du scan
         run: psql -h localhost -p 5433 -U enervision -d enervision_dast -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
 
       - name: Applique les migrations
-        run: uv run alembic upgrade head
+        run: uv run --frozen --no-sync --no-build alembic upgrade head
         working-directory: apps/backend
 
       - name: Démarre l'API
         run: |
-          nohup uv run uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 \
+          nohup uv run --frozen --no-sync --no-build uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 \
             > "$RUNNER_TEMP/api.log" 2>&1 &
           for _ in $(seq 1 30); do
             curl -fsS http://localhost:8000/api/v1/health/ready >/dev/null 2>&1 && exit 0
@@ -110,21 +115,27 @@ jobs:
           echo "jeton=$jeton" >> "$GITHUB_OUTPUT"
         working-directory: apps/backend
 
-      # `--network host` : ZAP atteint l'API sur le localhost du runner. Le dossier de sortie doit
-      # être inscriptible par l'utilisateur du conteneur (uid 1000).
+      # `--network host` : ZAP atteint l'API sur le localhost du runner. Le dossier de sortie
+      # appartient à l'utilisateur du conteneur (uid 1000), sans droits d'écriture pour les autres
+      # (règle Sonar S2612 : pas de `chmod 777`).
       #
       # Les routes d'authentification qui changent l'état du compte du scan sont exclues : un
       # scan actif y déclencherait la limitation de débit du login, la réinitialisation de mots de
       # passe et la fermeture des sessions, sans rien apprendre de plus.
+      #
+      # Le conteneur n'est pas jetable (`--rm`) : son journal interne (`zap.log`) est copié en
+      # sortie, c'est lui qui dit pourquoi un import OpenAPI a échoué.
       - name: Scan ZAP
         id: zap
         continue-on-error: true
         run: |
-          mkdir -p zap-out && chmod 777 zap-out
-          docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" \
+          set -o pipefail
+          mkdir -p zap-out
+          sudo chown 1000:1000 zap-out
+          docker run --name zap --network host -v "$PWD/zap-out:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py \
             -t http://localhost:8000/openapi.json -f openapi \
-            -T 30 \
+            -T 30 -d \
             -r zap-report.html -J zap-report.json -w zap-report.md \
             -z "-config replacer.full_list(0).description=auth \
                 -config replacer.full_list(0).enabled=true \
@@ -134,7 +145,29 @@ jobs:
                 -config replacer.full_list(0).replacement='Bearer ${{ steps.jeton.outputs.jeton }}' \
                 -config globalexcludeurl.url_list.url(0).description=auth-etat \
                 -config globalexcludeurl.url_list.url(0).enabled=true \
-                -config globalexcludeurl.url_list.url(0).regex='.*/api/v1/auth/(login|password|logout-all|forgot-password|reset-password).*'"
+                -config globalexcludeurl.url_list.url(0).regex='.*/api/v1/auth/(login|password|logout-all|forgot-password|reset-password).*'" \
+            2>&1 | tee "$RUNNER_TEMP/zap-stdout.log"
+
+      - name: Récupère les journaux de ZAP
+        if: always()
+        run: |
+          cp "$RUNNER_TEMP/zap-stdout.log" zap-out/zap-stdout.log 2>/dev/null || true
+          docker cp zap:/home/zap/.ZAP/zap.log zap-out/zap.log 2>/dev/null || true
+          docker rm -f zap >/dev/null 2>&1 || true
+
+      # `continue-on-error` sur le scan ne doit pas faire passer pour vert un scan qui n'a rien
+      # testé : ZAP « réussit » aussi quand l'import du contrat n'a chargé que quelques URL, et
+      # ne teste alors que des 404 (constaté au premier passage : 2 URL importées sur 26
+      # opérations). Les alertes restent non bloquantes, ce garde-fou-là bloque.
+      - name: Vérifie que le contrat a bien été importé
+        run: |
+          importees="$(sed -n 's/.*Number of Imported URLs: \([0-9]*\).*/\1/p' zap-out/zap-stdout.log | tail -1)"
+          minimum=10
+          echo "URL importées depuis le contrat OpenAPI : ${importees:-aucune}"
+          if [ "${importees:-0}" -lt "$minimum" ]; then
+            echo "::error::ZAP n'a importé que ${importees:-0} URL du contrat OpenAPI (minimum attendu : $minimum). Le scan n'a pas testé l'API, voir zap-out/zap.log dans l'artefact zap-report."
+            exit 1
+          fi
 
       - name: Publie le résumé
         if: always()
