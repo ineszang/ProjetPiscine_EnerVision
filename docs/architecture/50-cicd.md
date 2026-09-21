@@ -60,12 +60,17 @@ flowchart TB
 
 Les cinq workflows se déclenchent sur `push` **et** sur `pull_request`, filtrés par **chemin** :
 `backend.yml` sur `apps/backend/**`, `frontend.yml` sur `apps/frontend/**`, `ml.yml` sur `ml/**`,
-`airflow.yml` sur `etl/airflow/**` **et sur `ml/**`**, chacun incluant son propre fichier de
-workflow dans le filtre pour qu'une modification du pipeline déclenche le pipeline.
+`airflow.yml` sur `etl/airflow/**` **plus des chemins de `ml/` et de `apps/backend/`**, chacun
+incluant son propre fichier de workflow dans le filtre pour qu'une modification du pipeline
+déclenche le pipeline.
 
-Le filtre d'`airflow.yml` mérite un mot : il inclut `ml/pyproject.toml`, `ml/uv.lock` et
-`ml/enervision_ml/**` parce que l'image Airflow copie le code et les dépendances du module ML.
-Une modification de `ml/` peut donc casser la construction de cette image, et le filtre le voit.
+Le filtre d'`airflow.yml` mérite un mot : il inclut `ml/pyproject.toml`, `ml/uv.lock`,
+`ml/enervision_ml/**`, `apps/backend/pyproject.toml`, `apps/backend/uv.lock` et
+`apps/backend/app/**` parce que l'image Airflow copie le code et les dépendances des deux
+modules : celles du ML pour `ml_train`/`ml_score`, celles du backend depuis que le DAG `alertes`
+y exécute les commandes de détection ([ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md)).
+Une modification de l'un ou l'autre peut donc casser la construction de cette image, et le filtre
+le voit.
 
 **Piège à connaître** : il n'y a **aucun filtre de branche**. Une branche de travail déclenche la
 CI complète à chaque push, et un merge vers n'importe quelle branche la déclenche aussi. C'est
@@ -102,9 +107,14 @@ Deux seuils portent une décision qu'il faut savoir défendre :
   dépendance de développement ne doit pas immobiliser une livraison. Le corollaire est que les
   `moderate` sont invisibles en CI, et qu'elles se regardent à la main.
 - **Bandit bloque à partir de MEDIUM**, et une seconde passe sans seuil publie les constats LOW
-  sans bloquer. Sans cette seconde passe, un constat LOW disparaîtrait du journal sans trace. Au
+  sans bloquer. Sans cette seconde passe, un constat LOW disparaîtrait du journal sans trace. Le
+  revers à connaître : cette seconde étape porte `continue-on-error`, donc le job reste **vert**
+  même quand elle relève quelque chose ; un LOW ne se voit qu'en ouvrant le journal. Au
   21/09/2026, les deux modules sont à **zéro constat, tous niveaux confondus**, sur 5 904 lignes
   analysées.
+- **La version de Bandit est épinglée** (`uvx bandit==1.9.4`) dans les deux jobs. Sans épingle,
+  une nouvelle version passerait la CI au rouge sans qu'une seule ligne du dépôt ait changé, et
+  le rejeu à l'identique promis plus bas n'existerait pas.
 
 ## Le job d'intégration, et pourquoi il ne suffisait pas d'un `postgres`
 
@@ -142,10 +152,11 @@ contournée** en désactivant la gate ou en excluant les fichiers gênants.
 
 ## Dependabot
 
-`.github/dependabot.yml` déclare **cinq entrées hebdomadaires groupées** : `npm` sur
-`/apps/frontend`, `uv` sur `/apps/backend`, `github-actions` sur `/`, et `docker` sur les deux
-dossiers d'application. Les mises à jour arrivent en PR, donc elles traversent les mêmes gates que
-n'importe quel changement : une montée de version qui casse les tests ne se merge pas.
+`.github/dependabot.yml` déclare **six entrées hebdomadaires groupées, sur cinq écosystèmes** :
+`npm` sur `/apps/frontend`, `uv` sur `/apps/backend`, `github-actions` sur `/`, `docker` sur les
+deux dossiers d'application, et `docker-compose` sur `/`. Les mises à jour arrivent en PR, donc
+elles traversent les mêmes gates que n'importe quel changement : une montée de version qui casse
+les tests ne se merge pas.
 
 ## Stratégie de branche et conventions
 
@@ -163,7 +174,9 @@ n'importe quel changement : une montée de version qui casse les tests ne se mer
 Un seul secret est consommé par la CI : **`SONAR_TOKEN`**, porté par les dépôts GitHub Actions.
 Les identifiants de la base du job d'intégration sont des valeurs de test en clair dans le
 workflow, ce qui est volontaire : elles ne protègent rien, la base est créée et détruite avec le
-run. Aucune clé de déploiement n'existe encore, puisqu'il n'y a pas de déploiement (issue #22).
+run. Aucune clé de déploiement n'existe encore, puisqu'il n'y a pas de déploiement : le job de
+déploiement est porté par l'issue #21, les secrets qu'il consommera et leur injection par
+l'issue #22.
 
 ## Ce qui manque, et pourquoi
 
@@ -181,5 +194,6 @@ run. Aucune clé de déploiement n'existe encore, puisqu'il n'y a pas de déploi
 `verification`. `make ml-check` fait la même chose pour le module ML. Les tests d'intégration
 demandent une base : `make db-up` puis `uv run pytest -m integration`.
 
-Le SAST se rejoue à l'identique : `uvx bandit --recursive app --severity-level medium
---confidence-level medium` depuis `apps/backend`.
+Le SAST se rejoue à l'identique : `uvx bandit==1.9.4 --recursive app --severity-level medium
+--confidence-level medium` depuis `apps/backend`, et la même commande sur `enervision_ml` depuis
+`ml`.

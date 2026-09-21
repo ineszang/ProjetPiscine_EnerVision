@@ -161,9 +161,10 @@ flowchart LR
   `prediction` et leurs contraintes de cohérence, vérifiables en SQL.
 
 Le corollaire est qu'il n'y a **aucune prévision à la demande** : la fraîcheur d'une prévision est
-celle du dernier run de scoring. Tant que l'orchestration Airflow n'existe pas (`etl/airflow/` est
-vide), ce run est lancé à la main. C'est la dette la plus visible du module, et elle est portée
-par les issues #44 et #45.
+celle du dernier run de scoring. Ce run est ordonnancé par Airflow, DAG `ml_score` en `@hourly`
+(issue #115) ; seuls le mode `--csv` et un lancement local restent manuels, tout comme
+l'entraînement, dont le DAG `ml_train` n'a pas de planification. La dette qui subsiste est la
+surveillance de dérive, portée par les issues #44 et #45.
 
 ---
 
