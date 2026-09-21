@@ -134,6 +134,13 @@ Compose.
   `/sites`, `authInterceptor` pose le jeton porteur sur les requêtes sortantes et déclenche le
   rafraîchissement sur 401. Détail complet dans
   [31-contrat-authentification.md](31-contrat-authentification.md).
+- **La CSP posée par le reverse proxy contraint le build.** `script-src 'self'` interdit les
+  gestionnaires d'événements en ligne ; l'inlining du CSS critique en produisait un
+  (`<link media="print" onload="this.media='all'">`), ce qui aurait laissé l'application sans
+  style derrière le proxy. D'où `optimization.styles.inlineCritical: false` dans la configuration
+  de production d'`angular.json`. La contrepartie est un rendu non stylé très bref au premier
+  affichage. `style-src` conserve `'unsafe-inline'` : Angular injecte les styles de composants à
+  l'exécution, et s'en passer demanderait un `ngCspNonce` que le SPA statique ne peut pas produire.
 
 ## Tests
 

@@ -5,10 +5,10 @@ AIRFLOW := etl/airflow
 COMPOSE_PROD := docker compose -f docker-compose.yml -f docker-compose.prod.yml
 
 # Piège : sans `export`, une valeur passée en ligne de commande n'atteindrait pas docker compose.
-# Le `ifdef` évite d'exporter une valeur vide, qui masquerait alors celle du fichier `.env`.
-ifdef PUBLIC_HOST
+# PUBLIC_HOST retombe sur le `.env`, que make ne lit pas, puis sur la valeur de `.env.example`.
+PUBLIC_HOST ?= $(shell sed -n 's/^PUBLIC_HOST=//p' .env 2>/dev/null | tail -1)
+PUBLIC_HOST := $(or $(strip $(PUBLIC_HOST)),enervision.local)
 export PUBLIC_HOST
-endif
 ifdef ACME_EMAIL
 export ACME_EMAIL
 endif
@@ -119,11 +119,13 @@ docker-build: ## Construit l'image du backend
 	docker build -t enervision-backend:local $(BACKEND)
 
 tls-selfsigned: ## Génère le certificat de démonstration. PUBLIC_HOST=..., FORCE=1 pour écraser
-	PUBLIC_HOST=$${PUBLIC_HOST:-enervision.local} ./scripts/tls-selfsigned.sh $(if $(FORCE),--force,)
+	./scripts/tls-selfsigned.sh $(if $(FORCE),--force,)
 
-stack-up: ## Démarre la stack complète derrière le reverse proxy (80/443). PUBLIC_HOST=... requis
+stack-up: ## Démarre la stack complète derrière le reverse proxy (80/443). PUBLIC_HOST=... au besoin
 	@test -f infra/proxy/tls/fullchain.pem \
 		|| { echo "Aucun certificat dans infra/proxy/tls. Lancer d'abord make tls-selfsigned"; exit 1; }
+	@openssl x509 -in infra/proxy/tls/fullchain.pem -noout -checkhost "$(PUBLIC_HOST)" >/dev/null \
+		|| { echo "Le certificat ne couvre pas $(PUBLIC_HOST). Relancer make tls-selfsigned PUBLIC_HOST=$(PUBLIC_HOST) FORCE=1"; exit 1; }
 	$(COMPOSE_PROD) up -d --build
 
 stack-down: ## Arrête la stack complète en conservant les données
@@ -132,9 +134,11 @@ stack-down: ## Arrête la stack complète en conservant les données
 stack-logs: ## Suit les journaux du reverse proxy
 	$(COMPOSE_PROD) logs -f proxy
 
-tls-acme: ## Demande un certificat Let's Encrypt. PUBLIC_HOST et ACME_EMAIL requis
+tls-acme: ## Demande un certificat Let's Encrypt. PUBLIC_HOST public et ACME_EMAIL requis
+	@test "$(PUBLIC_HOST)" != enervision.local \
+		|| { echo "PUBLIC_HOST doit être un domaine public résolvable, pas le nom de démonstration"; exit 1; }
 	$(COMPOSE_PROD) --profile acme run --rm certbot certonly --webroot -w /var/www/certbot \
-		-d $${PUBLIC_HOST:?PUBLIC_HOST=... requis} \
+		-d $(PUBLIC_HOST) \
 		--email $${ACME_EMAIL:?ACME_EMAIL=... requis} \
 		--agree-tos --no-eff-email --deploy-hook /deploy-hook.sh
 	$(COMPOSE_PROD) exec proxy nginx -s reload

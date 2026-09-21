@@ -103,7 +103,8 @@ curl -s localhost:8000/api/v1/health/ready
 
 ## Stack complète derrière le reverse proxy
 
-Pour servir l'application comme sur la machine cible, en HTTPS et sous une seule origine :
+Pour servir l'application comme sur la machine cible, en HTTPS et sous une seule origine.
+L'overlay emploie `!override` et `!reset`, donc **Docker Compose 2.24.4 ou plus récent** :
 
 ```bash
 make tls-selfsigned PUBLIC_HOST=enervision.local   # certificat de démonstration

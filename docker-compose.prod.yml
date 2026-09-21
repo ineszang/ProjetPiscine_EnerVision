@@ -3,6 +3,8 @@
 # rouvrirait `/docs`. Hors `local`, l'API exige en retour une origine CORS non vide.
 # Piège : les listes de ports se cumulent à la fusion des deux fichiers. `!reset` est le seul
 # moyen de dépublier 8000 et 3000 : sans lui, l'API resterait joignable en clair à côté du proxy.
+# Piège : pas de `:?` sur `PUBLIC_HOST`. Compose interpole tout le fichier, y compris pour
+# `stop` et `logs` : la garde vit dans `make stack-up`, qui la compare au certificat servi.
 
 name: enervision
 
@@ -35,8 +37,8 @@ services:
       APP_ENV: prod
       APP_DEBUG: "false"
       APP_TRUST_PROXY_HEADERS: "true"
-      APP_CORS_ORIGINS: https://${PUBLIC_HOST:?PUBLIC_HOST est requis pour la stack complète}
-      APP_FRONTEND_RESET_PASSWORD_URL: https://${PUBLIC_HOST}/reset-password
+      APP_CORS_ORIGINS: https://${PUBLIC_HOST:-enervision.local}
+      APP_FRONTEND_RESET_PASSWORD_URL: https://${PUBLIC_HOST:-enervision.local}/reset-password
 
   frontend:
     ports: !reset null
@@ -44,8 +46,10 @@ services:
   proxy:
     image: nginx:1.28-alpine
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
     ports:
       - "80:80"
       - "443:443"
@@ -57,7 +61,7 @@ services:
     restart: unless-stopped
 
   certbot:
-    image: certbot/certbot
+    image: certbot/certbot:v5.8.0
     profiles: ["acme"]
     volumes:
       - letsencrypt:/etc/letsencrypt

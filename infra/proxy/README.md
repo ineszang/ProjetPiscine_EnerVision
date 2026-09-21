@@ -12,14 +12,21 @@ Terminaison TLS et routage de la stack déployée. Seul composant publié sur le
 Pas de `Dockerfile` : l'image officielle `nginx:1.28-alpine` est utilisée telle quelle et la
 configuration est montée en volume par `docker-compose.prod.yml`.
 
+L'overlay emploie les marqueurs `!override` et `!reset`, qui demandent **Docker Compose 2.24.4
+ou plus récent**. Sur une version antérieure, la fusion échoue au lieu de dépublier les ports.
+
 ## Routage
 
 | Chemin | Destination | Remarque |
 |---|---|---|
 | `/.well-known/acme-challenge/` | `/var/www/certbot` sur le port 80 | Seul chemin non redirigé vers HTTPS |
-| `/api/v1/auth/` | `backend:8000` | Limitation de débit resserrée, 30 requêtes par minute |
-| `/api/` | `backend:8000` | Préfixe `/api/v1` préservé tel quel |
+| `/api/v1/auth/` + `login`, `password`, `forgot-password`, `reset-password` | `backend:8000` | Zone resserrée, 30 requêtes par minute |
+| `/api/` | `backend:8000` | Préfixe `/api/v1` préservé tel quel, 20 requêtes par seconde |
 | `/` | `frontend:3000` | Le SPA, qui renvoie `index.html` sur les routes inconnues |
+
+La zone resserrée ne couvre que les routes qui vérifient un secret. `/auth/me` et `/auth/refresh`
+partent à chaque chargement de page et restent dans la zone générale : derrière un NAT, où une
+seule adresse porte tous les postes, les y soumettre aurait produit des 429 en usage normal.
 
 L'interface Airflow, celle de Mailpit et la base ne passent pas par le proxy : l'overlay les
 ramène sur `127.0.0.1`, donc joignables par tunnel SSH et pas autrement. Les publier derrière le
@@ -67,6 +74,8 @@ Pour un domaine sans port 80 entrant, le défi DNS-01 est l'alternative : elle d
 greffon certbot propre au fournisseur DNS et un jeton d'API, hors périmètre à ce jour.
 
 ## Vérifier la configuration sans démarrer la stack
+
+`nginx -t` charge les certificats : `tls/` doit être rempli, par `make tls-selfsigned` au besoin.
 
 ```bash
 docker run --rm \

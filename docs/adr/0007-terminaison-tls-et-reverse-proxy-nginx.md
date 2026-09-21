@@ -73,8 +73,30 @@ Swagger, il publiera les métriques avec.
   `$proxy_add_x_forwarded_for`, qui ajoute l'IP réelle en fin de chaîne. C'est exactement ce que
   lit `get_client_ip()`. Toute autre forme ferait compter la limitation de débit par IP sur l'IP
   du proxy, c'est-à-dire globalement.
+- `--forwarded-allow-ips=*` reste sans conséquence : uvicorn s'en sert pour réécrire
+  `request.client` depuis `X-Forwarded-For`, et `get_client_ip()` est le seul lecteur de
+  `request.client` du backend, en dernier recours quand l'en-tête est absent.
 - Une limitation de débit au frontal existe désormais, distincte de celle de l'application : 20
-  requêtes par seconde sur l'API, 30 par minute sur `/api/v1/auth/`.
+  requêtes par seconde sur l'API, et 30 par minute sur les seules routes qui vérifient un secret,
+  `login`, `password`, `forgot-password` et `reset-password`. `/auth/me` et `/auth/refresh` en
+  sont exclues : elles partent à chaque chargement de page, et le NAT de l'école donnant une seule
+  adresse à toute la promotion, la zone resserrée les aurait transformées en 429 en démonstration.
+- **La CSP contraint le build du frontend.** `script-src 'self'` interdit les gestionnaires
+  d'événements en ligne, et l'inlining du CSS critique d'Angular produisait exactement cela :
+  `<link rel="stylesheet" media="print" onload="this.media='all'">`. La feuille serait restée en
+  `media="print"`, donc l'application entière sans style. D'où `styles.inlineCritical: false` dans
+  `angular.json`. `style-src` garde `'unsafe-inline'`, dont Angular a besoin pour les styles de
+  composants injectés à l'exécution.
+- **La redirection 80 vers 443 conserve `$host`.** Un client qui forge son en-tête `Host` obtient
+  donc une redirection vers l'hôte de son choix. Risque accepté : un navigateur ne peut pas être
+  amené à envoyer un `Host` étranger, aucun cache ne s'intercale, et figer un nom canonique
+  couperait l'accès par adresse IP, seule voie ouverte sur `10.0.0.10`.
+- **Aucun `:?` dans l'overlay.** Compose interpole tout le fichier avant n'importe quelle
+  sous-commande : une garde y casserait `stop` et `logs` autant que `up`. `PUBLIC_HOST` retombe
+  donc sur `enervision.local`, et `make stack-up` vérifie à la place que le certificat présent
+  couvre l'hôte demandé, ce qui est la condition réelle à tenir.
+- Le proxy attend une API saine et pas seulement démarrée : le `HEALTHCHECK` de l'image du backend
+  sert de condition à `depends_on`, faute de quoi les premiers appels à `/api/` répondent 502.
 - La ligne API8 transport de `owasp-traceabilite.md` se referme.
 - **Let's Encrypt n'est pas prouvé.** Le chemin ACME est livré, monté et documenté ; il n'a pas
   été exercé faute de domaine. Le certificat de démonstration est auto-signé, le navigateur
