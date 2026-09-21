@@ -1,0 +1,11 @@
+@use 'styles/tokens';
+@use 'styles/forms';
+@use 'styles/auth-page';
+@use 'styles/links';
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  color: var(--color-text);
+  background: var(--color-bg);
+}

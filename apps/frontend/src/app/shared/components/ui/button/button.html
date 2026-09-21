@@ -1,0 +1,9 @@
+<button
+  [type]="type()"
+  class="ev-button"
+  [class]="'ev-button--' + variant()"
+  [class.ev-button--inline]="!fullWidth()"
+  [disabled]="disabled()"
+>
+  <ng-content></ng-content>
+</button>

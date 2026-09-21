@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+test-results/
+dist/
+build/
+*.egg-info/
+
+# Node / Angular
+node_modules/
+.angular/
+apps/frontend/dist/
+apps/frontend/.angular/
+npm-debug.log*
+yarn-error.log*
+
+# Terraform
+.terraform/
+# .terraform.lock.hcl est versionne (pas ignore) pour figer les versions de provider entre contributeurs/CI
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfvars
+!*.tfvars.example
+kubeconfig
+
+# Airflow
+etl/airflow/logs/
+airflow.db
+airflow-webserver.pid
+standalone_admin_password.txt
+
+# Environnement et secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Donnees locales
+data/raw/*
+!data/raw/.gitkeep
+*.sqlite3
+monitoring/grafana/data/
+monitoring/prometheus/data/
+
+# ML : jeu de donnees, modeles entraines et suivi MLflow local, tous generes/volumineux
+ml/data/
+ml/models/*
+!ml/models/.gitkeep
+ml/mlruns/
+ml/mlartifacts/
+ml/mlflow.db
+
+# Airflow : base sqlite locale generee par les tests d'integrite des DAGs (etl/airflow/tests)
+etl/airflow/tests/.airflow_home/
+
+# TLS : certificats du reverse proxy, générés par script ou par certbot
+infra/proxy/tls/*.pem
+
+# IDE et OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

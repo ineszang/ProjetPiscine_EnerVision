@@ -1,0 +1,64 @@
+name: Frontend
+
+on:
+  push:
+    paths:
+      - "apps/frontend/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    paths:
+      - "apps/frontend/**"
+      - ".github/workflows/frontend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: apps/frontend
+      - run: npm run build
+        working-directory: apps/frontend
+
+  security-audit:
+    name: Audit des dépendances
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      # Seuil high : une vulnérabilité moderate de devDependency ne doit pas bloquer une livraison.
+      - run: npm audit --audit-level=high --package-lock-only
+        working-directory: apps/frontend
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+      - name : Installation des dépendances (Front)
+        run: npm ci 
+        working-directory: apps/frontend
+      - name : Lancement des tests et génénration du rapport de couverture (Front)
+        run: npm test --watch=false --code-coverage --coverageReporters=lcov
+        working-directory: apps/frontend
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: apps/frontend/coverage/frontend/lcov.info

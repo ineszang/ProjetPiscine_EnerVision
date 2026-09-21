@@ -1,0 +1,170 @@
+# Piege : PGDATA de l'image timescaledb-ha vaut /home/postgres/pgdata/data, pas le chemin
+# habituel de l'image postgres. Monte ailleurs, le volume ne retient rien, sans erreur.
+# Piege : db/init est monte fichier par fichier. Monter le dossier masquerait les scripts
+# d'init de l'image, dont timescaledb-tune. Ajouter un fichier impose une ligne ici.
+
+name: enervision
+
+# Piege : LocalExecutor fait tourner les taches comme sous-processus du scheduler, jamais du
+# webserver. `airflow_ml_state` (modele entraine, magasin MLflow) n'a donc besoin d'etre monte
+# que sur `airflow-scheduler` en pratique, mais reste partage avec le webserver pour que ce
+# dernier puisse au besoin l'inspecter sans en devenir dependant.
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: etl/airflow/Dockerfile
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    # Piege : pas de `:?` sur les secrets Airflow. Compose interpole le fichier entier avant de
+    # filtrer les services : une variable requise manquante casserait aussi `make db-up`,
+    # `make dev`... pour quiconque n'a pas encore complete son `.env`. Le refus est porte par
+    # `airflow-init` (ci-dessous), dont `webserver` et `scheduler` dependent.
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/airflow
+    # Role `enervision_ml` dedie pas encore provisionne (dette assumee, cf. ADR 0003) :
+    # memes identifiants que le backend en attendant.
+    ML_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    MLFLOW_TRACKING_URI: sqlite:////opt/ml/state/mlflow.db
+    # Le DAG `alertes` lance le backend en sous-processus : il lit `DATABASE_URL`, en
+    # dialecte asyncpg, là où le pipeline ML lit `ML_DATABASE_URL`.
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    # Clé distincte de celle de l'API : la détection ne signe ni ne vérifie aucun jeton, et
+    # Airflow permet d'exécuter du code depuis son interface (cf. ADR 0008).
+    APP_SECRET_KEY: ${AIRFLOW_APP_SECRET_KEY:-}
+  volumes:
+    - ./etl/airflow/dags:/opt/airflow/dags
+    - ./etl/airflow/plugins:/opt/airflow/plugins
+    - airflow_logs:/opt/airflow/logs
+    - airflow_ml_state:/opt/ml/state
+  restart: unless-stopped
+
+services:
+  db:
+    image: timescale/timescaledb-ha:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:?}
+      TIMESCALEDB_TELEMETRY: ${TIMESCALEDB_TELEMETRY:-off}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/home/postgres/pgdata/data
+      - ./db/init/100-extensions.sql:/docker-entrypoint-initdb.d/100-extensions.sql:ro
+      - ./db/init/110-test-database.sql:/docker-entrypoint-initdb.d/110-test-database.sql:ro
+      - ./db/init/120-airflow-database.sql:/docker-entrypoint-initdb.d/120-airflow-database.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  # Piege : Mailpit ne relaie rien vers l'exterieur, il capture tout email envoye par le
+  # backend. Aucun acces reseau sortant n'est requis ; l'UI web (8025) sert a lire les emails.
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    restart: unless-stopped
+
+  backend:
+    build: ./apps/backend
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?}
+      APP_CORS_ORIGINS: ${APP_CORS_ORIGINS:-http://localhost:4200}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+
+      APP_MOCK_API_BASE_URL: ${APP_MOCK_API_BASE_URL:-https://api-mock.charlieandre.fr}
+      APP_MOCK_API_USERNAME: ${APP_MOCK_API_USERNAME:-}
+      APP_MOCK_API_PASSWORD: ${APP_MOCK_API_PASSWORD:-}
+      APP_MOCK_API_TIMEOUT_SECONDS: ${APP_MOCK_API_TIMEOUT_SECONDS:-10}
+
+      APP_FRONTEND_RESET_PASSWORD_URL: ${APP_FRONTEND_RESET_PASSWORD_URL:-http://localhost:4200/reset-password}
+      APP_SMTP_HOST: mailpit
+      APP_SMTP_PORT: "1025"
+      APP_SMTP_USE_TLS: "false"
+      APP_SMTP_FROM_ADDRESS: ${APP_SMTP_FROM_ADDRESS:-no-reply@enervision.fr}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./apps/frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    restart: unless-stopped
+
+  # Conteneur unique, jamais redemarre. La migration et la creation du premier compte sont
+  # portees par l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`, `_AIRFLOW_WWW_USER_*`), qui porte
+  # aussi leur code de sortie : une migration ratee (ex. base `airflow` absente sur un volume
+  # `pgdata` deja peuple) fait echouer ce service, et `webserver`/`scheduler`, qui attendent son
+  # succes, ne demarrent pas sur une base non migree. Le mot de passe passe par l'environnement,
+  # jamais par `argv` (ni `ps`, ni `docker compose config`).
+  # Sans mot de passe, l'entrypoint refuse lui-meme de creer le compte ; la commande ci-dessous
+  # refuse en plus les deux cles de chiffrement vides.
+  airflow-init:
+    <<: *airflow-common
+    restart: "no"
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-}
+      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@enervision.fr}
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        set -euo pipefail
+        : "$${AIRFLOW__CORE__FERNET_KEY:?AIRFLOW_FERNET_KEY manquant dans .env}"
+        : "$${AIRFLOW__WEBSERVER__SECRET_KEY:?AIRFLOW_WEBSERVER_SECRET_KEY manquant dans .env}"
+        : "$${APP_SECRET_KEY:?AIRFLOW_APP_SECRET_KEY manquant dans .env}"
+        exec airflow version
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  airflow_logs:
+  airflow_ml_state:
