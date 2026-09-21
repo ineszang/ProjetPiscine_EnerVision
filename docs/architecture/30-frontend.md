@@ -4,39 +4,47 @@ Application Angular 22, 100 % standalone, testée avec Vitest. Source dans `apps
 
 ## État actuel
 
-Statut : `En cours`. L'application sert une première page métier, le tableau de bord, alimentée
-par des fixtures : les endpoints qu'elle appelle n'existent pas encore côté API.
+Statut : `En cours`. L'application sert le tableau de bord, la liste et le détail des sites, la
+supervision des capteurs (admin) et le flux des alertes actives, tous branchés sur l'API réelle.
 
 Ce qui est en place :
 
 - Bootstrap par `bootstrapApplication(App, appConfig)`, **aucun `NgModule`** dans le dépôt.
 - `app.config.ts` fournit `provideBrowserGlobalErrorListeners()`, `provideRouter(routes)` et
-  `provideHttpClient(withInterceptors([mockApiInterceptor]))`.
-- Une route `/dashboard` en composant différé, et une redirection depuis la racine.
-- `core/services` porte `StatsService`, `AlertsService`, `PredictionsService`, `SitesService` et
-  `AuthService`, `core/interceptors` l'intercepteur de fixtures et l'intercepteur d'authentification
-  (jeton porteur, rafraîchissement sur 401), `core/guards` la garde de route `authGuard`,
-  `features/dashboard` la page principale, `shared/components` la jauge de consommation et le
-  graphique de charge par site, tous deux construits sur Chart.js.
+  `provideHttpClient(withInterceptors([authInterceptor, mockApiInterceptor]))`.
+- Des routes en composants différés (`/dashboard`, `/sites`, `/sites/:siteId`,
+  `/monitoring/sensors` réservée au rôle `admin`) et une redirection depuis la racine.
+- `core/services` porte un service HTTP par domaine (`StatsService`, `AlertsService` avec ses
+  filtres `site_id` et `severity`, `PredictionsService`, `SitesService`, `ReadingsService`,
+  `SensorsService`, `AuthService`), `core/interceptors` l'intercepteur de fixtures et l'intercepteur
+  d'authentification (jeton porteur, rafraîchissement sur 401), `core/guards` la garde `authGuard`.
+- `features/` porte une page par domaine. `shared/components` porte la jauge de consommation et
+  les graphiques Chart.js, le widget `app-alert-feed` (flux d'alertes filtrable par site et
+  sévérité, rafraîchi toutes les 60 s, première vue de l'application avec des états chargement /
+  vide / indisponible) et, dans `shared/models`, des types alignés sur les schémas Pydantic du
+  backend, plus les tables de présentation partagées (`alert-presentation.ts` : ton, libellé et
+  unité par sévérité, type et métrique).
 - Une authentification complète côté interface : connexion, mot de passe oublié/réinitialisation,
-  changement de mot de passe, garde de route sur `/dashboard` et `/sites`. Détail :
+  changement de mot de passe, garde de route sur toute la zone authentifiée. Détail :
   [31-contrat-authentification.md](31-contrat-authentification.md).
 - Un système de design partagé (`shared/components/ui/` : `ev-button`, `ev-card`, `ev-alert`,
-  `ev-badge`, `ev-brand`, tokens CSS dans `styles/_tokens.scss`) que toute nouvelle page doit
-  réutiliser plutôt que redéfinir ses propres styles. Détail :
+  `ev-badge`, `ev-brand`, `ev-icon`, tokens CSS dans `styles/_tokens.scss`, classes globales de
+  formulaire, de navigation et de tableau) que toute nouvelle page doit réutiliser plutôt que
+  redéfinir ses propres styles. Détail :
   [32-design-systeme-frontend.md](32-design-systeme-frontend.md).
 - L'état vit dans des signaux, sans bibliothèque dédiée.
+- TypeScript en `"strict": true` ; `strictTemplates` n'est pas encore activé.
 - Vitest via le builder `@angular/build:unit-test`, couverture activée.
 - Prettier configuré, parser `angular` pour les gabarits HTML.
 
 Ce qui n'existe pas encore :
 
-- **`stats`/`alerts` restent sur fixtures.** `GET /api/v1/stats/summary` et `GET /api/v1/alerts`
-  sont servis par l'intercepteur de fixtures ; l'API expose bien ces routes désormais, mais rien
-  ne bascule `useMockFixtures` à `false` en développement pour les consommer réellement.
-  `GET /api/v1/predictions` fait exception : jamais mocké, branché sur l'API réelle depuis cette
-  PR (voir plus bas).
-- Aucun état de chargement : tant que la première réponse n'est pas arrivée, la page reste vide.
+- **Le mode fixtures est inactif.** `useMockFixtures` vaut `false` dans `environment.ts` comme dans
+  `environment.development.ts` : `mockApiInterceptor` ne sert `/stats/summary` et `/alerts` que
+  dans son propre spec. En développement, toutes les pages exigent un backend joignable et un jeton
+  valide.
+- Un état de chargement généralisé : seul `app-alert-feed` en a un, les autres pages restent vides
+  tant que la première réponse n'est pas arrivée.
 - Aucun lint : ESLint n'est pas installé.
 
 ## Arborescence
@@ -87,11 +95,11 @@ sequenceDiagram
 ```
 
 `mockApiInterceptor` n'intercepte que `/stats/summary` et `/alerts`, et seulement si
-`environment.useMockFixtures` est vrai. Le drapeau est à `true` en développement, à `false` en
-production : toute autre requête, et toutes les requêtes en production, suivent le chemin réel.
-`/predictions` est volontairement exclu de cette liste (contrairement à `stats`/`alerts`) : il
-suit toujours le chemin réel, comme `/auth/*` - en développement, ça veut dire qu'un jeton valide
-et un backend joignable sont nécessaires pour que la section prévisions du dashboard s'affiche.
+`environment.useMockFixtures` est vrai. Le drapeau vaut `false` dans les deux fichiers
+d'environnement : en pratique toutes les requêtes suivent le chemin réel et l'intercepteur n'est
+exercé que par son spec. `/predictions` et `/auth/*` ne sont de toute façon jamais mockés. En
+développement, un jeton valide et un backend joignable sont donc nécessaires pour que le tableau de
+bord s'affiche.
 
 En développement, `proxy.conf.json` redirige tout `/api` vers `http://localhost:8000`. C'est ce
 qui évite le CORS sur le poste, et c'est pourquoi `environment.development.ts` se contente d'un

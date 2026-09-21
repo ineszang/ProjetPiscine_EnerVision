@@ -20,8 +20,9 @@ seule fois dans `src/styles.scss`. Disponibles partout sans import supplémentai
 | `--color-success` / `-bg`, `--color-warning` / `-bg` / `-text`, `--color-danger` / `-hover` / `-bg` / `-border`, `--color-critical` | États sémantiques (alertes, badges) |
 | `--color-text-inverse` | Texte sur fond coloré plein (boutons/badges) |
 | `--font-family` | Police unique de l'application |
+| `--font-size-xs` à `--font-size-2xl` | Échelle typographique (0.75rem à 2.25rem) : libellés, corps, titres, grands nombres |
 | `--radius-sm`, `--radius-md`, `--radius-pill` | Rayons de bordure (input/bouton, carte, pastille) |
-| `--shadow-card` | Ombre portée des cartes |
+| `--shadow-card`, `--shadow-card-hover` | Ombre portée des cartes, au repos et au survol |
 | `--space-1` à `--space-5` | Échelle d'espacement (0.35rem à 2.5rem) |
 
 Les classes de formulaire partagées (`.form-label`, `.form-input`, `.form-select`, `.form-hint`)
@@ -84,6 +85,23 @@ dans le tableau `imports` du composant qui l'utilise.
   ```html
   <ev-brand />
   ```
+- **`<ev-icon>`** (`icon/`) : `name` (obligatoire : `spike` / `threshold` / `anomaly` / `outage` /
+  `sensor`, les types d'alerte du contrat) et `label` (facultatif). SVG inline en trait sur
+  `currentColor`, dimensionné par `font-size` comme `ev-brand`. Sans `label` l'icône est décorative
+  (`aria-hidden`) ; avec, elle porte `role="img"` et `aria-label`. Pas de bibliothèque d'icônes : la
+  CSP du reverse proxy (`script-src 'self'`) interdit les scripts tiers, pas le SVG inline.
+  ```html
+  <ev-icon name="spike" label="Pic de consommation" />
+  ```
+- **`<app-alert-feed>`** (`shared/components/alert-feed/`) : widget métier plutôt qu'atome du kit,
+  mais réutilisable tel quel. Input `siteId` (facultatif : fige le site et masque son filtre). Il
+  porte ses filtres (`.form-select`), ses états et son rafraîchissement ; le parent ne fait que le
+  poser dans une section.
+
+Les classes de tableau partagées sont dans `apps/frontend/src/styles/_tables.scss`, importées
+globalement : `.ev-table-card` sur la `<ev-card>` qui enveloppe un tableau (padding nul),
+`.ev-table` sur le `<table>`, `.ev-table__number` pour une cellule numérique en chiffres
+tabulaires, `.ev-table__muted` pour une cellule sans valeur.
 
 ## Logo
 
