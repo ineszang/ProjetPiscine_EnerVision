@@ -12,8 +12,10 @@ d'énergie, dont l'hypertable `reading`.
 Les sections marquées `Fait` relèvent du code déjà implémenté. Les sections marquées `Cible`
 décrivent les éléments prévus mais pas encore réalisés.
 
-L'ingestion des deux sources de données du MVP est maintenant implémentée. L'orchestration
-Airflow, les agrégats continus, la compression et la rétention restent des cibles.
+L'ingestion des **mesures** est implémentée pour les deux sources du MVP, le dataset CSV/JSON et
+l'API Mock. Celle des **alertes** de l'API Mock, `/alerts`, reste à faire : voir
+l'[ADR 0006](../adr/0006-moteur-de-regles-dans-le-backend.md). L'orchestration Airflow, les
+agrégats continus, la compression et la rétention restent des cibles.
 
 ## Trois emplacements, trois rôles
 
