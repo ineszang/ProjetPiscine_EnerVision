@@ -44,6 +44,12 @@ variable "frontend_port" {
   description = "Port externe du frontend"
 }
 
+variable "backend_port" {
+  type        = number
+  default     = 8000
+  description = "Port externe du backend"
+}
+
 variable "k3s_version" {
   type        = string
   description = "Version k3s a epingler pour un deploiement reproductible (ex: v1.31.5+k3s1). Voir https://github.com/k3s-io/k3s/releases."
