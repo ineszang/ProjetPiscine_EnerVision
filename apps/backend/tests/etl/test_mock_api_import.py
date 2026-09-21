@@ -169,9 +169,7 @@ def test_build_reading_row_respects_database_contract() -> None:
     assert row["source"] == "api_history"
     assert row["dataset_id"] is None
 
-    assert row["timestamp"] == datetime.fromisoformat(
-        "2024-06-15T12:00:00+00:00"
-    )
+    assert row["timestamp"] == datetime.fromisoformat("2024-06-15T12:00:00+00:00")
 
     assert row["consumption_kw"] == 87.34
     assert row["consumption_kwh"] == 87.34
