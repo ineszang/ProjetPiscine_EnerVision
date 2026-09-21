@@ -1,12 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
-import { of, throwError } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
+import { Router, provideRouter } from '@angular/router';
 import { Dashboard } from './dashboard';
 import { StatsService } from '../../core/services/stats.service';
 import { AlertsService } from '../../core/services/alerts.service';
+import { SitesService } from '../../core/services/sites.service';
 import { PredictionsService } from '../../core/services/predictions.service';
-import {AuthService} from '../../core/services/auth.service';
-import {Router, provideRouter} from '@angular/router';
+import { AuthService } from '../../core/services/auth.service';
 
 vi.mock('chart.js', () => {
   class ChartMock {
@@ -18,66 +19,73 @@ vi.mock('chart.js', () => {
   return { Chart: ChartMock, registerables: [] };
 });
 
+const STATS = { total_sites: 7, sites: [] };
+
 function predictionsMock(sites: unknown[] = []) {
-  return { getPredictions: vi.fn().mockReturnValue(of({ timestamp: '2026-09-18T09:00:00Z', sites })) };
+  return {
+    getPredictions: vi.fn().mockReturnValue(of({ timestamp: '2026-09-18T09:00:00Z', sites })),
+  };
+}
+
+function setup(
+  options: {
+    stats?: Observable<unknown>;
+    predictions?: { getPredictions: ReturnType<typeof vi.fn> };
+    auth?: Record<string, unknown>;
+  } = {},
+) {
+  const statsMock = { getSummary: vi.fn().mockReturnValue(options.stats ?? of(STATS)) };
+  const predictions = options.predictions ?? predictionsMock();
+  TestBed.configureTestingModule({
+    imports: [Dashboard],
+    providers: [
+      { provide: StatsService, useValue: statsMock },
+      { provide: AlertsService, useValue: { getAlerts: vi.fn().mockReturnValue(of([])) } },
+      { provide: SitesService, useValue: { getSites: vi.fn().mockReturnValue(of([])) } },
+      { provide: PredictionsService, useValue: predictions },
+      ...(options.auth ? [{ provide: AuthService, useValue: options.auth }] : []),
+      provideRouter([]),
+    ],
+  });
+  return { fixture: TestBed.createComponent(Dashboard), statsMock, predictions };
 }
 
 describe('Dashboard', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('charge les stats, les alertes et les prévisions au démarrage', async () => {
-    const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
-    const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([{ alert_id: 'A1' }])) };
-    const predictions = predictionsMock([{ site_id: 'SITE001', site_name: 'Test', prediction: null }]);
-
-    TestBed.configureTestingModule({
-      imports: [Dashboard],
-      providers: [
-        { provide: StatsService, useValue: statsMock },
-        { provide: AlertsService, useValue: alertsMock },
-        { provide: PredictionsService, useValue: predictions },
-        provideRouter([]),
-      ],
+  it('charge les stats et les prévisions au démarrage', async () => {
+    const { fixture, statsMock, predictions } = setup({
+      predictions: predictionsMock([{ site_id: 'SITE001', site_name: 'Test', prediction: null }]),
     });
 
-    const fixture = TestBed.createComponent(Dashboard);
     fixture.detectChanges();
-
-    // laisse le timer(0, ...) se déclencher avant de vérifier
     await new Promise((resolve) => setTimeout(resolve, 0));
     fixture.detectChanges();
 
     expect(statsMock.getSummary).toHaveBeenCalled();
-    expect(alertsMock.getAlerts).toHaveBeenCalled();
     expect(predictions.getPredictions).toHaveBeenCalled();
-    expect(fixture.componentInstance.alerts().length).toBe(1);
     expect(fixture.componentInstance.predictions().length).toBe(1);
     expect(fixture.componentInstance.statsError()).toBeNull();
-    expect(fixture.componentInstance.alertsError()).toBeNull();
     expect(fixture.componentInstance.predictionsError()).toBeNull();
+  });
+
+  it('délègue les alertes au widget app-alert-feed', () => {
+    const { fixture } = setup();
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-alert-feed')).not.toBeNull();
   });
 
   it("signale l'indisponibilité puis repart au rafraîchissement suivant", () => {
     vi.useFakeTimers();
-    const statsMock = {
-      getSummary: vi
-        .fn()
-        .mockReturnValueOnce(throwError(() => new Error('API injoignable')))
-        .mockReturnValue(of({ total_sites: 7, sites: [] })),
-    };
-    const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
-
-    TestBed.configureTestingModule({
-      imports: [Dashboard],
-      providers: [
-        { provide: StatsService, useValue: statsMock },
-        { provide: AlertsService, useValue: alertsMock },
-        { provide: PredictionsService, useValue: predictionsMock() },
-        provideRouter([]),
-      ],
+    const { fixture, statsMock } = setup({
+      stats: throwError(() => new Error('API injoignable')),
     });
+    statsMock.getSummary
+      .mockReturnValueOnce(throwError(() => new Error('API injoignable')))
+      .mockReturnValue(of(STATS));
 
-    const fixture = TestBed.createComponent(Dashboard);
     fixture.detectChanges();
 
     vi.advanceTimersByTime(1);
@@ -91,45 +99,11 @@ describe('Dashboard', () => {
     expect(fixture.componentInstance.statsError()).toBeNull();
   });
 
-  it("n'interrompt pas la page quand le chargement des alertes échoue", () => {
-    const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
-    const alertsMock = { getAlerts: vi.fn().mockReturnValue(throwError(() => new Error('nope'))) };
-
-    TestBed.configureTestingModule({
-      imports: [Dashboard],
-      providers: [
-        { provide: StatsService, useValue: statsMock },
-        { provide: AlertsService, useValue: alertsMock },
-        { provide: PredictionsService, useValue: predictionsMock() },
-        provideRouter([]),
-      ],
-    });
-
-    const fixture = TestBed.createComponent(Dashboard);
-    fixture.detectChanges();
-
-    expect(fixture.componentInstance.alerts().length).toBe(0);
-    expect(fixture.componentInstance.alertsError()).not.toBeNull();
-  });
-
   it("n'interrompt pas la page quand le chargement des prévisions échoue", () => {
-    const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
-    const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
-    const predictions = {
-      getPredictions: vi.fn().mockReturnValue(throwError(() => new Error('nope'))),
-    };
-
-    TestBed.configureTestingModule({
-      imports: [Dashboard],
-      providers: [
-        { provide: StatsService, useValue: statsMock },
-        { provide: AlertsService, useValue: alertsMock },
-        { provide: PredictionsService, useValue: predictions },
-        provideRouter([]),
-      ],
+    const { fixture } = setup({
+      predictions: { getPredictions: vi.fn().mockReturnValue(throwError(() => new Error('nope'))) },
     });
 
-    const fixture = TestBed.createComponent(Dashboard);
     fixture.detectChanges();
 
     expect(fixture.componentInstance.predictions().length).toBe(0);
@@ -138,25 +112,11 @@ describe('Dashboard', () => {
 
   it("un rafraîchissement de stats n'efface pas une erreur de prévisions en attente", () => {
     vi.useFakeTimers();
-    const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
-    const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
-    const predictions = {
-      getPredictions: vi.fn().mockReturnValue(throwError(() => new Error('nope'))),
-    };
-
-    TestBed.configureTestingModule({
-      imports: [Dashboard],
-      providers: [
-        { provide: StatsService, useValue: statsMock },
-        { provide: AlertsService, useValue: alertsMock },
-        { provide: PredictionsService, useValue: predictions },
-        provideRouter([]),
-      ],
+    const { fixture } = setup({
+      predictions: { getPredictions: vi.fn().mockReturnValue(throwError(() => new Error('nope'))) },
     });
 
-    const fixture = TestBed.createComponent(Dashboard);
     fixture.detectChanges();
-
     expect(fixture.componentInstance.predictionsError()).not.toBeNull();
 
     // Plusieurs cycles de `timer(0, 10_000)` (stats) plus tard, l'erreur des prévisions doit
@@ -168,109 +128,41 @@ describe('Dashboard', () => {
   });
 
   it('appelle logout et redirige vers /login au clic sur le bouton de déconnexion', () => {
-  const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
-  const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
-  const authMock = {
-    logout: vi.fn().mockReturnValue(of(undefined)),
-    clearSession: vi.fn(),
-    principal: vi.fn().mockReturnValue({ role: 'admin' }),
-  };
-  TestBed.configureTestingModule({
-    imports: [Dashboard],
-    providers: [
-      { provide: StatsService, useValue: statsMock },
-      { provide: AlertsService, useValue: alertsMock },
-      { provide: PredictionsService, useValue: predictionsMock() },
-      { provide: AuthService, useValue: authMock },
-      provideRouter([]),
-    ],
-  });
-
-  const fixture = TestBed.createComponent(Dashboard);
-  fixture.detectChanges();
-
-  const router = TestBed.inject(Router);
-  const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
-
-  const button = fixture.nativeElement.querySelector('.logout-button');
-  button.click();
-
-  expect(authMock.logout).toHaveBeenCalled();
-  expect(navigateSpy).toHaveBeenCalledWith(['/login']);
-  });
-  it('déconnecte localement et redirige vers /login même si logout échoue côté réseau', () => {
-  const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
-  const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
     const authMock = {
-    logout: vi.fn().mockReturnValue(throwError(() => new Error('réseau indisponible'))),
-    clearSession: vi.fn(),
-    principal: vi.fn().mockReturnValue({ role: 'admin' }),
-  };
-  TestBed.configureTestingModule({
-    imports: [Dashboard],
-    providers: [
-      { provide: StatsService, useValue: statsMock },
-      { provide: AlertsService, useValue: alertsMock },
-      { provide: PredictionsService, useValue: predictionsMock() },
-      { provide: AuthService, useValue: authMock },
-      provideRouter([]),
-    ],
+      logout: vi.fn().mockReturnValue(of(undefined)),
+      clearSession: vi.fn(),
+      principal: vi.fn().mockReturnValue({ role: 'admin' }),
+    };
+    const { fixture } = setup({ auth: authMock });
+    fixture.detectChanges();
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    fixture.nativeElement.querySelector('.logout-button').click();
+
+    expect(authMock.logout).toHaveBeenCalled();
+    expect(navigateSpy).toHaveBeenCalledWith(['/login']);
   });
 
-  const fixture = TestBed.createComponent(Dashboard);
-  fixture.detectChanges();
+  it('déconnecte localement et redirige vers /login même si logout échoue côté réseau', () => {
+    const authMock = {
+      logout: vi.fn().mockReturnValue(throwError(() => new Error('réseau indisponible'))),
+      clearSession: vi.fn(),
+      principal: vi.fn().mockReturnValue({ role: 'admin' }),
+    };
+    const { fixture } = setup({ auth: authMock });
+    fixture.detectChanges();
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
-  const router = TestBed.inject(Router);
-  const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    fixture.nativeElement.querySelector('.logout-button').click();
 
-  const button = fixture.nativeElement.querySelector('.logout-button');
-  button.click();
-
-  expect(authMock.clearSession).toHaveBeenCalled();
-  expect(navigateSpy).toHaveBeenCalledWith(['/login']);
-});
-
-  it('distingue le ton des sévérités high et critical', () => {
-    const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
-    const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
-
-    TestBed.configureTestingModule({
-      imports: [Dashboard],
-      providers: [
-        { provide: StatsService, useValue: statsMock },
-        { provide: AlertsService, useValue: alertsMock },
-        { provide: PredictionsService, useValue: predictionsMock() },
-        provideRouter([]),
-      ],
-    });
-
-    const fixture = TestBed.createComponent(Dashboard);
-    const dashboard = fixture.componentInstance;
-
-    expect(dashboard.badgeToneForSeverity('low')).toBe('success');
-    expect(dashboard.badgeToneForSeverity('medium')).toBe('warning');
-    expect(dashboard.badgeToneForSeverity('high')).toBe('danger');
-    expect(dashboard.badgeToneForSeverity('critical')).toBe('critical');
-    expect(dashboard.badgeToneForSeverity('high')).not.toBe(
-      dashboard.badgeToneForSeverity('critical'),
-    );
+    expect(authMock.clearSession).toHaveBeenCalled();
+    expect(navigateSpy).toHaveBeenCalledWith(['/login']);
   });
 
   it('distingue le ton des statuts de prévision', () => {
-    const statsMock = { getSummary: vi.fn().mockReturnValue(of({ total_sites: 7, sites: [] })) };
-    const alertsMock = { getAlerts: vi.fn().mockReturnValue(of([])) };
-
-    TestBed.configureTestingModule({
-      imports: [Dashboard],
-      providers: [
-        { provide: StatsService, useValue: statsMock },
-        { provide: AlertsService, useValue: alertsMock },
-        { provide: PredictionsService, useValue: predictionsMock() },
-        provideRouter([]),
-      ],
-    });
-
-    const fixture = TestBed.createComponent(Dashboard);
+    const { fixture } = setup();
     const dashboard = fixture.componentInstance;
 
     expect(dashboard.badgeToneForPredictionStatus('available')).toBe('success');

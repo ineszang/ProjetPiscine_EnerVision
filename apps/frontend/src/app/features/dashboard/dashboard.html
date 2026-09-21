@@ -27,9 +27,6 @@
   @if (statsError(); as message) {
     <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
   }
-  @if (alertsError(); as message) {
-    <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
-  }
   @if (predictionsError(); as message) {
     <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
   }
@@ -68,19 +65,9 @@
     </section>
   }
 
-  @if (alerts().length > 0) {
-    <section class="alerts-section">
-      <h2>Alertes actives</h2>
-      <ul class="alerts-list">
-        @for (alert of alerts(); track alert.alert_id) {
-          <li class="alert-item">
-            <ev-badge [tone]="badgeToneForSeverity(alert.severity)">{{ alert.severity }}</ev-badge>
-            <span class="alert-item__message">{{ alert.message }}</span>
-          </li>
-        }
-      </ul>
-    </section>
-  }
+  <section class="alerts-section">
+    <app-alert-feed />
+  </section>
 
   @if (predictions().length > 0) {
     <section class="predictions-section">
@@ -93,9 +80,9 @@
               @if (prediction.status === 'available') {
                 <span class="prediction-item__value">
                   {{ prediction.predicted_value | number: '1.0-1' }} kWh
-                  <span class="prediction-item__target"
-                    >{{ prediction.target_at | date: "dd/MM 'à' HH:mm" }}</span
-                  >
+                  <span class="prediction-item__target">{{
+                    prediction.target_at | date: "dd/MM 'à' HH:mm"
+                  }}</span>
                 </span>
               } @else {
                 <ev-badge [tone]="badgeToneForPredictionStatus(prediction.status)">{{

@@ -108,27 +108,8 @@ h2 {
   margin-bottom: 2.5rem;
 }
 
-.alerts-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.alert-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.7rem 1rem;
-  border-radius: var(--radius-md);
-  background: var(--color-danger-bg);
-  border: 1px solid var(--color-danger-border);
-}
-
-.alert-item__message {
-  font-size: 0.9rem;
+.alerts-section {
+  margin-bottom: 2.5rem;
 }
 
 .predictions-list {
