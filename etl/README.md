@@ -81,9 +81,9 @@ L'API Mock est utilisée pour compléter les données historiques avec des mesur
 | mypy | Vérification du typage |
 | Pytest | Tests automatisés |
 
-# Import du dataset historique
+## Import du dataset historique
 
-## Fonctionnement du pipeline historique
+### Fonctionnement du pipeline historique
 
 Le script d'import se trouve dans :
 
@@ -115,14 +115,14 @@ CSV + métadonnées JSON
 PostgreSQL / TimescaleDB
 ```
 
-### 1. Extraction
+#### 1. Extraction
 
 Le pipeline charge :
 
 - `all_sites_combined.csv` avec Pandas ;
 - `dataset_metadata.json` avec le module JSON de Python.
 
-### 2. Validation
+#### 2. Validation
 
 Avant toute écriture en base, le pipeline contrôle notamment :
 
@@ -136,7 +136,7 @@ Avant toute écriture en base, le pipeline contrôle notamment :
 
 Une incohérence détectée pendant cette étape interrompt l'import avant le chargement.
 
-### 3. Dry-run
+#### 3. Dry-run
 
 Un mode `--dry-run` permet d'exécuter les contrôles sans écrire de données dans PostgreSQL.
 
@@ -149,7 +149,7 @@ Il permet notamment de vérifier :
 - les valeurs NULL ;
 - l'empreinte SHA-256.
 
-### 4. Traçabilité
+#### 4. Traçabilité
 
 Une empreinte SHA-256 est calculée à partir du fichier CSV afin d'identifier le dataset utilisé.
 
@@ -161,7 +161,7 @@ Empreinte SHA-256 du dataset validé :
 
 Cette empreinte participe à la traçabilité du dataset chargé.
 
-### 5. Transformation
+#### 5. Transformation
 
 Les timestamps sont normalisés avec la timezone :
 
@@ -180,7 +180,7 @@ imputed_values = NULL
 imputation_method = NULL
 ```
 
-### 6. Chargement
+#### 6. Chargement
 
 Le chargement est réalisé avec SQLAlchemy Async dans PostgreSQL/TimescaleDB.
 
@@ -207,7 +207,7 @@ dataset_id = identifiant du dataset
 
 Cette représentation respecte les contraintes définies dans le schéma de la base.
 
-## Dataset validé
+### Dataset validé
 
 Le dataset traité contient :
 
@@ -226,7 +226,7 @@ Valeurs manquantes identifiées :
 | `humidity_percent` | 3 423 |
 | `solar_irradiance_wm2` | 3 964 |
 
-## Exécution historique en dry-run
+### Exécution historique en dry-run
 
 Depuis le dossier :
 
@@ -246,7 +246,7 @@ uv run python -m app.etl.historical_import `
 
 Aucune donnée n'est écrite dans la base pendant cette exécution.
 
-## Chargement historique réel
+### Chargement historique réel
 
 Depuis `apps/backend/` :
 
@@ -268,7 +268,7 @@ Chargement : 2000/122647
 Chargement : 122647/122647
 ```
 
-## Résultats obtenus pour le dataset historique
+### Résultats obtenus pour le dataset historique
 
 Après le chargement initial, les contrôles en base ont confirmé :
 
@@ -285,7 +285,7 @@ Le premier import a créé :
 nouvelles lectures : 122647
 ```
 
-## Idempotence du dataset historique
+### Idempotence du dataset historique
 
 Le pipeline a été exécuté une deuxième fois avec exactement le même dataset afin de vérifier son idempotence.
 
@@ -299,7 +299,7 @@ nouvelles lectures : 0
 
 Une nouvelle exécution du même import ne crée donc pas de mesures supplémentaires pour le dataset testé.
 
-## Vérifications SQL du dataset historique
+### Vérifications SQL du dataset historique
 
 Depuis la racine du projet, vérifier le nombre d'enregistrements avec :
 
@@ -327,9 +327,9 @@ Résultat attendu pour le dataset historique :
 csv | 122647
 ```
 
-# Import depuis l'API Mock
+## Import depuis l'API Mock
 
-## Fonctionnement
+### Fonctionnement
 
 Le script d'import de l'API Mock se trouve dans :
 
@@ -386,7 +386,7 @@ limit
 
 Le paramètre `limit` doit être compris entre 1 et 1000.
 
-## Configuration de l'API Mock
+### Configuration de l'API Mock
 
 La connexion à l'API Mock est configurée avec les variables d'environnement suivantes :
 
@@ -401,7 +401,7 @@ Les identifiants réels ne sont pas versionnés dans Git.
 
 Les fichiers `.env.example` indiquent uniquement les variables nécessaires à l'exécution.
 
-## Transformation des mesures API
+### Transformation des mesures API
 
 Les mesures provenant de l'API Mock sont enregistrées dans `reading` avec :
 
@@ -422,7 +422,7 @@ raw_data
 
 afin de préserver la donnée reçue et faciliter la traçabilité.
 
-## Qualité des données API
+### Qualité des données API
 
 Les valeurs `NULL` fournies par l'API sont conservées telles quelles.
 
@@ -444,6 +444,9 @@ degraded
 critical
 ```
 
+Ce sont les quatre seules valeurs que la contrainte `ck_reading_quality` accepte. Toute autre
+valeur renvoyée par l'API est remplacée par `NULL` plutôt que de faire échouer le lot entier.
+
 Aucune imputation n'est réalisée pendant l'ingestion :
 
 ```text
@@ -453,7 +456,42 @@ imputation_method = NULL
 
 Cette stratégie permet de distinguer une véritable valeur nulle ou manquante d'une consommation égale à zéro et de conserver les informations liées aux défaillances de capteurs.
 
-## Dry-run de l'API Mock
+### Bornes physiques et frontière de confiance
+
+La réponse de l'API Mock est traitée comme une entrée hostile : l'API n'a pas
+d'authentification et expose un endpoint mutatif à quiconque. Voir API10 dans
+`docs/architecture/owasp-traceabilite.md`.
+
+Les plages acceptées sont déclarées dans `PHYSICAL_BOUNDS` :
+
+| Grandeur | Plage acceptée |
+|---|---|
+| `consumption_kw` | 0 à 100 000 |
+| `consumption_kwh` | 0 à 100 000 |
+| `voltage_v` | 0 à 1 000 |
+| `current_a` | 0 à 10 000 |
+| `power_factor` | 0 à 1 |
+| `temperature_celsius` | -90 à 60 |
+| `humidity_percent` | 0 à 100 |
+| `capacity_kw` | 0 à 100 000 |
+
+Une valeur hors plage, d'un type inattendu, `NaN` ou infinie devient `NULL` :
+
+```text
+null_reasons += "out_of_physical_bounds:<colonne>"
+data_quality = "degraded"
+```
+
+L'import ne s'interrompt pas pour autant : le mock émet des anomalies par construction, et
+`raw_data` conserve la réponse d'origine.
+
+La taille des réponses est plafonnée : au plus `MAX_SITES` sites, et au plus `--limit` mesures
+par site. Au-delà, l'import échoue au lieu de charger.
+
+Enfin, seuls les champs attendus sont recopiés vers la base. Une clé supplémentaire renvoyée par
+l'API n'atteint jamais une colonne.
+
+### Dry-run de l'API Mock
 
 Le mode `--dry-run` permet de tester la connexion, la récupération des sites et la récupération des mesures sans écrire dans PostgreSQL.
 
@@ -467,7 +505,7 @@ uv run python -m app.etl.mock_api_import `
   --dry-run
 ```
 
-## Chargement réel depuis l'API Mock
+### Chargement réel depuis l'API Mock
 
 Depuis `apps/backend/` :
 
@@ -478,7 +516,7 @@ uv run python -m app.etl.mock_api_import `
   --limit 60
 ```
 
-## Résultat validé pour l'API Mock
+### Résultat validé pour l'API Mock
 
 Le scénario de validation utilisé couvre la période :
 
@@ -511,7 +549,7 @@ Les contrôles effectués directement dans PostgreSQL/TimescaleDB ont confirmé 
 - la conservation de `null_reasons` ;
 - la conservation de la donnée source dans `raw_data`.
 
-## Idempotence de l'import API Mock
+### Idempotence de l'import API Mock
 
 Le même import a été exécuté plusieurs fois afin de vérifier qu'une mesure déjà présente n'est pas créée une seconde fois.
 
@@ -519,7 +557,7 @@ L'idempotence repose sur la contrainte d'unicité de la table `reading` et sur l
 
 Un test d'intégration automatisé vérifie également ce comportement.
 
-# Tests et qualité
+## Tests et qualité
 
 Les tests automatisés des pipelines ETL sont situés dans :
 
@@ -599,7 +637,7 @@ Lors de la validation de l'import API Mock :
 
 La suite backend complète a également été validée avec une couverture supérieure au seuil de 85 %.
 
-# Suite du pipeline Data
+## Suite du pipeline Data
 
 Deux sources de données sont maintenant prises en charge :
 

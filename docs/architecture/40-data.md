@@ -96,8 +96,8 @@ Les flèches pleines représentent les traitements actuellement implémentés.
 
 Les flèches pointillées représentent les éléments encore prévus comme cibles.
 
-Les lectures futures de l'API et de Grafana visent l'agrégat continu plutôt que la table brute
-lorsque cette partie TimescaleDB sera mise en place.
+Les lectures de l'API et de Grafana viseront l'agrégat continu, pas la table brute : c'est tout
+l'intérêt de TimescaleDB, et cela doit rester vrai quand les volumes augmenteront.
 
 ## Tables d'authentification
 
@@ -170,21 +170,28 @@ erDiagram
   }
 ```
 
-Plusieurs choix de modélisation portent une intention précise :
+Six choix de modélisation portent une intention et se défendent seuls :
 
 - **`app_user` et non `user`** : `user` est un mot réservé PostgreSQL, raccourci de
-  `CURRENT_USER`. Le nom rappelle aussi qu'il s'agit d'un compte applicatif.
-- **`credentials_changed_at`, une seule colonne**, couvre notamment le changement de mot de passe,
-  le changement de rôle et la désactivation.
-- **`refresh_token.expires_at` est absolu et hérité** du prédécesseur à chaque rotation.
-- **`audit_log.actor_id` n'a aucune clé étrangère** afin de conserver les informations d'audit
-  même si l'entité d'origine évolue.
-- `password_reset_token` ne stocke que l'empreinte du jeton et jamais sa valeur directement.
-- `password_reset_attempt` est séparée de `audit_log`, car son volume peut être piloté
-  par des demandes externes répétées.
+  `CURRENT_USER`. Le nom rappelle en prime qu'il s'agit d'un compte applicatif, par opposition
+  au rôle PostgreSQL qui portera le cantonnement de l'ETL.
+- **`credentials_changed_at`, une seule colonne**, couvre le changement de mot de passe, le
+  changement de rôle et la désactivation. Un compteur de version ne dirait rien à un humain qui
+  lit un audit.
+- **`refresh_token.expires_at` est absolu et hérité** du prédécesseur à chaque rotation. S'il
+  glissait, la promesse de sept jours serait fictive et une session active ne finirait jamais.
+- **`audit_log.actor_id` n'a aucune clé étrangère**, et `actor_email` comme `actor_role` sont
+  dénormalisés. Une contrainte `ON DELETE SET NULL` déclencherait un `UPDATE` que le déclencheur
+  d'ajout seul refuserait. Voir l'[ADR 0004](../adr/0004-journal-d-audit-en-ajout-seul.md).
+- **`password_reset_token` ne stocke que l'empreinte du jeton**, jamais sa valeur. Une fuite de
+  la table ne donne donc rien à rejouer.
+- **`password_reset_attempt` est séparée de `audit_log`** : son volume est piloté par le
+  demandeur, comme celui de `login_attempt`, donc elle doit pouvoir se purger.
 
-`audit_log` porte des déclencheurs qui refusent `UPDATE`, `DELETE` et `TRUNCATE`.
-Elle n'est donc **pas** une hypertable.
+`audit_log` porte deux déclencheurs qui refusent `UPDATE`, `DELETE` et `TRUNCATE`. Elle n'est
+donc **pas** une hypertable : une politique de rétention émettrait des `DELETE` qu'ils
+refuseraient. `login_attempt`, à l'inverse, est faite pour se purger, puisque son volume est
+piloté par l'attaquant.
 
 ## Gabarit de révision créant une hypertable
 
@@ -234,7 +241,8 @@ colonne de temps : les index déclarés dans la révision le couvrent déjà.
 
 ## Questions ouvertes
 
-Elles portent maintenant principalement sur l'exploitation du schéma :
+Elles relèvent du jalon J2, « valider le périmètre retenu ». Le schéma et l'ingestion sont
+livrés : ce qui suit porte sur leur exploitation, plus sur leur forme.
 
 - **Quelle granularité** conserver à long terme à l'ingestion : seconde, minute ou quart d'heure.
 - **Quels agrégats continus** créer et sur quelles fenêtres.
@@ -287,7 +295,7 @@ Elles servent à l'analyse des données et ne sont pas considérées comme des a
 - Une alerte peut être associée à une prévision du même site.
 - Une alerte peut donner lieu à plusieurs recommandations.
 
-# Ingestion des données historiques
+## Ingestion des données historiques
 
 Statut : `Fait`.
 
@@ -301,7 +309,7 @@ Les fichiers sources CSV et JSON sont nécessaires uniquement pour l'initialisat
 
 Ils ne sont pas versionnés dans Git et sont placés localement dans `data/raw/`.
 
-## Architecture du flux historique
+### Architecture du flux historique
 
 ```text
 Dataset CSV + métadonnées JSON
@@ -351,7 +359,7 @@ source = "csv"
 dataset_id = identifiant du dataset
 ```
 
-## Résultats validés pour l'historique
+### Résultats validés pour l'historique
 
 Le chargement de référence a permis d'obtenir :
 
@@ -366,7 +374,7 @@ aucune nouvelle mesure n'a été créée et le nombre de `reading` est resté à
 La procédure détaillée d'installation, d'exécution, de validation et de contrôle du pipeline
 est disponible dans `etl/README.md`.
 
-# Ingestion depuis l'API Mock
+## Ingestion depuis l'API Mock
 
 Statut : `Fait`.
 
@@ -378,7 +386,7 @@ Le traitement est implémenté dans :
 apps/backend/app/etl/mock_api_import.py
 ```
 
-## Endpoints utilisés
+### Endpoints utilisés
 
 Le pipeline récupère les informations des sites depuis :
 
@@ -410,7 +418,7 @@ Les paramètres de ligne de commande disponibles pour l'import sont :
 --dry-run
 ```
 
-## Flux d'ingestion API Mock
+### Flux d'ingestion API Mock
 
 ```text
         API Mock
@@ -454,7 +462,32 @@ La réponse source reçue depuis l'API est conservée dans :
 raw_data
 ```
 
-## Qualité des données de l'API Mock
+### Frontière de confiance avec l'API Mock
+
+L'API Mock de l'école n'a aucune authentification et expose un endpoint mutatif à quiconque. Sa
+réponse est donc traitée comme une entrée hostile, conformément à API10 dans
+[la traçabilité OWASP](owasp-traceabilite.md). Le risque premier n'est pas la fausse alerte,
+c'est l'empoisonnement du jeu d'entraînement du modèle de prédiction.
+
+Quatre garde-fous, tous dans `mock_api_import.py` :
+
+| Garde-fou | Mise en œuvre |
+|---|---|
+| Timeout | `APP_MOCK_API_TIMEOUT_SECONDS`, dix secondes par défaut |
+| Taille de tableau plafonnée | `MAX_SITES` sites, et au plus `--limit` mesures par site |
+| Bornes physiques | `PHYSICAL_BOUNDS`, une plage par grandeur |
+| Frontière d'anti-corruption | `build_site_row()` et `build_reading_row()`, qui ne recopient que les champs attendus |
+
+Une valeur hors bornes, d'un type inattendu, `NaN` ou infinie devient `NULL`. Elle laisse sa
+trace dans `null_reasons` sous la forme `out_of_physical_bounds:<colonne>`, et `data_quality`
+descend à `degraded`. Une `data_quality` que `ck_reading_quality` refuserait devient `NULL`
+plutôt que de faire échouer le lot entier. Dans tous les cas `raw_data` conserve la réponse
+d'origine intacte : rien n'est perdu, seule son exploitation est bornée.
+
+Le plafond de taille s'applique après désérialisation de la réponse. Borner le corps HTTP
+lui-même demanderait une lecture en flux, et reste à faire.
+
+### Qualité des données de l'API Mock
 
 Les valeurs `NULL` ne sont pas remplacées pendant l'ingestion.
 
@@ -475,7 +508,7 @@ imputed_values = NULL
 imputation_method = NULL
 ```
 
-## Validation de l'import API Mock
+### Validation de l'import API Mock
 
 Un scénario de validation a été exécuté pour les 7 sites sur la période :
 
@@ -526,7 +559,7 @@ Les tests automatisés couvrent également :
 - la conservation des données sources ;
 - l'idempotence en base.
 
-# Évolution prévue
+## Évolution prévue
 
 La prochaine étape consiste à orchestrer les deux mécanismes d'ingestion avec Apache Airflow.
 
