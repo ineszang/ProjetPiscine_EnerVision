@@ -43,9 +43,14 @@ lecture seule ; plusieurs lignes resteront à compléter une fois les endpoints 
 | Amorçage du premier administrateur hors dépôt, mot de passe jamais dans `argv` ni dans Git | `app/cli.py` | A02, A05 |
 | Réponse de l'API Mock bornée avant écriture : timeout, plafond de sites et de mesures, bornes physiques par grandeur, recopie des seuls champs attendus | `app/etl/mock_api_import.py` | API10 Unsafe Consumption of APIs |
 | CI bloquante : format, lint avec règles Bandit, typage strict, tests avec seuil de couverture | `.github/workflows/backend.yml` | A06 Vulnerable and Outdated Components |
+| Terminaison TLS au frontal, redirection 80 vers 443, HSTS et CSP posés par le proxy, limitation de débit au frontal | `infra/proxy/conf.d/enervision.conf`, ADR 0007 | API8 Security Misconfiguration, A05 |
 
 Note sur A06 : le jeu de règles `S` de ruff, déjà actif dans `pyproject.toml`, est le portage des
 règles Bandit. Ajouter Bandit à la CI serait redondant, contrairement à ce qu'annonce l'EC01.
+
+Note sur API8 : le transport est couvert, le certificat ne l'est qu'à moitié. Tant qu'aucun nom de
+domaine public ne résout vers la machine, le défi HTTP-01 de Let's Encrypt ne peut pas aboutir et
+le certificat servi reste auto-signé. Le chemin ACME est livré et documenté, pas exercé.
 
 ## Non couvert, et pourquoi
 
@@ -53,7 +58,6 @@ règles Bandit. Ajouter Bandit à la CI serait redondant, contrairement à ce qu
 |---|---|---|
 | **API1 Broken Object Level Authorization** | **ouvert** | Les rôles sont globaux, il n'y a pas de portée par site : `GET /sites/{site_id}` et `GET /recommendations/{recommendation_id}` répondent à tout compte `lecteur` pour n'importe quel site ou recommandation, sans vérifier une affectation compte-site qui n'existe pas encore. Un opérateur du site A pourra agir sur le site B dès que les endpoints d'écriture métier existeront. Correctif prévu : table d'affectation compte-site, contrôle d'appartenance dans la même dépendance que le contrôle de rôle. |
 | **API4, lectures de séries temporelles** | **partiel** | `GET /readings` plafonne la fenêtre temporelle (90 jours) et la pagination (`limit` ≤ 2000), voir plus haut. Reste ouvert : pagination en `limit`/`offset` simple plutôt qu'en curseur (un `offset` élevé sur une fenêtre dense reste coûteux), et aucun `statement_timeout` au niveau de la connexion pour borner une requête individuelle si les plafonds au-dessus s'avéraient insuffisants. |
-| **API8 Security Misconfiguration, transport** | **ouvert** | Pas de TLS, donc ni HSTS, ni cookie `Secure` réellement posé en production. Ils appartiennent au terminateur TLS, qui n'existe pas. |
 | **API10 Unsafe Consumption of APIs** | **partiel, et spécifique à ce projet** | L'API Mock de l'école n'a aucune authentification, tourne en HTTP clair sur le réseau de l'école, et expose un endpoint mutatif à quiconque. Sa réponse est traitée comme une entrée hostile par `app/etl/mock_api_import.py`, son seul consommateur à ce jour : les quatre garde-fous attendus sont en place, voir la ligne correspondante plus haut. Reste ouvert : le plafond de taille s'applique après désérialisation de la réponse, borner le corps HTTP lui-même demanderait une lecture en flux ; et `APP_MOCK_API_BASE_URL` n'impose pas `https`, donc les identifiants Basic partiraient en clair sur une URL en `http`. La conséquence la plus sérieuse n'est pas la fausse alerte, c'est l'empoisonnement du jeu d'entraînement du modèle de prédiction. |
 | **A08 Software and Data Integrity Failures** | **partiel** | La CI vérifie le code mais n'analyse ni les dépendances ni les images. `.terraform.lock.hcl` reste ignoré par git, ce qui contredit une chaîne d'approvisionnement maîtrisée. |
 | **A10 Server-Side Request Forgery** | **sans objet aujourd'hui** | Aucune URL sortante n'est pilotée par une donnée utilisateur. Le jour où l'adresse d'une source devient un champ de configuration, il faudra une liste blanche de schémas et d'hôtes, sans suivi de redirection. |

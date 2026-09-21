@@ -97,11 +97,11 @@ En développement, `proxy.conf.json` redirige tout `/api` vers `http://localhost
 qui évite le CORS sur le poste, et c'est pourquoi `environment.development.ts` se contente d'un
 `apiUrl` relatif, `/api/v1`.
 
-En production, il n'y a pas de proxy, mais `environment.ts` porte lui aussi un `apiUrl` relatif
-(`/api/v1`) plutôt qu'une URL absolue : la dette qui pointait en dur sur
-`http://localhost:8000/api/v1` a été corrigée. Un build de production sert donc l'appel `/api/v1/...`
-sur son propre origin, ce qui suppose qu'un ingress ou un reverse proxy route `/api` vers le
-backend une fois déployé — question toujours ouverte dans [10-infra.md](10-infra.md).
+En production, `environment.ts` porte lui aussi un `apiUrl` relatif (`/api/v1`) plutôt qu'une URL
+absolue : la dette qui pointait en dur sur `http://localhost:8000/api/v1` a été corrigée. Un build
+de production sert donc l'appel `/api/v1/...` sur son propre origin, et c'est le **reverse proxy**
+qui route `/api` vers le backend : `location /api/` dans `infra/proxy/conf.d/enervision.conf`, voir
+[10-infra.md](10-infra.md) et l'[ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
 
 ## Exécution
 
@@ -118,13 +118,14 @@ le message d'erreur arrive avant toute compilation. Un poste en 22.21 ou en 24.1
 tester ni construire le frontend.
 
 Le frontend a ses cibles dans le `Makefile` racine (`install-frontend`, `dev-frontend`,
-englobées par `install` et `dev`), mais **aucun service dans `docker-compose.yml`** : en
-développement il tourne toujours directement via `npm`, depuis `apps/frontend`. Le port 4200
-n'apparaît dans le compose que comme valeur par défaut d'`APP_CORS_ORIGINS`, côté backend.
+englobées par `install` et `dev`). En développement il tourne directement via `npm`, depuis
+`apps/frontend` : le port 4200 n'apparaît dans le compose que comme valeur par défaut
+d'`APP_CORS_ORIGINS`, côté backend.
 
-Un `Dockerfile` frontend existe sur la branche `feat/pipeline-cd`, mais il est mono-étage et sans
-`CMD` : il construit sans rien servir. Le `README.md` de l'application demande un multi-étage
-avec un service statique, il reste à écrire.
+Le service `frontend` du `docker-compose.yml` sert le build statique par le nginx de
+`apps/frontend/Dockerfile`, multi-étage, qui **écoute sur 3000**. En déploiement il n'est plus
+publié du tout : le reverse proxy est seul à sortir sur le réseau, et l'atteint par le réseau
+Compose.
 
 ## Sécurité
 
@@ -133,6 +134,13 @@ avec un service statique, il reste à écrire.
   `/sites`, `authInterceptor` pose le jeton porteur sur les requêtes sortantes et déclenche le
   rafraîchissement sur 401. Détail complet dans
   [31-contrat-authentification.md](31-contrat-authentification.md).
+- **La CSP posée par le reverse proxy contraint le build.** `script-src 'self'` interdit les
+  gestionnaires d'événements en ligne ; l'inlining du CSS critique en produisait un
+  (`<link media="print" onload="this.media='all'">`), ce qui aurait laissé l'application sans
+  style derrière le proxy. D'où `optimization.styles.inlineCritical: false` dans la configuration
+  de production d'`angular.json`. La contrepartie est un rendu non stylé très bref au premier
+  affichage. `style-src` conserve `'unsafe-inline'` : Angular injecte les styles de composants à
+  l'exécution, et s'en passer demanderait un `ngCspNonce` que le SPA statique ne peut pas produire.
 
 ## Tests
 
