@@ -1,0 +1,58 @@
+<div class="recommendations">
+  <nav class="ev-breadcrumb">
+    <a routerLink="/dashboard">Tableau de bord</a>
+  </nav>
+
+  <header class="recommendations__header">
+    <a routerLink="/dashboard" class="ev-brand-link">
+      <ev-brand class="recommendations__logo" />
+    </a>
+    <div>
+      <h1>Recommandations</h1>
+      <p class="recommendations__subtitle">
+        Actions proposées par le moteur de règles à partir des alertes
+      </p>
+    </div>
+  </header>
+
+  <div class="recommendations__toolbar">
+    <label class="recommendations__filter">
+      <span class="form-label">Site</span>
+      <select class="form-select" data-testid="site-filter" (change)="onSiteChange($event)">
+        <option value="" [selected]="!siteFilter()">Tous les sites</option>
+        @for (site of sites(); track site.site_id) {
+          <option [value]="site.site_id" [selected]="site.site_id === siteFilter()">
+            {{ site.site_name }}
+          </option>
+        }
+      </select>
+    </label>
+    @if (isAdmin()) {
+      <ev-button
+        variant="secondary"
+        [fullWidth]="false"
+        [disabled]="generating()"
+        data-testid="generate"
+        (click)="onGenerate()"
+      >
+        {{ generating() ? 'Génération en cours…' : 'Générer les recommandations' }}
+      </ev-button>
+    }
+  </div>
+
+  @if (generationReport(); as report) {
+    <ev-alert severity="success" class="recommendations__banner">{{ bilan(report) }}.</ev-alert>
+  }
+  @if (generationError(); as message) {
+    <ev-alert severity="danger" class="recommendations__banner">{{ message }}</ev-alert>
+  }
+
+  @if (alertId(); as id) {
+    <p class="recommendations__focus">
+      Alerte n° {{ id }} ·
+      <a routerLink="/recommendations" class="ev-link">Toutes les recommandations</a>
+    </p>
+  }
+
+  <app-recommendation-list [siteId]="siteFilter()" [alertId]="alertId()" [sites]="sites()" />
+</div>

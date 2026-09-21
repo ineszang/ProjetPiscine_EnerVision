@@ -5,6 +5,8 @@ import { BehaviorSubject, of, throwError } from 'rxjs';
 import { SiteDetail } from './site-detail';
 import { SitesService } from '../../../core/services/sites.service';
 import { ReadingsService } from '../../../core/services/readings.service';
+import { AlertsService } from '../../../core/services/alerts.service';
+import { RecommendationsService } from '../../../core/services/recommendations.service';
 
 const SITE = {
   site_id: 'SITE001',
@@ -69,6 +71,7 @@ function setup(
   readingsMock: Partial<ReadingsService>,
 ) {
   const paramMap = new BehaviorSubject(convertToParamMap({ siteId }));
+  const getAlerts = vi.fn().mockReturnValue(of([]));
   TestBed.configureTestingModule({
     imports: [SiteDetail],
     providers: [
@@ -76,9 +79,14 @@ function setup(
       { provide: ActivatedRoute, useValue: { paramMap } },
       { provide: SitesService, useValue: sitesMock },
       { provide: ReadingsService, useValue: readingsMock },
+      { provide: AlertsService, useValue: { getAlerts } },
+      {
+        provide: RecommendationsService,
+        useValue: { getRecommendations: vi.fn().mockReturnValue(of([])) },
+      },
     ],
   });
-  return { fixture: TestBed.createComponent(SiteDetail), paramMap };
+  return { fixture: TestBed.createComponent(SiteDetail), paramMap, getAlerts };
 }
 
 describe('SiteDetail', () => {
@@ -259,6 +267,27 @@ describe('SiteDetail', () => {
       '2026-09-16T10:00:00.000Z',
       '2026-09-17T10:00:00Z',
     );
+  });
+
+  it('demande les recommandations du site consulté à travers ses alertes', () => {
+    const { fixture, getAlerts } = setup(
+      'SITE001',
+      {
+        getSite: vi.fn().mockReturnValue(of(SITE)),
+        getCurrent: vi.fn().mockReturnValue(of(CURRENT_COMPLET)),
+      },
+      { getHistory: vi.fn().mockReturnValue(of([])) },
+    );
+
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    expect(getAlerts).toHaveBeenCalledWith({ site_id: 'SITE001' });
+    expect(fixture.nativeElement.querySelector('app-recommendation-list')).not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Recommandations');
+    expect(
+      fixture.nativeElement.querySelector('a[href="/recommendations?site=SITE001"]'),
+    ).not.toBeNull();
   });
 
   it("annonce l'absence de mesure sans interroger l'historique quand timestamp est null", () => {

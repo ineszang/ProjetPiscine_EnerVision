@@ -154,6 +154,29 @@ Compose.
 
 Conventions et gabarits : [`apps/frontend/TESTING.md`](../../apps/frontend/TESTING.md).
 
+## Recommandations
+
+Statut : `Fait`. La vue `/recommendations` (`features/recommendations`, derrière `authGuard`, tous
+rôles) présente les recommandations du moteur de règles groupées par alerte, du plus récent au plus
+ancien, avec le contexte de l'alerte (sévérité, type, site, horodatage, message) puis chaque action,
+son explication et la règle qui l'a produite.
+
+- **Jointure côté client.** Une recommandation ne porte que `alert_id`, jamais `site_id`, et
+  `GET /recommendations` n'a aucun filtre. `app-recommendation-list` (`shared/components/`) charge
+  donc en parallèle `GET /alerts` (filtré par `site_id` quand un site est fixé) et
+  `GET /recommendations`, puis les joint par `alert_id` (`joinByAlert`, fonction pure testée à
+  part). Les recommandations dont l'alerte n'est pas dans le jeu chargé sont ignorées : c'est ainsi
+  que le filtre site s'applique. `/alerts` n'étant pas paginé, un seul appel suffit.
+- **Paramètres d'URL.** `?site=<site_id>` présélectionne le filtre site ; `?alert=<alert_id>`
+  réduit la vue à une alerte et la met en évidence (entier strictement positif, sinon ignoré).
+- **Génération.** Le bouton « Générer les recommandations » n'apparaît que pour le rôle `admin`
+  (`POST /recommendations/generate?site_id=`, réservé admin côté API) et affiche le bilan renvoyé
+  (créées, déjà présentes, alertes examinées) avant de recharger la liste. La voie normale reste le
+  DAG Airflow `alertes` ([ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md)).
+- **Entrées.** Lien « Recommandations » dans l'en-tête du tableau de bord ; section
+  « Recommandations » sur la vue détail d'un site (liste restreinte au site, lien vers la vue
+  complète préfiltrée).
+
 ## Questions ouvertes
 
 - **Gestion d'état** : les signaux suffisent aujourd'hui, la question se reposera quand plusieurs
