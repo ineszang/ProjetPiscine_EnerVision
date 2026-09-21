@@ -13,10 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.etl.mock_api_import as mock_api_import
 from app.etl.mock_api_import import (
+    MAX_SITES,
     READING_INSERT,
     SOURCE_HISTORY,
     build_reading_batch,
     build_reading_row,
+    build_site_row,
     fetch_readings,
     fetch_sites,
     upsert_sites,
@@ -71,6 +73,26 @@ async def test_fetch_sites_returns_sites() -> None:
     assert len(sites) == 1
     assert sites[0]["site_id"] == "SITE001"
     assert sites[0]["site_type"] == "office"
+
+
+async def test_fetch_sites_rejects_non_list_response() -> None:
+    def handler(request: Request) -> Response:
+        return Response(
+            status_code=200,
+            json={"unexpected": "payload"},
+        )
+
+    transport = MockTransport(handler)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="https://mock.test",
+    ) as client:
+        with pytest.raises(
+            ValueError,
+            match="La réponse /api/v1/sites doit être une liste",
+        ):
+            await fetch_sites(client)
 
 
 async def test_fetch_readings_sends_expected_query_parameters() -> None:
@@ -576,6 +598,148 @@ def test_main_runs_import(
     )
 
 
+async def test_fetch_sites_rejects_a_response_above_the_cap() -> None:
+    def handler(request: Request) -> Response:
+        return Response(
+            status_code=200,
+            json=[make_site() for _ in range(MAX_SITES + 1)],
+        )
+
+    transport = MockTransport(handler)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="https://mock.test",
+    ) as client:
+        with pytest.raises(
+            ValueError,
+            match=f"dépasse le plafond de {MAX_SITES} sites",
+        ):
+            await fetch_sites(client)
+
+
+async def test_fetch_readings_rejects_a_response_above_the_requested_limit() -> None:
+    def handler(request: Request) -> Response:
+        return Response(
+            status_code=200,
+            json=[make_reading(), make_reading(), make_reading()],
+        )
+
+    transport = MockTransport(handler)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="https://mock.test",
+    ) as client:
+        with pytest.raises(
+            ValueError,
+            match="dépasse la limite demandée de 2",
+        ):
+            await fetch_readings(
+                client=client,
+                site_id="SITE001",
+                start_time=datetime.fromisoformat("2024-06-15T12:00:00"),
+                end_time=datetime.fromisoformat("2024-06-15T13:00:00"),
+                limit=2,
+            )
+
+
+def test_build_reading_row_neutralises_values_outside_physical_bounds() -> None:
+    reading = make_reading()
+
+    reading["power_factor"] = 42.0
+    reading["temperature_celsius"] = 1e30
+    reading["humidity_percent"] = -1.0
+
+    row = build_reading_row(reading)
+
+    assert row["power_factor"] is None
+    assert row["temperature_celsius"] is None
+    assert row["humidity_percent"] is None
+
+    assert row["null_reasons"] == [
+        "out_of_physical_bounds:power_factor",
+        "out_of_physical_bounds:temperature_celsius",
+        "out_of_physical_bounds:humidity_percent",
+    ]
+
+    assert row["data_quality"] == "degraded"
+
+    assert json.loads(row["raw_data"])["power_factor"] == 42.0
+
+
+def test_build_reading_row_rejects_a_measure_that_is_not_a_number() -> None:
+    reading = make_reading()
+
+    reading["consumption_kw"] = "87.34"
+
+    row = build_reading_row(reading)
+
+    assert row["consumption_kw"] is None
+    assert "out_of_physical_bounds:consumption_kw" in row["null_reasons"]
+
+
+def test_build_reading_row_drops_a_quality_the_database_refuses() -> None:
+    reading = make_reading()
+
+    reading["data_quality"] = "unknown"
+
+    row = build_reading_row(reading)
+
+    assert row["data_quality"] is None
+
+
+def test_build_reading_row_requires_an_identifier() -> None:
+    reading = make_reading()
+
+    del reading["site_id"]
+
+    with pytest.raises(
+        ValueError,
+        match="Champ site_id absent ou invalide",
+    ):
+        build_reading_row(reading)
+
+
+def test_build_site_row_keeps_only_the_expected_columns() -> None:
+    site = make_site()
+
+    site["unexpected"] = "valeur hostile"
+    site["capacity_kw"] = -5.0
+    site["status"] = 12
+
+    row = build_site_row(site)
+
+    assert set(row) == {
+        "site_id",
+        "site_type",
+        "site_name",
+        "location",
+        "capacity_kw",
+        "status",
+    }
+
+    assert row["capacity_kw"] is None
+    assert row["status"] is None
+
+
+async def test_upsert_sites_sends_only_the_expected_columns() -> None:
+    connection = AsyncMock()
+
+    site = make_site()
+    site["unexpected"] = "valeur hostile"
+
+    await upsert_sites(
+        connection,
+        [site],
+    )
+
+    rows = connection.execute.await_args.args[1]
+
+    assert "unexpected" not in rows[0]
+    assert rows[0]["site_id"] == "SITE001"
+
+
 @pytest.mark.integration
 async def test_reading_insert_is_idempotent(
     session: AsyncSession,
@@ -620,3 +784,51 @@ async def test_reading_insert_is_idempotent(
     assert result.scalar_one() == 1
 
     await session.rollback()
+
+
+@pytest.mark.integration
+async def test_out_of_bounds_reading_is_stored_neutralised(
+    session: AsyncSession,
+) -> None:
+    reading = make_reading()
+    reading["power_factor"] = 42.0
+
+    row = build_reading_row(reading)
+
+    connection = await session.connection()
+
+    await upsert_sites(
+        connection,
+        [make_site()],
+    )
+
+    await session.execute(
+        READING_INSERT,
+        [row],
+    )
+
+    result = await session.execute(
+        text(
+            """
+            SELECT power_factor, data_quality, null_reasons, raw_data ->> 'power_factor'
+            FROM reading
+            WHERE site_id = :site_id
+              AND timestamp = :timestamp
+              AND source = :source
+            """
+        ),
+        {
+            "site_id": row["site_id"],
+            "timestamp": row["timestamp"],
+            "source": row["source"],
+        },
+    )
+
+    stored = result.one()
+
+    await session.rollback()
+
+    assert stored[0] is None
+    assert stored[1] == "degraded"
+    assert stored[2] == ["out_of_physical_bounds:power_factor"]
+    assert stored[3] == "42.0"
