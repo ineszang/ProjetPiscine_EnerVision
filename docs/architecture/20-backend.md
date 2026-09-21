@@ -193,7 +193,7 @@ mécanisme que `ReadingRepository.latest_by_site()`. Un site jamais scoré rend 
 plutôt qu'un statut inventé : le domaine `available`/`insufficient_data`/`error` de la contrainte
 `ck_prediction_status` n'a pas de valeur pour « pas encore de ligne ». L'API ne lance jamais
 LightGBM elle-même ; elle lit ce que le pipeline de scoring a déjà écrit, cf.
-[ML-START.md](../../ML-START.md) section 3.
+[ML-START.md](../ML-START.md) section 3.
 
 `POST /recommendations/generate` est la seule route d'écriture métier du contrat. Elle applique
 le moteur de règles d'`app/services/recommendation_rules.py` aux lignes d'`alert`, sans modèle ni

@@ -2,7 +2,7 @@
 
 Pipeline d'entrainement du modele de prevision de consommation energetique. Contexte complet :
 [ADR 0005](../docs/adr/0005-modele-prediction-lightgbm.md) (choix du modele) et
-[ML-START.md](../ML-START.md) (mecanisme d'acces aux donnees).
+[ML-START.md](../docs/ML-START.md) (mecanisme d'acces aux donnees).
 
 | Element      | Choix                                        |
 |--------------|-----------------------------------------------|
