@@ -21,9 +21,8 @@ const REFRESH_INTERVAL_MS = 10000;
 const UNAVAILABLE_MESSAGE =
   'Données indisponibles, les valeurs affichées datent du dernier relevé.';
 
-// `error` n'a pas de précédent dans les fixtures ou l'API à ce jour, mais figure dans le
-// domaine du schéma backend (`ck_prediction_status`) : mieux vaut une couleur définie que
-// tomber sur `undefined` si ce statut apparaît un jour.
+// `error` n'a pas encore de précédent côté API mais figure dans `ck_prediction_status` :
+// mieux vaut un ton défini que `undefined` le jour où ce statut apparaît.
 const TON_PAR_STATUT_PREDICTION: Record<PredictionStatus, BadgeTone> = {
   available: 'success',
   insufficient_data: 'warning',
@@ -64,9 +63,8 @@ export class Dashboard implements OnInit {
   stats = signal<StatsSummary | null>(null);
   predictions = signal<SitePredictionSummary[]>([]);
 
-  // Un signal par flux, pas un seul `error` partagé : sinon le tick suivant de `timer` (stats)
-  // efface silencieusement un message d'échec des prévisions après 10s au plus, sans retry ni
-  // indication pour l'utilisateur que la section correspondante est restée vide.
+  // Piège : un signal d'erreur par flux, sinon le tick suivant de `timer` (stats) efface en
+  // silence l'échec des prévisions après 10 s au plus, sans retry ni indication à l'utilisateur.
   statsError = signal<string | null>(null);
   predictionsError = signal<string | null>(null);
 
