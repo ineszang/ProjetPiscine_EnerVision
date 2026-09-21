@@ -256,8 +256,8 @@ auraient pu comparer des lectures/choisir une prévision au hasard. `_detect_spi
 explicitement les paires de lectures qui partagent le même horodatage (deux `source` pour un seul
 instant réel, pas une variation).
 
-Comme `enervision_ml.score`, la détection est un script lancé à la main, pas encore ordonnancé par
-Airflow : `uv run python -m app.detection.internal_alerts [--site-id ...] [--now ...]`, dans
+La détection est un script lancé à la main, pas encore ordonnancé par Airflow (contrairement à
+`enervision_ml.score`, orchestré par le DAG `ml_score` depuis l'issue #115) : `uv run python -m app.detection.internal_alerts [--site-id ...] [--now ...]`, dans
 `apps/backend` puisque les règles s'appuient sur les repositories ORM de l'API plutôt que sur une
 connexion SQL directe (contrairement à `app/etl/historical_import.py`). Cette issue (#104)
 débloquait #38 (moteur de règles pour recommandations), dont la FK `alert_id` `NOT NULL` n'avait
