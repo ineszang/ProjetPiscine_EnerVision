@@ -1,0 +1,51 @@
+<div class="sensor-status">
+  <nav class="ev-breadcrumb">
+    <a routerLink="/dashboard">Tableau de bord</a>
+  </nav>
+
+  <header class="sensor-status__header">
+    <a routerLink="/dashboard" class="ev-brand-link">
+      <ev-brand class="sensor-status__logo" />
+    </a>
+    <div>
+      <h1>Supervision des capteurs</h1>
+      <p class="sensor-status__subtitle">État de santé par capteur et par site</p>
+    </div>
+  </header>
+
+  @if (error(); as message) {
+    <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
+  }
+
+  @if (data(); as d) {
+    <div class="sites-grid">
+      @for (site of d.sites; track site.site_id) {
+        <ev-card class="site-card">
+          <div class="site-card__header">
+            <span class="site-card__name">{{ site.site_name }}</span>
+            <ev-badge [tone]="badgeToneForOverall(site.overall)">{{ site.overall }}</ev-badge>
+          </div>
+
+          <ul class="sensor-list">
+            @for (entry of sensorEntries; track entry[0]) {
+              @let diagnostic = sensorOf(site.sensors, entry[0]);
+              <li class="sensor-item">
+                <span class="sensor-dot" [class]="'sensor-dot--' + diagnostic.status"></span>
+                <span class="sensor-item__label">{{ entry[1] }}</span>
+                @if (diagnostic.status === 'failing') {
+                  <span class="sensor-item__since">
+                    @if (diagnostic.since; as since) {
+                      dernière lecture le {{ since | date: 'dd/MM/yyyy HH:mm' }}
+                    } @else {
+                      aucune lecture reçue
+                    }
+                  </span>
+                }
+              </li>
+            }
+          </ul>
+        </ev-card>
+      }
+    </div>
+  }
+</div>

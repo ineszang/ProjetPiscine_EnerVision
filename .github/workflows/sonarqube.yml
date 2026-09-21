@@ -5,11 +5,15 @@ on:
     paths:
       - "apps/frontend/**"
       - "apps/backend/**"
+      - "ml/**"
+      - "etl/airflow/**"
       - ".github/workflows/sonarqube.yml"
   pull_request:
     paths:
       - "apps/frontend/**"
       - "apps/backend/**"
+      - "ml/**"
+      - "etl/airflow/**"
       - ".github/workflows/sonarqube.yml"
 
 
@@ -108,8 +112,36 @@ jobs:
           name: backend-coverage
           path: apps/backend/coverage.xml
 
+  test-ml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: ml/uv.lock
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        run: uv python install
+        working-directory: ml
+
+      - name: Synchronise les dépendances sans dévier du verrou
+        run: uv sync --all-groups --frozen
+        working-directory: ml
+
+      - name: Lancement des tests et génération du rapport de couverture (ML)
+        run: uv run pytest --cov-report=xml
+        working-directory: ml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-coverage
+          path: ml/coverage.xml
+
   sonarqube:
-    needs: [build-front, build-back, test-front, test-back]
+    needs: [build-front, build-back, test-front, test-back, test-ml]
     name: SonarQube
     runs-on: ubuntu-latest
     steps:
@@ -126,6 +158,11 @@ jobs:
         with:
           name: backend-coverage
           path: apps/backend
+      - name: Téléchargement du rapport de couverture (ML)
+        uses: actions/download-artifact@v4
+        with:
+          name: ml-coverage
+          path: ml
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v8
         env:

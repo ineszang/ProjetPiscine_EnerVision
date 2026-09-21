@@ -112,8 +112,10 @@ async def test_duplicate_reading_is_rejected_when_key_matches(
     )
     await data_connection.execute(statement)
 
+    savepoint = data_connection.begin_nested()
+
     with pytest.raises(IntegrityError):
-        async with data_connection.begin_nested():
+        async with savepoint:
             await data_connection.execute(statement)
 
 
@@ -147,9 +149,12 @@ async def test_invalid_reading_is_rejected_when_constraints_fail(
     }
     values.update(changes)
 
+    statement = insert(Reading).values(**values)
+    savepoint = data_connection.begin_nested()
+
     with pytest.raises(IntegrityError):
-        async with data_connection.begin_nested():
-            await data_connection.execute(insert(Reading).values(**values))
+        async with savepoint:
+            await data_connection.execute(statement)
 
 
 async def test_prediction_requires_period_when_energy_is_predicted(
@@ -164,8 +169,10 @@ async def test_prediction_requires_period_when_energy_is_predicted(
         model_reference="test-model/1",
     )
 
+    savepoint = data_connection.begin_nested()
+
     with pytest.raises(IntegrityError):
-        async with data_connection.begin_nested():
+        async with savepoint:
             await data_connection.execute(statement)
 
 
@@ -212,21 +219,22 @@ async def test_alert_rejects_prediction_when_site_differs(
         )
     ).scalar_one()
 
+    statement = insert(Alert).values(
+        source_alert_id=str(uuid4()),
+        site_id=other_site,
+        source="enervision",
+        timestamp=MOMENT,
+        type="spike",
+        severity="high",
+        message="Test",
+        prediction_id=prediction_id,
+        raw_data={},
+    )
+    savepoint = data_connection.begin_nested()
+
     with pytest.raises(IntegrityError):
-        async with data_connection.begin_nested():
-            await data_connection.execute(
-                insert(Alert).values(
-                    source_alert_id=str(uuid4()),
-                    site_id=other_site,
-                    source="enervision",
-                    timestamp=MOMENT,
-                    type="spike",
-                    severity="high",
-                    message="Test",
-                    prediction_id=prediction_id,
-                    raw_data={},
-                )
-            )
+        async with savepoint:
+            await data_connection.execute(statement)
 
 
 async def test_recommendation_is_unique_when_alert_and_rule_match(
@@ -256,6 +264,8 @@ async def test_recommendation_is_unique_when_alert_and_rule_match(
     )
     await data_connection.execute(statement)
 
+    savepoint = data_connection.begin_nested()
+
     with pytest.raises(IntegrityError):
-        async with data_connection.begin_nested():
+        async with savepoint:
             await data_connection.execute(statement)

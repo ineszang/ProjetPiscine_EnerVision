@@ -1453,6 +1453,90 @@
         }
       }
     },
+    "/api/v1/recommendations/generate": {
+      "post": {
+        "tags": [
+          "recommendations"
+        ],
+        "summary": "Génère les recommandations à partir des alertes",
+        "operationId": "generate_recommendations_api_v1_recommendations_generate_post",
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "site_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationGenerationResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droits insuffisants, ou mot de passe provisoire à changer quand `detail` vaut `password_change_required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps invalide. Le détail nomme le champ fautif et le type d'erreur, jamais la valeur envoyée.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/stats/summary": {
       "get": {
         "tags": [
@@ -1704,6 +1788,62 @@
           },
           "403": {
             "description": "Droits insuffisants, ou mot de passe provisoire à changer quand `detail` vaut `password_change_required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ]
+      }
+    },
+    "/api/v1/predictions": {
+      "get": {
+        "tags": [
+          "predictions"
+        ],
+        "summary": "Dernière prédiction de consommation par site",
+        "operationId": "get_predictions_api_v1_predictions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionSummaryResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Mot de passe provisoire à changer (`detail` vaut `password_change_required`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1971,6 +2111,45 @@
           "new_password"
         ],
         "title": "PasswordChangeRequest"
+      },
+      "PredictionStatus": {
+        "type": "string",
+        "enum": [
+          "available",
+          "insufficient_data",
+          "error"
+        ],
+        "title": "PredictionStatus"
+      },
+      "PredictionSummaryResponse": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/SitePredictionSummaryResponse"
+            },
+            "type": "array",
+            "title": "Sites"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "sites"
+        ],
+        "title": "PredictionSummaryResponse"
+      },
+      "PredictionTargetMetric": {
+        "type": "string",
+        "enum": [
+          "consumption_kwh",
+          "consumption_kw"
+        ],
+        "title": "PredictionTargetMetric"
       },
       "PrincipalResponse": {
         "properties": {
@@ -2249,6 +2428,29 @@
         ],
         "title": "ReadingSource"
       },
+      "RecommendationGenerationResponse": {
+        "properties": {
+          "alerts_examined": {
+            "type": "integer",
+            "title": "Alerts Examined"
+          },
+          "recommendations_created": {
+            "type": "integer",
+            "title": "Recommendations Created"
+          },
+          "already_present": {
+            "type": "integer",
+            "title": "Already Present"
+          }
+        },
+        "type": "object",
+        "required": [
+          "alerts_examined",
+          "recommendations_created",
+          "already_present"
+        ],
+        "title": "RecommendationGenerationResponse"
+      },
       "RecommendationResponse": {
         "properties": {
           "recommendation_id": {
@@ -2517,6 +2719,104 @@
           "data_quality"
         ],
         "title": "SiteCurrentResponse"
+      },
+      "SitePredictionResponse": {
+        "properties": {
+          "target_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Target At"
+          },
+          "target_metric": {
+            "$ref": "#/components/schemas/PredictionTargetMetric"
+          },
+          "period_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Minutes"
+          },
+          "predicted_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Value"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PredictionStatus"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "model_reference": {
+            "type": "string",
+            "title": "Model Reference"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_at",
+          "target_metric",
+          "period_minutes",
+          "predicted_value",
+          "status",
+          "failure_reason",
+          "model_reference",
+          "created_at"
+        ],
+        "title": "SitePredictionResponse"
+      },
+      "SitePredictionSummaryResponse": {
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "title": "Site Id"
+          },
+          "site_name": {
+            "type": "string",
+            "title": "Site Name"
+          },
+          "prediction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SitePredictionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "site_id",
+          "site_name",
+          "prediction"
+        ],
+        "title": "SitePredictionSummaryResponse"
       },
       "SiteResponse": {
         "properties": {
@@ -2960,7 +3260,7 @@
     },
     {
       "name": "recommendations",
-      "description": "Consultation des recommandations issues des alertes. Accessible à partir du rôle `lecteur`."
+      "description": "Consultation des recommandations issues des alertes. Accessible à partir du rôle `lecteur`. Leur génération par le moteur de règles est réservée au rôle `admin`."
     },
     {
       "name": "stats",
@@ -2973,6 +3273,10 @@
     {
       "name": "sensors",
       "description": "État de santé des capteurs par site. Réservé au rôle `admin`."
+    },
+    {
+      "name": "predictions",
+      "description": "Dernière prévision de consommation par site, calculée hors ligne par le pipeline de scoring (`ml/`) et simplement lue ici. Accessible à partir du rôle `lecteur`."
     }
   ]
 }

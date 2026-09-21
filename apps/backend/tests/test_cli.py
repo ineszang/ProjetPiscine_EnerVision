@@ -19,13 +19,17 @@ def test_build_parser_reads_the_create_admin_arguments() -> None:
 
 
 def test_build_parser_requires_a_subcommand() -> None:
+    parser = cli.build_parser()
+
     with pytest.raises(SystemExit):
-        cli.build_parser().parse_args([])
+        parser.parse_args([])
 
 
 def test_build_parser_requires_an_email() -> None:
+    parser = cli.build_parser()
+
     with pytest.raises(SystemExit):
-        cli.build_parser().parse_args(["create-admin"])
+        parser.parse_args(["create-admin"])
 
 
 def test_read_password_generates_a_long_secret_when_asked(
@@ -118,3 +122,30 @@ def test_main_exports_the_contract_without_asking_for_a_password(
     assert code == 0
     assert destination.exists()
     assert str(destination) in capsys.readouterr().out
+
+
+def test_build_parser_reads_the_generate_recommendations_arguments() -> None:
+    arguments = cli.build_parser().parse_args(["generate-recommendations", "--site-id", "SITE002"])
+
+    assert arguments.commande == "generate-recommendations"
+    assert arguments.site_id == "SITE002"
+
+
+def test_build_parser_defaults_the_generation_to_every_site() -> None:
+    arguments = cli.build_parser().parse_args(["generate-recommendations"])
+
+    assert arguments.site_id is None
+
+
+def test_main_generates_the_recommendations_without_asking_for_a_password(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def fausse_generation(*, site_id: str | None) -> str:
+        return f"génération lancée pour {site_id}"
+
+    monkeypatch.setattr(cli, "generate_recommendations", fausse_generation)
+
+    code = cli.main(["generate-recommendations", "--site-id", "SITE002"])
+
+    assert code == 0
+    assert "SITE002" in capsys.readouterr().out

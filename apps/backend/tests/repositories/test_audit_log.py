@@ -49,8 +49,10 @@ async def test_the_database_refuses_to_mutate_the_audit_log(
 ) -> None:
     await une_ligne(session)
 
+    requete = text(instruction)
+
     with pytest.raises(DBAPIError, match="ajout seul"):
-        await session.execute(text(instruction))
+        await session.execute(requete)
     await session.rollback()
 
 

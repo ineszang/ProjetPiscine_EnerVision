@@ -235,5 +235,7 @@ async def test_every_operation_refuses_an_unknown_account(action: str) -> None:
     if action == "set_active":
         arguments["is_active"] = False
 
+    methode = getattr(attirail.service, action)
+
     with pytest.raises(UserNotFoundError):
-        await getattr(attirail.service, action)(**arguments)
+        await methode(**arguments)
