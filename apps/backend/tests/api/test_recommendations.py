@@ -10,7 +10,7 @@ from app.api.deps import get_current_principal, get_recommendation_service
 from app.core.principal import Principal
 from app.core.roles import AccountKind, Role
 from app.models.energy import Recommendation
-from app.services.recommendation import RecommendationNotFoundError
+from app.services.recommendation import RapportGeneration, RecommendationNotFoundError
 
 MOMENT = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -40,6 +40,7 @@ class FauxService:
     def __init__(self, erreur: Exception | None = None) -> None:
         self._erreur = erreur
         self.recommendation = recommendation()
+        self.site_demande: str | None = None
 
     async def list_all(self) -> list[Recommendation]:
         return [self.recommendation]
@@ -48,6 +49,10 @@ class FauxService:
         if self._erreur is not None:
             raise self._erreur
         return self.recommendation
+
+    async def generate(self, *, site_id: str | None = None) -> RapportGeneration:
+        self.site_demande = site_id
+        return RapportGeneration(alertes_examinees=2, recommandations_creees=3, deja_presentes=1)
 
 
 @pytest.fixture
@@ -142,3 +147,56 @@ async def test_get_recommendation_returns_404_when_the_session_finds_nothing(
     response = await client.get("/api/v1/recommendations/404")
 
     assert response.status_code == 404
+
+
+@pytest.fixture
+def admin_connecte(app: FastAPI) -> Iterator[None]:
+    app.dependency_overrides[get_current_principal] = lambda: principal(Role.ADMIN)
+    yield
+    app.dependency_overrides.pop(get_current_principal, None)
+
+
+@pytest.fixture
+def servi_en_admin(app: FastAPI, admin_connecte: None) -> Iterator[Callable[[], FauxService]]:
+    def installe() -> FauxService:
+        service = FauxService()
+        app.dependency_overrides[get_recommendation_service] = lambda: service
+        return service
+
+    yield installe
+    app.dependency_overrides.pop(get_recommendation_service, None)
+
+
+async def test_generate_recommendations_returns_the_generation_report(
+    servi_en_admin: Callable[[], FauxService], client: AsyncClient
+) -> None:
+    servi_en_admin()
+
+    response = await client.post("/api/v1/recommendations/generate")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "alerts_examined": 2,
+        "recommendations_created": 3,
+        "already_present": 1,
+    }
+
+
+async def test_generate_recommendations_forwards_the_requested_site(
+    servi_en_admin: Callable[[], FauxService], client: AsyncClient
+) -> None:
+    service = servi_en_admin()
+
+    await client.post("/api/v1/recommendations/generate", params={"site_id": "SITE002"})
+
+    assert service.site_demande == "SITE002"
+
+
+async def test_generate_recommendations_refuses_a_reader(
+    servi: Callable[..., FauxService], client: AsyncClient
+) -> None:
+    servi()
+
+    response = await client.post("/api/v1/recommendations/generate")
+
+    assert response.status_code == 403

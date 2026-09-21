@@ -12,3 +12,9 @@ class RecommendationResponse(BaseModel):
     explanation: str
     rule_reference: str
     created_at: datetime
+
+
+class RecommendationGenerationResponse(BaseModel):
+    alerts_examined: int
+    recommendations_created: int
+    already_present: int

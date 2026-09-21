@@ -113,6 +113,7 @@ Le sens de dependance est unique : `endpoints` vers `services` vers `repositorie
 | `/api/v1/sites/{site_id}` | Décrit un site | `lecteur` |
 | `/api/v1/recommendations` | Liste les recommandations | `lecteur` |
 | `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation | `lecteur` |
+| `/api/v1/recommendations/generate` | Génère les recommandations depuis les alertes (POST) | `admin` |
 | `/metrics` | Métriques au format Prometheus | jeton si `APP_METRICS_TOKEN` |
 | `/docs`, `/openapi.json` | Documentation, fermée en `staging` et `prod` | public sinon |
 
