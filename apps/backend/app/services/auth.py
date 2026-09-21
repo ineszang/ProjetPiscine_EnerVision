@@ -14,7 +14,11 @@ from datetime import UTC, datetime, timedelta
 from typing import NoReturn, Protocol
 from uuid import UUID, uuid4
 
+from fastapi import BackgroundTasks
+
 from app.core.hashing import Argon2Hasher
+from app.core.logging import get_logger
+from app.core.mailer import Mailer
 from app.core.principal import Principal
 from app.core.roles import AccountKind, Role
 from app.core.security import (
@@ -28,8 +32,12 @@ from app.models.login_attempt import LoginOutcome
 from app.models.refresh_token import RevocationReason
 from app.repositories.audit_log import AuditLogRepository
 from app.repositories.login_attempt import LoginAttemptRepository
+from app.repositories.password_reset_attempt import PasswordResetAttemptRepository
+from app.repositories.password_reset_token import PasswordResetTokenRepository
 from app.repositories.refresh_token import RefreshTokenRepository
 from app.repositories.user import UserRepository
+
+logger = get_logger(__name__)
 
 
 class Transaction(Protocol):
@@ -54,12 +62,25 @@ class RateLimitedError(AuthError):
         self.retry_after = retry_after
 
 
+class InvalidOrExpiredResetTokenError(AuthError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class LoginPolicy:
     window_seconds: int
     max_failures_per_identifier_and_ip: int
     max_failures_per_ip: int
     max_failures_per_identifier: int
+
+
+@dataclass(frozen=True, slots=True)
+class PasswordResetPolicy:
+    window_seconds: int
+    max_requests_per_identifier: int
+    max_requests_per_ip: int
+    token_ttl: timedelta
+    frontend_reset_url: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +104,10 @@ class AuthService:
         token_policy: TokenPolicy,
         login_policy: LoginPolicy,
         refresh_ttl: timedelta,
+        reset_tokens: PasswordResetTokenRepository,
+        reset_attempts: PasswordResetAttemptRepository,
+        reset_policy: PasswordResetPolicy,
+        mailer: Mailer,
     ) -> None:
         self._users = users
         self._attempts = attempts
@@ -93,6 +118,10 @@ class AuthService:
         self._token_policy = token_policy
         self._login_policy = login_policy
         self._refresh_ttl = refresh_ttl
+        self._reset_tokens = reset_tokens
+        self._reset_attempts = reset_attempts
+        self._reset_policy = reset_policy
+        self._mailer = mailer
 
     async def authenticate(
         self, *, email: str, password: str, client_ip: str | None, user_agent: str | None
@@ -200,6 +229,102 @@ class AuthService:
         rafraichi = await self._users.get_by_id(principal.id)
         return self._session(self._en_principal(rafraichi or compte), secret)
 
+    async def request_password_reset(
+        self,
+        *,
+        email: str,
+        client_ip: str | None,
+        user_agent: str | None,
+        background_tasks: BackgroundTasks,
+    ) -> None:
+        await self._refuse_si_limite_reset(email=email, client_ip=client_ip)
+
+        compte = await self._users.get_by_email(email)
+        # Piège : le hachage factice équilibre le temps de réponse sur un compte inconnu, comme
+        # `authenticate()`. La réponse et sa forme restent identiques dans tous les cas : compte
+        # inconnu, compte inactif, ou email envoyé avec succès. L'envoi SMTP lui-même est différé
+        # en tâche de fond : le laisser dans le chemin de réponse rouvrirait le même oracle par le
+        # temps (aller-retour réseau) et par la forme (500 si le relais SMTP échoue, contre 202).
+        if compte is None or not compte.is_active or compte.kind != AccountKind.HUMAIN.value:
+            await self._hasher.verify_dummy()
+            await self._reset_attempts.record(email=email, client_ip=client_ip)
+            await self._transaction.commit()
+            return
+
+        await self._reset_tokens.invalidate_all_for_user(compte.id)
+        secret = generate_refresh_secret()
+        await self._reset_tokens.create(
+            user_id=compte.id,
+            token_hash=fingerprint_refresh(secret),
+            expires_at=datetime.now(UTC) + self._reset_policy.token_ttl,
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+        await self._reset_attempts.record(email=email, client_ip=client_ip)
+        await self._audit.record(
+            action=AuditAction.MOT_DE_PASSE_OUBLIE_DEMANDE,
+            actor_label=compte.email,
+            target_type="app_user",
+            target_id=str(compte.id),
+            client_ip=client_ip,
+            user_agent=user_agent,
+        )
+        await self._transaction.commit()
+
+        lien = f"{self._reset_policy.frontend_reset_url}?token={secret}"
+        background_tasks.add_task(self._envoie_email_reset, compte.email, lien)
+
+    async def _envoie_email_reset(self, email: str, reset_url: str) -> None:
+        try:
+            await self._mailer.send_password_reset_email(to=email, reset_url=reset_url)
+        except Exception:
+            logger.exception("auth.password_reset.mail_failed")
+
+    # Piège : lecture seule, pas d'appel à `consume()`. Aucune limitation de débit n'est
+    # nécessaire ici : le jeton est un secret de 256 bits (`generate_refresh_secret`), donc
+    # non brute-forçable, et cette route n'apprend rien sur l'existence d'un compte ou d'un
+    # email, seulement si le lien déjà en main du visiteur est encore valide.
+    async def is_reset_token_valid(self, token: str) -> bool:
+        return await self._reset_tokens.exists_valid(fingerprint_refresh(token))
+
+    async def confirm_password_reset(
+        self, *, token: str, new_password: str, client_ip: str | None, user_agent: str | None
+    ) -> AuthenticatedSession:
+        revendique = await self._reset_tokens.consume(fingerprint_refresh(token))
+        if revendique is None:
+            raise InvalidOrExpiredResetTokenError("Lien invalide ou expiré")
+
+        # Piège : le jeton peut avoir été émis avant une désactivation du compte. Sans cette
+        # relecture, un lien encore valide (15 min) changerait quand même le mot de passe d'un
+        # compte désactivé, réutilisable dès sa réactivation.
+        compte = await self._users.get_by_id(revendique.user_id)
+        if compte is None or not compte.is_active or compte.kind != AccountKind.HUMAIN.value:
+            raise InvalidOrExpiredResetTokenError("Lien invalide ou expiré")
+
+        await self._users.update_password(
+            revendique.user_id, await self._hasher.hash(new_password), must_change_password=False
+        )
+        revoquees = await self._refresh.revoke_all_for_user(
+            revendique.user_id, RevocationReason.CHANGEMENT_MOT_DE_PASSE
+        )
+        secret = await self._ouvre_une_famille(
+            user_id=revendique.user_id, client_ip=client_ip, user_agent=user_agent
+        )
+        await self._audit.record(
+            action=AuditAction.MOT_DE_PASSE_REINITIALISE_PAR_SOI,
+            target_type="app_user",
+            target_id=str(revendique.user_id),
+            client_ip=client_ip,
+            user_agent=user_agent,
+            detail={"sessions_revoquees": revoquees},
+        )
+        await self._transaction.commit()
+
+        compte = await self._users.get_by_id(revendique.user_id)
+        if compte is None:
+            raise SessionRejectedError("Compte introuvable")
+        return self._session(self._en_principal(compte), secret)
+
     async def logout_all(self, principal: Principal) -> int:
         revoquees = await self._refresh.revoke_all_for_user(
             principal.id, RevocationReason.DECONNEXION
@@ -304,6 +429,23 @@ class AuthService:
                 user_agent=user_agent,
                 detail={"motif": "seuil par identifiant depasse"},
             )
+        await self._transaction.commit()
+        raise RateLimitedError(politique.window_seconds)
+
+    async def _refuse_si_limite_reset(self, *, email: str, client_ip: str | None) -> None:
+        politique = self._reset_policy
+        compteurs = await self._reset_attempts.count_recent(
+            email=email, client_ip=client_ip, window_seconds=politique.window_seconds
+        )
+
+        depasse = (
+            compteurs.per_identifier >= politique.max_requests_per_identifier
+            or compteurs.per_ip >= politique.max_requests_per_ip
+        )
+        if not depasse:
+            return
+
+        await self._reset_attempts.record(email=email, client_ip=client_ip)
         await self._transaction.commit()
         raise RateLimitedError(politique.window_seconds)
 

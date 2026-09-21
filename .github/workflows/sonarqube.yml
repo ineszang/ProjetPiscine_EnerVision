@@ -1,0 +1,132 @@
+name: SonarQube
+
+on:
+  push:
+    paths:
+      - "apps/frontend/**"
+      - "apps/backend/**"
+      - ".github/workflows/sonarqube.yml"
+  pull_request:
+    paths:
+      - "apps/frontend/**"
+      - "apps/backend/**"
+      - ".github/workflows/sonarqube.yml"
+
+
+# Build l'ensemble du projet, puis lance les tests
+# Génère les rapports de couverture, puis lance l'analyse SonarQube
+
+jobs:
+  build-front:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+      
+      - run: npm ci 
+        working-directory: apps/frontend
+      - run: npm run build
+        working-directory: apps/frontend
+
+  test-front:  
+    needs: build-front
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name : Installation des dépendances (Front)
+        run: npm ci 
+        working-directory: apps/frontend
+
+      - name : Lancement des tests et génénration du rapport de couverture (Front)
+        run: npm test --watch=false --code-coverage --coverageReporters=lcov
+        working-directory: apps/frontend
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: apps/frontend/coverage/frontend/lcov.info
+
+  build-back:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+      - name: Installe l'interpréteur déclaré par .python-version
+        run: uv python install
+        working-directory: apps/backend
+
+      - name: Synchronise les dépendances sans dévier du verrou
+        run: uv sync --all-groups --frozen
+        working-directory: apps/backend
+
+      - name: Vérifie le formatage
+        run: uv run ruff format --check .
+        working-directory: apps/backend
+
+      - name: Analyse statique
+        run: uv run ruff check --output-format=github .
+        working-directory: apps/backend
+
+      - name: Typage
+        run: uv run mypy app
+        working-directory: apps/backend
+
+
+  test-back:
+    needs: build-back
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+
+      - name : Lancement des tests et génénration du rapport de couverture (Back)
+        run: uv run pytest --cov-fail-under=85 --cov-report=xml
+        working-directory: apps/backend
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: apps/backend/coverage.xml
+
+  sonarqube:
+    needs: [build-front, build-back, test-front, test-back]
+    name: SonarQube
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Téléchargement du rapport de couverture (Front)
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: apps/frontend/coverage/frontend
+      - name: Téléchargement du rapport de couverture (Back)
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: apps/backend
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

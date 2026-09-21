@@ -1,0 +1,19 @@
+:host {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.ev-brand__icon {
+  height: 1.3em;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.ev-brand__name {
+  white-space: nowrap;
+}

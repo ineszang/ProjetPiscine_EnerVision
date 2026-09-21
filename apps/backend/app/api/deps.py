@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.hashing import Argon2Hasher, build_hasher
+from app.core.mailer import Mailer, SmtpConfig
 from app.core.principal import Principal
 from app.core.roles import AccountKind, Role, has_at_least
 from app.core.security import TokenExpiredError, TokenInvalidError, TokenPolicy
@@ -24,13 +25,17 @@ from app.db.session import get_session
 from app.repositories.alert import AlertRepository
 from app.repositories.audit_log import AuditLogRepository
 from app.repositories.login_attempt import LoginAttemptRepository
+from app.repositories.password_reset_attempt import PasswordResetAttemptRepository
+from app.repositories.password_reset_token import PasswordResetTokenRepository
+from app.repositories.prediction import PredictionRepository
 from app.repositories.reading import ReadingRepository
 from app.repositories.recommendation import RecommendationRepository
 from app.repositories.refresh_token import RefreshTokenRepository
 from app.repositories.site import SiteRepository
 from app.repositories.user import UserRepository
 from app.services.alert import AlertService
-from app.services.auth import AuthService, LoginPolicy
+from app.services.auth import AuthService, LoginPolicy, PasswordResetPolicy
+from app.services.prediction import PredictionService
 from app.services.reading import ReadingService
 from app.services.recommendation import RecommendationService
 from app.services.sensor import SensorService
@@ -98,11 +103,27 @@ def get_client_ip(request: Request, settings: SettingsDep) -> str | None:
     return request.client.host if request.client else None
 
 
+def get_mailer(settings: SettingsDep) -> Mailer:
+    return Mailer(
+        SmtpConfig(
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_username,
+            password=(
+                settings.smtp_password.get_secret_value() if settings.smtp_password else None
+            ),
+            use_tls=settings.smtp_use_tls,
+            from_address=settings.smtp_from_address,
+        )
+    )
+
+
 def get_auth_service(
     session: SessionDep,
     settings: SettingsDep,
     hasher: Annotated[Argon2Hasher, Depends(get_hasher)],
     token_policy: Annotated[TokenPolicy, Depends(get_token_policy)],
+    mailer: Annotated[Mailer, Depends(get_mailer)],
 ) -> AuthService:
     return AuthService(
         users=UserRepository(session),
@@ -119,6 +140,16 @@ def get_auth_service(
             max_failures_per_identifier=settings.login_max_failures_per_identifier,
         ),
         refresh_ttl=timedelta(seconds=settings.refresh_token_ttl_seconds),
+        reset_tokens=PasswordResetTokenRepository(session),
+        reset_attempts=PasswordResetAttemptRepository(session),
+        reset_policy=PasswordResetPolicy(
+            window_seconds=settings.password_reset_window_seconds,
+            max_requests_per_identifier=settings.password_reset_max_requests_per_identifier,
+            max_requests_per_ip=settings.password_reset_max_requests_per_ip,
+            token_ttl=timedelta(seconds=settings.password_reset_ttl_seconds),
+            frontend_reset_url=settings.frontend_reset_password_url,
+        ),
+        mailer=mailer,
     )
 
 
@@ -142,21 +173,30 @@ UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 
 def get_site_service(session: SessionDep) -> SiteService:
-    return SiteService(sites=SiteRepository(session))
+    return SiteService(sites=SiteRepository(session), readings=ReadingRepository(session))
 
 
 SiteServiceDep = Annotated[SiteService, Depends(get_site_service)]
 
 
 def get_alert_service(session: SessionDep) -> AlertService:
-    return AlertService(alerts=AlertRepository(session))
+    return AlertService(
+        alerts=AlertRepository(session),
+        readings=ReadingRepository(session),
+        predictions=PredictionRepository(session),
+        sites=SiteRepository(session),
+    )
 
 
 AlertServiceDep = Annotated[AlertService, Depends(get_alert_service)]
 
 
 def get_recommendation_service(session: SessionDep) -> RecommendationService:
-    return RecommendationService(recommendations=RecommendationRepository(session))
+    return RecommendationService(
+        recommendations=RecommendationRepository(session),
+        alerts=AlertRepository(session),
+        transaction=session,
+    )
 
 
 RecommendationServiceDep = Annotated[RecommendationService, Depends(get_recommendation_service)]
@@ -181,6 +221,15 @@ def get_sensor_service(session: SessionDep) -> SensorService:
 
 
 SensorServiceDep = Annotated[SensorService, Depends(get_sensor_service)]
+
+
+def get_prediction_service(session: SessionDep) -> PredictionService:
+    return PredictionService(
+        sites=SiteRepository(session), predictions=PredictionRepository(session)
+    )
+
+
+PredictionServiceDep = Annotated[PredictionService, Depends(get_prediction_service)]
 
 
 async def get_current_principal(

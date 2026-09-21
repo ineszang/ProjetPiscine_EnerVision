@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from app import cli
+from tests.api.acces import ROLE_MINIMUM
 
 METHODES = {"get", "post", "patch", "put", "delete"}
 
@@ -24,20 +25,11 @@ ORIGINE_VERIFIEE = {
 
 # Toute route derrière `require_role` (LecteurDep, OperateurDep, AdminDep) peut rendre 403 pour
 # `password_change_required`, pas seulement les routes `admin`.
-ROUTES_A_ROLE = {
-    ("GET", "/api/v1/users"),
-    ("POST", "/api/v1/users"),
-    ("PATCH", "/api/v1/users/{id}"),
-    ("POST", "/api/v1/users/{id}/password-reset"),
-    ("GET", "/api/v1/sites"),
-    ("GET", "/api/v1/sites/{site_id}"),
-    ("GET", "/api/v1/alerts"),
-    ("GET", "/api/v1/recommendations"),
-    ("GET", "/api/v1/recommendations/{recommendation_id}"),
-    ("GET", "/api/v1/stats/summary"),
-    ("GET", "/api/v1/readings"),
-    ("GET", "/api/v1/sensors/status"),
-}
+# Piège : cette liste était recopiée ici, et deux de ses entrées portaient `{id}` là où le contrat
+# expose `{user_id}`. Elles ne correspondaient donc à aucune opération, et le test ci-dessous
+# passait au vert sans rien vérifier sur ces deux routes. Elle est maintenant dérivée, et
+# `test_every_declared_route_is_classified` interdit l'entrée morte.
+ROUTES_A_ROLE = frozenset(ROLE_MINIMUM)
 
 
 @pytest.fixture(scope="module")

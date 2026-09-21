@@ -88,6 +88,146 @@ async def test_latest_by_site_returns_one_row_per_site(session: AsyncSession) ->
     assert identifiants == {premier, second}
 
 
+async def test_latest_by_site_breaks_a_timestamp_tie_on_the_last_written_reading(
+    session: AsyncSession,
+) -> None:
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    horodatage = datetime(2026, 9, 15, tzinfo=UTC)
+    await creer_lecture(
+        session, site_id=site.site_id, timestamp=horodatage, source="api_history", consumption_kw=10
+    )
+    derniere = await creer_lecture(
+        session, site_id=site.site_id, timestamp=horodatage, source="api_current", consumption_kw=42
+    )
+
+    resultats = await depot.latest_by_site()
+    retenues = [r.reading_id for r in resultats if r.site_id == site.site_id]
+    await session.rollback()
+
+    assert retenues == [derniere.reading_id]
+
+
+async def test_latest_for_site_returns_the_most_recent_reading(session: AsyncSession) -> None:
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    await creer_lecture(session, site_id=site.site_id, timestamp=datetime(2026, 9, 1, tzinfo=UTC))
+    recente = await creer_lecture(
+        session, site_id=site.site_id, timestamp=datetime(2026, 9, 15, tzinfo=UTC)
+    )
+
+    trouvee = await depot.latest_for_site(site.site_id)
+    reading_id = trouvee.reading_id if trouvee else None
+    await session.rollback()
+
+    assert reading_id == recente.reading_id
+
+
+async def test_latest_for_site_breaks_a_timestamp_tie_on_the_last_written_reading(
+    session: AsyncSession,
+) -> None:
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    horodatage = datetime(2026, 9, 15, tzinfo=UTC)
+    await creer_lecture(session, site_id=site.site_id, timestamp=horodatage, source="api_history")
+    derniere = await creer_lecture(
+        session, site_id=site.site_id, timestamp=horodatage, source="api_current"
+    )
+
+    trouvee = await depot.latest_for_site(site.site_id)
+    reading_id = trouvee.reading_id if trouvee else None
+    await session.rollback()
+
+    assert reading_id == derniere.reading_id
+
+
+async def test_latest_for_site_ignores_the_readings_of_the_other_sites(
+    session: AsyncSession,
+) -> None:
+    sans_lecture = await creer_site(session)
+    autre = await creer_site(session)
+    depot = ReadingRepository(session)
+    await creer_lecture(session, site_id=autre.site_id)
+
+    trouvee = await depot.latest_for_site(sans_lecture.site_id)
+    await session.rollback()
+
+    assert trouvee is None
+
+
+async def test_list_since_orders_by_site_then_by_time_ascending(session: AsyncSession) -> None:
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    plus_recente = await creer_lecture(
+        session, site_id=site.site_id, timestamp=datetime(2026, 9, 16, tzinfo=UTC)
+    )
+    plus_ancienne = await creer_lecture(
+        session, site_id=site.site_id, timestamp=datetime(2026, 9, 15, tzinfo=UTC)
+    )
+
+    resultats = await depot.list_since(since=datetime(2026, 9, 1, tzinfo=UTC), site_id=site.site_id)
+    identifiants = [r.reading_id for r in resultats]
+    await session.rollback()
+
+    assert identifiants == [plus_ancienne.reading_id, plus_recente.reading_id]
+
+
+async def test_list_since_excludes_readings_before_the_cutoff(session: AsyncSession) -> None:
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    dedans = await creer_lecture(
+        session, site_id=site.site_id, timestamp=datetime(2026, 9, 16, tzinfo=UTC)
+    )
+    await creer_lecture(session, site_id=site.site_id, timestamp=datetime(2026, 9, 1, tzinfo=UTC))
+
+    resultats = await depot.list_since(
+        since=datetime(2026, 9, 10, tzinfo=UTC), site_id=site.site_id
+    )
+    identifiants = [r.reading_id for r in resultats]
+    await session.rollback()
+
+    assert identifiants == [dedans.reading_id]
+
+
+async def test_list_since_breaks_a_timestamp_tie_by_ascending_reading_id(
+    session: AsyncSession,
+) -> None:
+    # `uq_reading_source` autorise deux lignes au même `site_id`+`timestamp` quand la `source`
+    # diffère (même piège que `latest_for_site`). Sans ce départage, `_detect_spike` traiterait
+    # cette paire comme une variation réelle selon un ordre non garanti par le plan d'exécution.
+    site = await creer_site(session)
+    depot = ReadingRepository(session)
+    horodatage = datetime(2026, 9, 16, tzinfo=UTC)
+    premiere = await creer_lecture(
+        session, site_id=site.site_id, timestamp=horodatage, source="api_history", consumption_kw=10
+    )
+    seconde = await creer_lecture(
+        session, site_id=site.site_id, timestamp=horodatage, source="api_current", consumption_kw=42
+    )
+
+    resultats = await depot.list_since(since=datetime(2026, 9, 1, tzinfo=UTC), site_id=site.site_id)
+    identifiants = [r.reading_id for r in resultats]
+    await session.rollback()
+
+    assert identifiants == [premiere.reading_id, seconde.reading_id]
+
+
+async def test_list_since_filters_by_site_id(session: AsyncSession) -> None:
+    premier = await creer_site(session)
+    second = await creer_site(session)
+    depot = ReadingRepository(session)
+    voulue = await creer_lecture(session, site_id=premier.site_id)
+    await creer_lecture(session, site_id=second.site_id)
+
+    resultats = await depot.list_since(
+        since=datetime(2026, 8, 1, tzinfo=UTC), site_id=premier.site_id
+    )
+    identifiants = [r.reading_id for r in resultats]
+    await session.rollback()
+
+    assert identifiants == [voulue.reading_id]
+
+
 async def test_list_history_orders_the_readings_by_timestamp_descending(
     session: AsyncSession,
 ) -> None:

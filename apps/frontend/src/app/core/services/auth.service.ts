@@ -1,7 +1,14 @@
 import { Service, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, tap, finalize, shareReplay } from 'rxjs';
-import { LoginRequest, PasswordChangeRequest, Principal, TokenResponse } from '../../shared/models/auth.model';
+import {
+  ForgotPasswordRequest,
+  LoginRequest,
+  PasswordChangeRequest,
+  Principal,
+  ResetPasswordRequest,
+  TokenResponse,
+} from '../../shared/models/auth.model';
 import { environment } from '../../../environments/environment';
 
 @Service()
@@ -65,5 +72,21 @@ export class AuthService {
 
   me(): Observable<Principal> {
     return this.http.get<Principal>(`${environment.apiUrl}/auth/me`);
+  }
+
+  forgotPassword(payload: ForgotPasswordRequest): Observable<void> {
+    return this.http.post<void>(`${environment.apiUrl}/auth/forgot-password`, payload);
+  }
+
+  resetPassword(payload: ResetPasswordRequest): Observable<TokenResponse> {
+    return this.http
+      .post<TokenResponse>(`${environment.apiUrl}/auth/reset-password`, payload, { withCredentials: true })
+      .pipe(tap((response) => this.setSession(response)));
+  }
+
+  validateResetToken(token: string): Observable<{ valid: boolean }> {
+    return this.http.get<{ valid: boolean }>(`${environment.apiUrl}/auth/reset-password/validate`, {
+      params: { token },
+    });
   }
 }

@@ -12,10 +12,10 @@ Les quatre couches existent désormais, portées par l'authentification.
 
 ```mermaid
 flowchart TB
-  ep["endpoints<br/>health, auth, users, sites, alerts,<br/>recommendations, stats, sensors"]
+  ep["endpoints<br/>health, auth, users, sites, alerts,<br/>recommendations, stats, readings, sensors, predictions"]
   sc["schemas<br/>Pydantic"]
-  sv["services<br/>AuthService, UserService,<br/>SiteService, AlertService, RecommendationService,<br/>StatsService, SensorService"]
-  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site, alert, recommendation, reading"]
+  sv["services<br/>AuthService, UserService,<br/>SiteService, AlertService, RecommendationService,<br/>StatsService, ReadingService, SensorService, PredictionService"]
+  rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site, alert, recommendation, reading, prediction"]
   md["models<br/>10 tables"]
   db[("PostgreSQL")]
 
@@ -142,25 +142,30 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | POST | `/api/v1/users/{id}/password-reset` | Réinitialise et ferme les sessions. `admin` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/sites` | Liste les sites. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/sites/{site_id}` | Décrit un site. `lecteur` | 401, 403, 404, 422, 500 |
+| GET | `/api/v1/sites/{site_id}/current` | Dernière mesure d'un site. `lecteur` | 401, 403, 404, 422, 500 |
 | GET | `/api/v1/alerts` | Liste les alertes, filtrable par `site_id` et `severity`. `lecteur` | 401, 403, 422, 500 |
 | GET | `/api/v1/recommendations` | Liste les recommandations. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation. `lecteur` | 401, 403, 404, 422, 500 |
+| POST | `/api/v1/recommendations/generate` | Applique le moteur de règles aux alertes, filtrable par `site_id`. `admin` | 401, 403, 422, 500 |
 | GET | `/api/v1/stats/summary` | Résume la consommation instantanée du parc. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/readings` | Historique des lectures, filtrable par `site_id`, fenêtre `start`/`end` (24h par défaut, 90 jours maximum) et paginé par `limit`/`offset`. `lecteur` | 400, 401, 403, 422, 500 |
 | GET | `/api/v1/sensors/status` | État de santé des capteurs par site, dérivé de la dernière lecture. `admin` | 401, 403, 500 |
+| GET | `/api/v1/predictions` | Dernière prévision de consommation par site, calculée hors ligne par le pipeline de scoring (`ml/`). `lecteur` | 401, 403, 500 |
 | GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
 | GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
 
 Les codes de la dernière colonne sont ceux que le schéma **déclare**, et le fichier
 `openapi.json` versionné interdit qu'ils divergent de ce que les routes rendent.
 
-**Quatre routes seulement sont publiques** : les deux sondes, `/auth/login` et `/auth/logout`.
+**Sept routes du contrat sont publiques** : les deux sondes, `/auth/login`, `/auth/logout`,
+`/auth/forgot-password` et les deux routes de réinitialisation, qui portent leur autorisation dans
+le jeton à usage unique plutôt que dans un `Principal`.
 `tests/api/test_route_protection.py` interroge réellement chaque autre route sans identifiant et
 échoue si l'une d'elles répond autre chose qu'un 401 ou un 403. Rendre une route publique impose
-donc de modifier la liste dans ce fichier de test.
+donc de modifier `ROUTES_PUBLIQUES` dans `tests/api/acces.py`.
 
 `GET /sites` et `GET /sites/{site_id}` sont la première route métier, et le gabarit repris pour
-`GET /alerts` puis pour les suivantes (`dataset`, `prediction`) : les quatre couches
+`GET /alerts` puis pour les suivantes (`dataset`) : les quatre couches
 `endpoints → services → repositories → models` y sont toutes présentes, sur des tables déjà créées
 par la révision Alembic `e6d2026091501`. Elles n'exigent que le rôle `lecteur`, contrairement aux
 routes d'administration qui exigent `admin`. `SiteRepository` lit par `AsyncSession.scalar()` (une
@@ -171,8 +176,39 @@ et `GET /recommendations/{recommendation_id}` reprennent le même gabarit à la 
 elle remonte à un site par sa seule `alert_id`, `alert` n'étant pas encore exposée. `GET
 /stats/summary` et `GET /sensors/status` agrègent chacune deux repositories (`SiteRepository`,
 `ReadingRepository`) dans un service dédié plutôt que d'exposer une table : elles n'entrent donc
-pas dans ce gabarit route-par-table. Le contrat détaillé pour le frontend est dans
+pas dans ce gabarit route-par-table. `GET /sites/{site_id}/current` reste sur le gabarit `sites`,
+mais `SiteService` gagne la même seconde dépendance (`ReadingRepository`) pour restituer la
+dernière `Reading` du site : un site connu sans lecture rend `200` avec tous les champs de mesure
+à `null` et `data_quality="critical"`, seul un `site_id` absent de la base rend `404`. Le contrat
+détaillé pour le frontend est dans
 [31-contrat-authentification.md](31-contrat-authentification.md).
+
+`GET /predictions` reprend ce même sous-gabarit « dernière valeur par site » (`SiteRepository` +
+`PredictionRepository`, un `SitePredictionSummaryResponse` par site plutôt qu'une table brute).
+Différence avec `stats`/`sensors` : `prediction` est une vraie table accumulée par un processus
+externe (`enervision_ml.score`, cf. `ml/README.md`), pas une valeur recalculée à la volée depuis
+`reading` à chaque appel. `PredictionRepository.latest_by_site()` isole donc un `DISTINCT ON
+(site_id)` ordonné par `target_at DESC` (couvert par l'index `ix_prediction_site_target`), le même
+mécanisme que `ReadingRepository.latest_by_site()`. Un site jamais scoré rend `prediction: null`
+plutôt qu'un statut inventé : le domaine `available`/`insufficient_data`/`error` de la contrainte
+`ck_prediction_status` n'a pas de valeur pour « pas encore de ligne ». L'API ne lance jamais
+LightGBM elle-même ; elle lit ce que le pipeline de scoring a déjà écrit, cf.
+[ML-START.md](../../ML-START.md) section 3.
+
+`POST /recommendations/generate` est la seule route d'écriture métier du contrat. Elle applique
+le moteur de règles d'`app/services/recommendation_rules.py` aux lignes d'`alert`, sans modèle ni
+feature ML : le catalogue `REGLES` associe à chaque type et à chaque gravité d'alerte une action et
+son explication, et une même alerte peut en déclencher plusieurs, comme le prévoit
+[40-data.md](40-data.md). L'idempotence est portée par la base, pas par le service :
+`RecommendationRepository.create_missing()` insère en `ON CONFLICT DO NOTHING` sur
+`uq_recommendation_alert_rule`, donc rejouer la génération sur les mêmes alertes ne crée rien et
+le rapport rendu distingue `recommendations_created` de `already_present`. Le même traitement est
+disponible hors HTTP par `python -m app.cli generate-recommendations` (cible `make
+recommendations`), sur le patron de `make ml-score`. Le choix de loger le moteur dans le backend
+plutôt que dans `ml/` est justifié par l'[ADR 0006](../adr/0006-moteur-de-regles-dans-le-backend.md).
+Les alertes traitées sont celles qu'écrit la détection interne (#104, section ci-dessous) : la
+génération ne rend donc de recommandations qu'une fois la détection passée. L'insertion est
+découpée en lots de `TAILLE_DE_LOT` lignes, asyncpg plafonnant une requête à 32 767 paramètres.
 
 `GET /readings` reprend le même gabarit mais s'en écarte sur un point : `reading` est l'hypertable,
 donc la seule table métier pouvant porter des années d'historique, ce que `docs/architecture/
@@ -186,6 +222,46 @@ métier, portée par le service) plutôt que `422` (réservé à la validation s
 par exemple `limit` hors bornes). Un datetime sans fuseau dans `start`/`end` est traité comme de
 l'UTC plutôt que rejeté : le comparer tel quel à `reading.timestamp` (`timestamptz`) échouerait
 côté pilote, en `500` plutôt qu'un refus propre.
+
+### Détection d'alertes internes
+
+`AlertService` n'est plus lecture seule : `AlertService.detect()` compare les `reading` (et, pour
+le type `anomaly`, les `prediction`) des dernières 48h (`LOOKBACK`) à cinq règles et enregistre une
+ligne `alert` par déclenchement, avec `source="enervision"`. `metric`/`value`/`threshold` gardent
+leur sens dans chaque règle plutôt que d'être laissés à `null` par commodité :
+
+| `type` | Règle | `value` / `threshold` |
+|---|---|---|
+| `threshold` | `reading.consumption_kw` dépasse `site.capacity_kw` (site sans capacité déclarée : ignoré) | mesure / capacité du site |
+| `spike` | Variation relative ≥ 50% (`SPIKE_RELATIVE_THRESHOLD`) entre deux lectures consécutives du même site, ou redémarrage direct à une valeur positive depuis zéro (`critical`) | mesure actuelle / mesure précédente |
+| `anomaly` | Écart relatif ≥ 30% (`ANOMALY_RELATIVE_THRESHOLD`) entre `reading.consumption_kwh` et la `prediction` du même site dont `target_at == timestamp` | mesure réelle / valeur prédite |
+| `outage` | Aucune lecture depuis plus de 3h (`OUTAGE_THRESHOLD`, 3x la cadence horaire nominale), ou site jamais lu | `null` / `null` |
+| `sensor` | `reading.data_quality` ∈ `partial`/`degraded`/`critical` | `null` / `null` |
+
+La sévérité de chaque alerte (hors `sensor`, dérivée directement de `data_quality`) suit le même
+barème par ratio observé/seuil : `low` sous 1.2, `medium` sous 1.5, `high` sous 2.0, `critical`
+au-delà. `AlertRepository.create_many()` insère par lot avec `ON CONFLICT DO NOTHING` sur
+`uq_alert_source_reference`, et `source_alert_id` est construit de façon déterministe (règle +
+horodatage) : rejouer la détection sur une fenêtre déjà analysée ne duplique donc jamais une
+alerte.
+
+**Pièges de tri corrigés en revue** : `reading`/`prediction` n'ont pas d'unicité sur leur couple
+métier (`uq_reading_source` autorise deux `source` différentes au même `site_id`+`timestamp`,
+`prediction` n'a aucune contrainte sur `(site_id, target_at)`, chaque run de scoring gardant sa
+propre ligne). `ReadingRepository.list_since()`/`PredictionRepository.list_since()` départagent
+donc les égalités par `reading_id`/`prediction_id` croissant, comme le font déjà
+`latest_by_site()`/`latest_for_site()` sur les mêmes tables ; sans ce départage, l'ordre entre
+lignes à égalité n'est pas garanti d'un appel à l'autre, et `_detect_spike`/`_detect_anomaly`
+auraient pu comparer des lectures/choisir une prévision au hasard. `_detect_spike` ignore en plus
+explicitement les paires de lectures qui partagent le même horodatage (deux `source` pour un seul
+instant réel, pas une variation).
+
+Comme `enervision_ml.score`, la détection est un script lancé à la main, pas encore ordonnancé par
+Airflow : `uv run python -m app.detection.internal_alerts [--site-id ...] [--now ...]`, dans
+`apps/backend` puisque les règles s'appuient sur les repositories ORM de l'API plutôt que sur une
+connexion SQL directe (contrairement à `app/etl/historical_import.py`). Cette issue (#104)
+débloquait #38 (moteur de règles pour recommandations), dont la FK `alert_id` `NOT NULL` n'avait
+jusqu'ici rien à référencer côté `source="enervision"`.
 
 ### `/health/ready`
 
@@ -262,17 +338,22 @@ Les modèles de `app/schemas/errors.py` décrivent ce que les gestionnaires renv
 ### Ajouter une route métier
 
 Checklist pour toute nouvelle route sur le gabarit `sites`/`alerts`/`recommendations`/`stats`/
-`readings`/`sensors` (`dataset`, `prediction`) :
+`readings`/`sensors`/`predictions` (`dataset`) :
 
 1. Composer ses `responses=` depuis `app/api/openapi.py` : `REPONSES_LECTEUR`/`REPONSES_ADMIN`
    au niveau de l'`include_router()` du routeur, `REPONSE_VALIDATION` et les codes locaux
    (404, 409, ...) directement sur l'endpoint qui les rend.
 2. Décrire son tag dans `TAGS`.
-3. Si elle passe par `require_role` (`LecteurDep`/`OperateurDep`/`AdminDep`), l'ajouter à
-   `ROUTES_A_ROLE` dans `tests/api/test_openapi.py`. Si elle passe par `require_trusted_origin`,
-   l'ajouter à `ORIGINE_VERIFIEE`. **Ces deux listes sont maintenues à la main, pas dérivées** :
-   une route oubliée n'y est pas détectée automatiquement.
-4. `make openapi`, puis `uv run pytest tests/api/test_openapi.py`.
+3. **La classer dans `tests/api/acces.py`** : `ROLE_MINIMUM` avec son rôle minimum si elle passe
+   par `require_role` (`LecteurDep`/`OperateurDep`/`AdminDep`), `ROUTES_SANS_ROLE` si elle se
+   contente de `CurrentPrincipalDep`, `ROUTES_PUBLIQUES` si elle est ouverte. L'oubli n'est plus
+   silencieux : `test_every_declared_route_is_classified` échoue sur une route non classée comme
+   sur une entrée qui ne correspond plus à aucune route. `ROUTES_A_ROLE` de `test_openapi.py` en
+   est dérivée, et `test_matrice_acces.py` vérifie le niveau réellement monté.
+4. Si elle passe par `require_trusted_origin`, l'ajouter à `ORIGINE_VERIFIEE` dans
+   `tests/api/test_openapi.py`. **Cette liste-là reste maintenue à la main.**
+5. `make openapi`, puis `uv run pytest tests/api/test_openapi.py tests/api/test_route_protection.py
+   tests/api/test_matrice_acces.py`.
 
 ## Sécurité
 
@@ -323,9 +404,14 @@ Le reste, par ordre de surface :
 
 Conventions, gabarits et arborescence : [`apps/backend/TESTING.md`](../../apps/backend/TESTING.md).
 
-Trois fichiers méritent d'être connus avant de toucher à l'authentification :
+Quatre fichiers méritent d'être connus avant de toucher à l'authentification :
 
+- `tests/api/acces.py` : la classification des routes, `ROUTES_PUBLIQUES` et `ROLE_MINIMUM` en
+  tête. Ce n'est pas un test, c'est la référence que les deux suivants confrontent au
+  comportement observé.
 - `tests/api/test_route_protection.py` : le garde-fou de l'autorisation, décrit plus haut.
+- `tests/api/test_matrice_acces.py` : chaque route gardée croisée avec chacun des trois rôles,
+  dans les deux sens, puis rejouée sous `integration` avec de vrais jetons.
 - `tests/services/test_auth.py` : le faux hacheur y porte un compteur d'appels, ce qui permet les
   deux assertions qui prouvent le design, à savoir un appel quand l'adresse est inconnue et zéro
   appel quand la limite est atteinte.

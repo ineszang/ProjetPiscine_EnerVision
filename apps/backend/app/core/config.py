@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     database_pool_size: int = 5
     database_max_overflow: int = 10
 
+    mock_api_base_url: str = "https://api-mock.charlieandre.fr"
+    mock_api_username: str | None = None
+    mock_api_password: SecretStr | None = None
+    mock_api_timeout_seconds: float = Field(default=10.0, gt=0)
+
     jwt_issuer: str = "enervision-api"
     jwt_audience: str = "enervision-web"
     access_token_ttl_seconds: int = Field(default=900, ge=60, le=3600)
@@ -53,6 +58,19 @@ class Settings(BaseSettings):
     login_max_failures_per_identifier_and_ip: int = Field(default=5, ge=1)
     login_max_failures_per_ip: int = Field(default=20, ge=1)
     login_max_failures_per_identifier: int = Field(default=50, ge=1)
+
+    password_reset_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+    password_reset_window_seconds: int = Field(default=900, ge=60)
+    password_reset_max_requests_per_identifier: int = Field(default=3, ge=1)
+    password_reset_max_requests_per_ip: int = Field(default=10, ge=1)
+
+    smtp_host: str = "localhost"
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_use_tls: bool = False
+    smtp_from_address: str = "no-reply@enervision.fr"
+    frontend_reset_password_url: str = "http://localhost:4200/reset-password"  # noqa: S105
 
     trust_proxy_headers: bool = False
     expose_api_docs: bool | None = None

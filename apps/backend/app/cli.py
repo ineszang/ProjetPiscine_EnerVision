@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import secrets
+import string
 import sys
 from getpass import getpass
 from pathlib import Path
@@ -21,10 +22,13 @@ from app.core.hashing import build_hasher
 from app.core.roles import Role
 from app.db.session import get_session_factory
 from app.main import create_app
+from app.repositories.alert import AlertRepository
+from app.repositories.recommendation import RecommendationRepository
 from app.repositories.user import UserRepository
+from app.schemas.auth import PASSWORD_MIN_LENGTH, SPECIAL_CHARACTERS, valide_complexite
+from app.services.recommendation import RecommendationService
 
 LONGUEUR_MOT_DE_PASSE_GENERE = 24
-LONGUEUR_MINIMALE = 12
 CHEMIN_CONTRAT = Path(__file__).resolve().parent.parent / "openapi.json"
 
 
@@ -59,6 +63,22 @@ async def create_admin(
     return (
         True,
         f"Administrateur {email.strip().lower()} créé, mot de passe à changer à la connexion",
+    )
+
+
+async def generate_recommendations(*, site_id: str | None) -> str:
+    async with get_session_factory()() as session:
+        service = RecommendationService(
+            recommendations=RecommendationRepository(session),
+            alerts=AlertRepository(session),
+            transaction=session,
+        )
+        rapport = await service.generate(site_id=site_id)
+
+    return (
+        f"{rapport.alertes_examinees} alerte(s) examinée(s), "
+        f"{rapport.recommandations_creees} recommandation(s) créée(s), "
+        f"{rapport.deja_presentes} déjà présente(s)"
     )
 
 
@@ -108,18 +128,45 @@ def build_parser() -> argparse.ArgumentParser:
         "export-openapi", help="Écrit le contrat OpenAPI sur disque"
     )
     contrat.add_argument("--output", default=str(CHEMIN_CONTRAT))
+
+    recommandations = sous_commandes.add_parser(
+        "generate-recommendations",
+        help="Applique le moteur de règles aux alertes en base",
+    )
+    recommandations.add_argument(
+        "--site-id", default=None, help="Limite le traitement aux alertes d'un site"
+    )
     return parser
+
+
+def genere_mot_de_passe() -> str:
+    tirage = secrets.SystemRandom()
+    classes = [
+        string.ascii_uppercase,
+        string.ascii_lowercase,
+        string.digits,
+        SPECIAL_CHARACTERS,
+    ]
+    reste = LONGUEUR_MOT_DE_PASSE_GENERE - len(classes)
+    caracteres = [tirage.choice(classe) for classe in classes]
+    caracteres += [tirage.choice("".join(classes)) for _ in range(reste)]
+    tirage.shuffle(caracteres)
+    return "".join(caracteres)
 
 
 def read_password(*, generate: bool) -> str:
     if generate:
-        mot_de_passe = secrets.token_urlsafe(LONGUEUR_MOT_DE_PASSE_GENERE)
+        mot_de_passe = genere_mot_de_passe()
         print(f"Mot de passe généré, il ne sera plus affiché : {mot_de_passe}")
         return mot_de_passe
 
     mot_de_passe = getpass("Mot de passe : ")
-    if len(mot_de_passe) < LONGUEUR_MINIMALE:
-        raise SystemExit(f"Le mot de passe doit faire au moins {LONGUEUR_MINIMALE} caractères")
+    if len(mot_de_passe) < PASSWORD_MIN_LENGTH:
+        raise SystemExit(f"Le mot de passe doit faire au moins {PASSWORD_MIN_LENGTH} caractères")
+    try:
+        valide_complexite(mot_de_passe)
+    except ValueError as erreur:
+        raise SystemExit(str(erreur)) from erreur
     if mot_de_passe != getpass("Confirmation : "):
         raise SystemExit("Les deux saisies diffèrent")
     return mot_de_passe
@@ -130,6 +177,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if arguments.commande == "export-openapi":
         print(export_openapi(Path(arguments.output)))
+        return 0
+
+    if arguments.commande == "generate-recommendations":
+        print(asyncio.run(generate_recommendations(site_id=arguments.site_id)))
         return 0
 
     mot_de_passe = read_password(generate=arguments.generate)

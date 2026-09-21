@@ -63,7 +63,7 @@ TAGS: Final[list[dict[str, Any]]] = [
         "name": "recommendations",
         "description": (
             "Consultation des recommandations issues des alertes. Accessible à partir du rôle "
-            "`lecteur`."
+            "`lecteur`. Leur génération par le moteur de règles est réservée au rôle `admin`."
         ),
     },
     {
@@ -82,6 +82,13 @@ TAGS: Final[list[dict[str, Any]]] = [
     {
         "name": "sensors",
         "description": "État de santé des capteurs par site. Réservé au rôle `admin`.",
+    },
+    {
+        "name": "predictions",
+        "description": (
+            "Dernière prévision de consommation par site, calculée hors ligne par le pipeline "
+            "de scoring (`ml/`) et simplement lue ici. Accessible à partir du rôle `lecteur`."
+        ),
     },
 ]
 
@@ -162,5 +169,18 @@ REPONSE_ORIGINE_REFUSEE: Final[Reponses] = {
     403: {
         "model": ErrorResponse,
         "description": "Origine non autorisée (protection CSRF de `require_trusted_origin`).",
+    },
+}
+
+REPONSE_LIMITE: Final[Reponses] = {
+    429: {
+        "model": ErrorResponse,
+        "description": "Trop de demandes sur cette fenêtre glissante.",
+        "headers": {
+            "Retry-After": {
+                "description": "Secondes à attendre avant une nouvelle tentative.",
+                "schema": {"type": "integer"},
+            }
+        },
     },
 }
