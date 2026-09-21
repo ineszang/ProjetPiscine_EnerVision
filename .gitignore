@@ -66,6 +66,9 @@ ml/mlruns/
 ml/mlartifacts/
 ml/mlflow.db
 
+# Airflow : base sqlite locale generee par les tests d'integrite des DAGs (etl/airflow/tests)
+etl/airflow/tests/.airflow_home/
+
 # IDE et OS
 .idea/
 .vscode/

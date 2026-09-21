@@ -146,6 +146,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | GET | `/api/v1/alerts` | Liste les alertes, filtrable par `site_id` et `severity`. `lecteur` | 401, 403, 422, 500 |
 | GET | `/api/v1/recommendations` | Liste les recommandations. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/recommendations/{recommendation_id}` | Décrit une recommandation. `lecteur` | 401, 403, 404, 422, 500 |
+| POST | `/api/v1/recommendations/generate` | Applique le moteur de règles aux alertes, filtrable par `site_id`. `admin` | 401, 403, 422, 500 |
 | GET | `/api/v1/stats/summary` | Résume la consommation instantanée du parc. `lecteur` | 401, 403, 500 |
 | GET | `/api/v1/readings` | Historique des lectures, filtrable par `site_id`, fenêtre `start`/`end` (24h par défaut, 90 jours maximum) et paginé par `limit`/`offset`. `lecteur` | 400, 401, 403, 422, 500 |
 | GET | `/api/v1/sensors/status` | État de santé des capteurs par site, dérivé de la dernière lecture. `admin` | 401, 403, 500 |
@@ -194,6 +195,21 @@ plutôt qu'un statut inventé : le domaine `available`/`insufficient_data`/`erro
 LightGBM elle-même ; elle lit ce que le pipeline de scoring a déjà écrit, cf.
 [ML-START.md](../../ML-START.md) section 3.
 
+`POST /recommendations/generate` est la seule route d'écriture métier du contrat. Elle applique
+le moteur de règles d'`app/services/recommendation_rules.py` aux lignes d'`alert`, sans modèle ni
+feature ML : le catalogue `REGLES` associe à chaque type et à chaque gravité d'alerte une action et
+son explication, et une même alerte peut en déclencher plusieurs, comme le prévoit
+[40-data.md](40-data.md). L'idempotence est portée par la base, pas par le service :
+`RecommendationRepository.create_missing()` insère en `ON CONFLICT DO NOTHING` sur
+`uq_recommendation_alert_rule`, donc rejouer la génération sur les mêmes alertes ne crée rien et
+le rapport rendu distingue `recommendations_created` de `already_present`. Le même traitement est
+disponible hors HTTP par `python -m app.cli generate-recommendations` (cible `make
+recommendations`), sur le patron de `make ml-score`. Le choix de loger le moteur dans le backend
+plutôt que dans `ml/` est justifié par l'[ADR 0006](../adr/0006-moteur-de-regles-dans-le-backend.md).
+Les alertes traitées sont celles qu'écrit la détection interne (#104, section ci-dessous) : la
+génération ne rend donc de recommandations qu'une fois la détection passée. L'insertion est
+découpée en lots de `TAILLE_DE_LOT` lignes, asyncpg plafonnant une requête à 32 767 paramètres.
+
 `GET /readings` reprend le même gabarit mais s'en écarte sur un point : `reading` est l'hypertable,
 donc la seule table métier pouvant porter des années d'historique, ce que `docs/architecture/
 owasp-traceabilite.md` documentait comme un risque ouvert (API4, aucune pagination plafonnée ni
@@ -206,6 +222,46 @@ métier, portée par le service) plutôt que `422` (réservé à la validation s
 par exemple `limit` hors bornes). Un datetime sans fuseau dans `start`/`end` est traité comme de
 l'UTC plutôt que rejeté : le comparer tel quel à `reading.timestamp` (`timestamptz`) échouerait
 côté pilote, en `500` plutôt qu'un refus propre.
+
+### Détection d'alertes internes
+
+`AlertService` n'est plus lecture seule : `AlertService.detect()` compare les `reading` (et, pour
+le type `anomaly`, les `prediction`) des dernières 48h (`LOOKBACK`) à cinq règles et enregistre une
+ligne `alert` par déclenchement, avec `source="enervision"`. `metric`/`value`/`threshold` gardent
+leur sens dans chaque règle plutôt que d'être laissés à `null` par commodité :
+
+| `type` | Règle | `value` / `threshold` |
+|---|---|---|
+| `threshold` | `reading.consumption_kw` dépasse `site.capacity_kw` (site sans capacité déclarée : ignoré) | mesure / capacité du site |
+| `spike` | Variation relative ≥ 50% (`SPIKE_RELATIVE_THRESHOLD`) entre deux lectures consécutives du même site, ou redémarrage direct à une valeur positive depuis zéro (`critical`) | mesure actuelle / mesure précédente |
+| `anomaly` | Écart relatif ≥ 30% (`ANOMALY_RELATIVE_THRESHOLD`) entre `reading.consumption_kwh` et la `prediction` du même site dont `target_at == timestamp` | mesure réelle / valeur prédite |
+| `outage` | Aucune lecture depuis plus de 3h (`OUTAGE_THRESHOLD`, 3x la cadence horaire nominale), ou site jamais lu | `null` / `null` |
+| `sensor` | `reading.data_quality` ∈ `partial`/`degraded`/`critical` | `null` / `null` |
+
+La sévérité de chaque alerte (hors `sensor`, dérivée directement de `data_quality`) suit le même
+barème par ratio observé/seuil : `low` sous 1.2, `medium` sous 1.5, `high` sous 2.0, `critical`
+au-delà. `AlertRepository.create_many()` insère par lot avec `ON CONFLICT DO NOTHING` sur
+`uq_alert_source_reference`, et `source_alert_id` est construit de façon déterministe (règle +
+horodatage) : rejouer la détection sur une fenêtre déjà analysée ne duplique donc jamais une
+alerte.
+
+**Pièges de tri corrigés en revue** : `reading`/`prediction` n'ont pas d'unicité sur leur couple
+métier (`uq_reading_source` autorise deux `source` différentes au même `site_id`+`timestamp`,
+`prediction` n'a aucune contrainte sur `(site_id, target_at)`, chaque run de scoring gardant sa
+propre ligne). `ReadingRepository.list_since()`/`PredictionRepository.list_since()` départagent
+donc les égalités par `reading_id`/`prediction_id` croissant, comme le font déjà
+`latest_by_site()`/`latest_for_site()` sur les mêmes tables ; sans ce départage, l'ordre entre
+lignes à égalité n'est pas garanti d'un appel à l'autre, et `_detect_spike`/`_detect_anomaly`
+auraient pu comparer des lectures/choisir une prévision au hasard. `_detect_spike` ignore en plus
+explicitement les paires de lectures qui partagent le même horodatage (deux `source` pour un seul
+instant réel, pas une variation).
+
+La détection est un script lancé à la main, pas encore ordonnancé par Airflow (contrairement à
+`enervision_ml.score`, orchestré par le DAG `ml_score` depuis l'issue #115) : `uv run python -m app.detection.internal_alerts [--site-id ...] [--now ...]`, dans
+`apps/backend` puisque les règles s'appuient sur les repositories ORM de l'API plutôt que sur une
+connexion SQL directe (contrairement à `app/etl/historical_import.py`). Cette issue (#104)
+débloquait #38 (moteur de règles pour recommandations), dont la FK `alert_id` `NOT NULL` n'avait
+jusqu'ici rien à référencer côté `source="enervision"`.
 
 ### `/health/ready`
 

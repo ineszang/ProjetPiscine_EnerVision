@@ -1,17 +1,20 @@
 BACKEND := apps/backend
 FRONTEND := apps/frontend
 ML := ml
+AIRFLOW := etl/airflow
 
 .DEFAULT_GOAL := help
-.PHONY: help install install-backend install-frontend install-ml dev dev-backend dev-frontend \
+.PHONY: help install install-backend install-frontend install-ml install-airflow \
+        dev dev-backend dev-frontend \
         lint format typecheck test test-cov test-integration check \
         openapi docker-build db-up db-down db-reset db-logs db-psql migrate bootstrap-admin \
-        ml-lint ml-typecheck ml-test ml-check ml-train ml-score
+        ml-lint ml-typecheck ml-test ml-check ml-train ml-score recommendations \
+        airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs
 
 help: ## Liste les cibles disponibles
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-install: install-backend install-frontend install-ml ## Installe les dépendances backend, frontend et ML
+install: install-backend install-frontend install-ml install-airflow ## Installe les dépendances backend, frontend, ML et Airflow
 
 install-backend: ## Installe les dépendances du backend
 	cd $(BACKEND) && uv sync --all-groups
@@ -21,6 +24,9 @@ install-frontend: ## Installe les dépendances du frontend
 
 install-ml: ## Installe les dépendances du pipeline ML
 	cd $(ML) && uv sync --all-groups
+
+install-airflow: ## Installe les dépendances de lint/test des DAGs Airflow
+	cd $(AIRFLOW) && uv sync --all-groups
 
 dev: ## Lance toute la stack (backend + frontend) en rechargement à chaud
 	@trap 'kill 0' EXIT INT TERM; \
@@ -76,6 +82,27 @@ ml-train: ## Entraine le modele LightGBM. CSV=chemin optionnel, sinon lit ML_DAT
 
 ml-score: ## Score le prochain pas horaire et l'ecrit dans `prediction`. CSV=chemin optionnel
 	cd $(ML) && uv run python -m enervision_ml.score $(if $(CSV),--csv $(CSV),)
+
+recommendations: ## Genere les recommandations depuis les alertes en base. SITE=identifiant optionnel
+	cd $(BACKEND) && uv run python -m app.cli generate-recommendations $(if $(SITE),--site-id $(SITE),)
+
+airflow-lint: ## Analyse statique des DAGs Airflow
+	cd $(AIRFLOW) && uv run ruff check .
+
+airflow-test: ## Verifie que les DAGs s'importent sans erreur et ont la structure attendue
+	cd $(AIRFLOW) && uv run pytest
+
+airflow-check: airflow-lint airflow-test ## Chaîne de vérification complète des DAGs Airflow
+
+airflow-up: ## Démarre Airflow (webserver + scheduler, LocalExecutor). db-up requis avant.
+	docker compose up -d airflow-init airflow-webserver airflow-scheduler
+	@echo "airflow  -> http://localhost:$${AIRFLOW_PORT:-8080}"
+
+airflow-down: ## Arrête le webserver et le scheduler Airflow
+	docker compose stop airflow-webserver airflow-scheduler
+
+airflow-logs: ## Suit les journaux du scheduler Airflow (où tournent les tâches, LocalExecutor)
+	docker compose logs -f airflow-scheduler
 
 docker-build: ## Construit l'image du backend
 	docker build -t enervision-backend:local $(BACKEND)
