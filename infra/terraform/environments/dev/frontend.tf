@@ -28,7 +28,7 @@ resource "null_resource" "build_frontend" {
   }
 
   provisioner "local-exec" {
-    command = "cd ${local.frontend_dir} && npm ci && npm run build"
+    command = "cd ${local.frontend_dir} && npm ci && chmod -R +x node_modules/@angular/cli/bin && chmod -R +x node_modules/.bin && npm exec ng build"
   }
 }
 
