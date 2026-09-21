@@ -639,7 +639,7 @@ La suite backend complète a également été validée avec une couverture supé
 
 ## Suite du pipeline Data
 
-Deux sources de données sont maintenant prises en charge :
+Deux sources de données sont prises en charge par la logique ETL du backend :
 
 ```text
 Dataset CSV/JSON
@@ -661,10 +661,192 @@ mock_api_import.py
    API Mock
 ```
 
-La logique d'extraction, de transformation et de chargement est donc disponible pour les deux sources de données du MVP.
+La logique d'extraction, de validation, de transformation et de chargement est disponible pour
+les deux sources de données du MVP.
 
-Airflow tourne désormais réellement (`etl/airflow/`, `make airflow-up`) et orchestre le pipeline ML (`ml_train`/`ml_score`, issue #115) ainsi que la détection d'alertes et la génération des recommandations (`alertes`, issue #116). Il n'orchestre pas encore ces deux imports : `historical_import.py` et `mock_api_import.py` (normalisation et chargement micro-batch, issues #15/#16) restent à faire.
+Airflow tourne réellement dans `etl/airflow/` et orchestre désormais quatre DAGs :
 
-Airflow permet de planifier les traitements, gérer leur ordre d'exécution, suivre leur état et remonter les erreurs. Il ne remplace pas la logique ETL Python existante : les scripts actuels restent responsables de l'extraction, de la validation, de la transformation et du chargement. `etl/airflow/dags/ml_train.py`, `ml_score.py` et `alertes.py` montrent le patron retenu (des `BashOperator` qui invoquent le script tel quel, dans l'environnement `uv` que l'image embarque pour lui).
+```text
+ml_train
+ml_score
+alertes
+historical_import
+```
 
-Le pipeline Data servira ensuite à préparer les données nécessaires au modèle de Machine Learning.
+Les DAGs `ml_train` et `ml_score` orchestrent le pipeline Machine Learning (issue #115).
+
+Le DAG `alertes` orchestre la détection des alertes et la génération des recommandations
+(issue #116).
+
+Le DAG `historical_import` orchestre l'import du dataset historique CSV/JSON (issue #119).
+
+### Orchestration de l'import historique
+
+Le DAG historique est défini dans :
+
+```text
+etl/airflow/dags/historical_import.py
+```
+
+Il ne réimplémente aucune logique ETL. Il déclenche directement le module existant :
+
+```text
+app.etl.historical_import
+```
+
+Le flux d'exécution est le suivant :
+
+```text
+data/raw/
+├── all_sites_combined.csv
+└── dataset_metadata.json
+          |
+          v
+Airflow
+          |
+          v
+DAG historical_import
+          |
+          v
+BashOperator
+          |
+          v
+app.etl.historical_import
+          |
+          v
+PostgreSQL / TimescaleDB
+    |
+    +--> dataset
+    +--> site
+    +--> reading
+```
+
+Les fichiers historiques locaux sont montés dans les conteneurs Airflow en lecture seule :
+
+```text
+./data/raw:/opt/data/raw:ro
+```
+
+Le DAG utilise les chemins suivants :
+
+```text
+/opt/data/raw/all_sites_combined.csv
+/opt/data/raw/dataset_metadata.json
+```
+
+Le montage en lecture seule évite qu'un traitement Airflow puisse modifier les fichiers sources.
+
+Le backend est déjà embarqué dans l'image Airflow dans son propre environnement Python :
+
+```text
+/opt/backend/.venv
+```
+
+Le DAG utilise un `BashOperator` avec le même principe que le DAG `alertes` :
+
+```text
+cd /opt/backend
+env -u VIRTUAL_ENV
+uv run --no-sync python -m app.etl.historical_import
+```
+
+Airflow reste ainsi responsable de l'orchestration tandis que le backend reste responsable de
+l'extraction, de la validation, de la transformation et du chargement.
+
+### Planification
+
+Le dataset historique sert à initialiser l'environnement et n'est pas une source périodique.
+
+Le DAG est donc configuré avec :
+
+```text
+schedule = None
+catchup = False
+max_active_runs = 1
+```
+
+Le déclenchement est manuel depuis l'interface Airflow ou avec la CLI.
+
+`max_active_runs = 1` empêche deux imports historiques de s'exécuter simultanément.
+
+La tâche `import_historical` définit également :
+
+```text
+retries = 1
+retry_delay = 2 minutes
+execution_timeout = 30 minutes
+```
+
+Le retry permet de reprendre le traitement après une erreur transitoire, notamment une
+indisponibilité temporaire de PostgreSQL.
+
+Le pipeline historique étant idempotent, une nouvelle exécution ne doit pas dupliquer les mesures
+déjà présentes.
+
+### Déclenchement et suivi
+
+Le DAG peut être déclenché avec :
+
+```powershell
+docker compose exec airflow-scheduler airflow dags trigger historical_import
+```
+
+Les exécutions peuvent être consultées avec :
+
+```powershell
+docker compose exec airflow-scheduler airflow dags list-runs -d historical_import
+```
+
+### Validation de l'orchestration
+
+L'orchestration a été validée localement avec Docker Compose et le `LocalExecutor` Airflow.
+
+Le scheduler détecte les quatre DAGs :
+
+```text
+alertes
+historical_import
+ml_score
+ml_train
+```
+
+Deux exécutions manuelles successives du DAG `historical_import` ont été réalisées.
+
+Les deux exécutions se sont terminées avec :
+
+```text
+state = success
+```
+
+Les exécutions ont été traitées séquentiellement.
+
+Après les deux exécutions, PostgreSQL/TimescaleDB contenait toujours :
+
+```text
+122647
+```
+
+lectures historiques avec :
+
+```text
+source = "csv"
+```
+
+Le nombre de lectures n'a donc pas doublé après la seconde exécution.
+
+Cette validation confirme que l'orchestration Airflow réutilise correctement
+`app.etl.historical_import` et conserve l'idempotence du pipeline historique.
+
+### Suite
+
+L'import de l'API Mock est déjà disponible côté backend avec :
+
+```text
+app.etl.mock_api_import
+```
+
+Son orchestration Airflow ainsi que la réconciliation globale entre les sources historique et
+API Mock restent à compléter dans l'issue #15.
+
+Airflow ne remplace pas les pipelines Python existants : il orchestre leur exécution, leur
+planification, les reprises sur erreur et leur suivi.
