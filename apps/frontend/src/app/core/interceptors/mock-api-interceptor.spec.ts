@@ -8,8 +8,10 @@ import { STATS_SUMMARY_FIXTURE } from '../mocks/stats-summary.fixture';
 describe('mockApiInterceptor', () => {
   let http: HttpClient;
   let httpMock: HttpTestingController;
+  let useMockFixturesInitial: boolean;
 
   beforeEach(() => {
+    useMockFixturesInitial = environment.useMockFixtures;
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(withInterceptors([mockApiInterceptor])),
@@ -21,7 +23,7 @@ describe('mockApiInterceptor', () => {
   });
 
   afterEach(() => {
-    environment.useMockFixtures = true;
+    environment.useMockFixtures = useMockFixturesInitial;
     httpMock.verify();
   });
 

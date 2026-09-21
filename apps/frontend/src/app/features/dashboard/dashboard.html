@@ -27,87 +27,120 @@
   @if (statsError(); as message) {
     <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
   }
-  @if (alertsError(); as message) {
-    <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
-  }
   @if (predictionsError(); as message) {
     <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
   }
 
   @if (stats(); as s) {
-    <section class="overview">
-      <ev-card class="card card--gauge">
-        <span class="card__label">Consommation vs capacité</span>
+    <p class="dashboard__status">
+      <span class="dashboard__pulse" aria-hidden="true"></span>
+      Actualisé à {{ s.timestamp | date: 'HH:mm:ss' }} · {{ s.total_sites }} sites suivis
+    </p>
+
+    <section class="overview" aria-label="Indicateurs du parc">
+      <ev-card class="kpi kpi--gauge">
+        <span class="kpi__label">Consommation vs capacité</span>
         <app-consumption-gauge
           [consumption]="s.total_consumption_kw"
           [capacity]="s.total_capacity_kw"
         />
-        <span class="card__value"
-          >{{ s.total_consumption_kw | number: '1.0-1' }} /
-          {{ s.total_capacity_kw | number }} kW</span
+        <span class="kpi__value">
+          {{ s.total_consumption_kw | number: '1.0-1' }}
+          <small>/ {{ s.total_capacity_kw | number }} kW</small>
+        </span>
+      </ev-card>
+
+      <ev-card class="kpi">
+        <span class="kpi__label">Charge moyenne du parc</span>
+        <span class="kpi__value"
+          >{{ s.average_load_percent | number: '1.0-0' }} <small>%</small></span
         >
-      </ev-card>
-
-      <ev-card class="card">
-        <span class="card__label">Charge moyenne du parc</span>
-        <span class="card__value">{{ s.average_load_percent }} %</span>
-        <div class="progress-bar">
-          <div class="progress-bar__fill" [style.width.%]="s.average_load_percent"></div>
+        <div
+          class="progress-bar"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          [attr.aria-valuenow]="s.average_load_percent"
+        >
+          <div
+            class="progress-bar__fill"
+            [class]="'progress-bar__fill--' + loadTone(s.average_load_percent)"
+            [style.width.%]="s.average_load_percent"
+          ></div>
         </div>
+        <span class="kpi__hint">{{ loadHint(s.average_load_percent) }}</span>
       </ev-card>
 
-      <ev-card class="card">
-        <span class="card__label">Sites suivis</span>
-        <span class="card__value">{{ s.total_sites }}</span>
+      <ev-card class="kpi">
+        <span class="kpi__label">Sites suivis</span>
+        <span class="kpi__value">{{ s.total_sites }}</span>
+        <a routerLink="/sites" class="ev-link kpi__link">Voir la liste des sites</a>
       </ev-card>
     </section>
-
-    <section class="chart-section">
-      <h2>Charge et alerte visuelle par site</h2>
-      <app-site-load-chart [sites]="s.sites" />
-    </section>
   }
 
-  @if (alerts().length > 0) {
-    <section class="alerts-section">
-      <h2>Alertes actives</h2>
-      <ul class="alerts-list">
-        @for (alert of alerts(); track alert.alert_id) {
-          <li class="alert-item">
-            <ev-badge [tone]="badgeToneForSeverity(alert.severity)">{{ alert.severity }}</ev-badge>
-            <span class="alert-item__message">{{ alert.message }}</span>
-          </li>
+  <div class="dashboard__grid">
+    <div class="dashboard__main">
+      @if (stats(); as s) {
+        <section class="chart-section">
+          <h2>Charge par site</h2>
+          <ev-card class="chart-card">
+            <app-site-load-chart [sites]="s.sites" />
+          </ev-card>
+        </section>
+      }
+
+      <section class="predictions-section">
+        <h2>Prévisions de consommation</h2>
+        @if (predictions().length > 0) {
+          <ev-card class="ev-table-card">
+            <table class="ev-table">
+              <thead>
+                <tr>
+                  <th>Site</th>
+                  <th>Prévision</th>
+                  <th>Échéance</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (site of predictions(); track site.site_id) {
+                  <tr>
+                    <td>{{ site.site_name }}</td>
+                    @if (site.prediction; as prediction) {
+                      @if (prediction.status === 'available') {
+                        <td class="ev-table__number">
+                          {{ prediction.predicted_value | number: '1.0-1' }} kWh
+                        </td>
+                        <td>{{ prediction.target_at | date: "dd/MM 'à' HH:mm" }}</td>
+                      } @else {
+                        <td>
+                          <ev-badge [tone]="badgeToneForPredictionStatus(prediction.status)">{{
+                            prediction.status === 'insufficient_data'
+                              ? 'Historique insuffisant'
+                              : 'Erreur'
+                          }}</ev-badge>
+                        </td>
+                        <td class="ev-table__muted">-</td>
+                      }
+                    } @else {
+                      <td><ev-badge tone="neutral">Pas encore de prévision</ev-badge></td>
+                      <td class="ev-table__muted">-</td>
+                    }
+                    <td><a [routerLink]="['/sites', site.site_id]" class="ev-link">Détail</a></td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </ev-card>
+        } @else if (!predictionsError()) {
+          <p class="dashboard__empty">Aucune prévision disponible pour le moment.</p>
         }
-      </ul>
-    </section>
-  }
+      </section>
+    </div>
 
-  @if (predictions().length > 0) {
-    <section class="predictions-section">
-      <h2>Prévisions de consommation</h2>
-      <ul class="predictions-list">
-        @for (site of predictions(); track site.site_id) {
-          <li class="prediction-item">
-            <span class="prediction-item__site">{{ site.site_name }}</span>
-            @if (site.prediction; as prediction) {
-              @if (prediction.status === 'available') {
-                <span class="prediction-item__value">
-                  {{ prediction.predicted_value | number: '1.0-1' }} kWh
-                  <span class="prediction-item__target"
-                    >{{ prediction.target_at | date: "dd/MM 'à' HH:mm" }}</span
-                  >
-                </span>
-              } @else {
-                <ev-badge [tone]="badgeToneForPredictionStatus(prediction.status)">{{
-                  prediction.status === 'insufficient_data' ? 'Historique insuffisant' : 'Erreur'
-                }}</ev-badge>
-              }
-            } @else {
-              <ev-badge tone="neutral">Pas encore de prévision</ev-badge>
-            }
-          </li>
-        }
-      </ul>
-    </section>
-  }
+    <aside class="dashboard__side" aria-label="Alertes actives">
+      <app-alert-feed />
+    </aside>
+  </div>
 </div>
