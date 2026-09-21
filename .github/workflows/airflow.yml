@@ -1,0 +1,84 @@
+name: Airflow
+
+# Piège : la version de Python vient de etl/airflow/.python-version. C'est 3.12 et non 3.14
+# (contrairement à backend.yml et ml.yml) : apache-airflow 2.10 ne supporte pas 3.14. Le 3.14 de
+# ml/ ne vit que dans l'image Docker, dans son propre environnement (cf. etl/airflow/Dockerfile).
+#
+# Piège : l'image COPY les fichiers de dépendances et le code de ml/. Une modification de ml/
+# peut donc casser sa construction, d'où ces chemins dans les déclencheurs.
+
+on:
+  push:
+    paths:
+      - "etl/airflow/**"
+      - "ml/pyproject.toml"
+      - "ml/uv.lock"
+      - "ml/enervision_ml/**"
+      - ".github/workflows/airflow.yml"
+  pull_request:
+    paths:
+      - "etl/airflow/**"
+      - "ml/pyproject.toml"
+      - "ml/uv.lock"
+      - "ml/enervision_ml/**"
+      - ".github/workflows/airflow.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: airflow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verification:
+    name: Lint et intégrité des DAGs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: etl/airflow
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: etl/airflow/uv.lock
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        run: uv python install
+
+      - name: Synchronise les dépendances sans dévier du verrou
+        run: uv sync --all-groups --frozen
+
+      - name: Vérifie le formatage
+        run: uv run ruff format --check .
+
+      - name: Analyse statique
+        run: uv run ruff check --output-format=github .
+
+      # Aucun test ne lance de tâche ni de scheduler : DagBag charge les fichiers de dags/ et
+      # vérifie import, planification, plafonds d'exécution et commande de chaque tâche.
+      - name: Tests d'intégrité des DAGs
+        run: uv run pytest
+
+  image:
+    name: Construction de l'image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v4
+
+      - name: Construit l'image (contexte à la racine, elle COPY ml/)
+        run: docker build -f etl/airflow/Dockerfile -t enervision-airflow:ci .
+
+      # Vérifie ce qui ne casse qu'à l'exécution, pas à la construction : libgomp1 absent
+      # (`OSError: libgomp.so.1` au premier import) ou environnement ml/ non figé.
+      - name: Vérifie que le pipeline ML s'importe sans réseau
+        run: >
+          docker run --rm --network none enervision-airflow:ci
+          bash -c "cd /opt/ml && env -u VIRTUAL_ENV uv run --no-sync python -m enervision_ml.train --help"

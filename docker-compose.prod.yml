@@ -15,6 +15,10 @@ services:
     ports: !override
       - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
 
+  airflow-webserver:
+    ports: !override
+      - "127.0.0.1:${AIRFLOW_PORT:-8080}:8080"
+
   backend:
     ports: !reset null
     command:

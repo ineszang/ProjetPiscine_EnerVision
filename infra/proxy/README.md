@@ -21,6 +21,10 @@ configuration est montée en volume par `docker-compose.prod.yml`.
 | `/api/` | `backend:8000` | Préfixe `/api/v1` préservé tel quel |
 | `/` | `frontend:3000` | Le SPA, qui renvoie `index.html` sur les routes inconnues |
 
+L'interface Airflow, celle de Mailpit et la base ne passent pas par le proxy : l'overlay les
+ramène sur `127.0.0.1`, donc joignables par tunnel SSH et pas autrement. Les publier derrière le
+proxy demanderait une authentification propre, qui n'est pas la leur.
+
 `/docs`, `/redoc`, `/openapi.json`, `/static` et `/metrics` sont montés par l'API **à la racine**,
 pas sous `/api`. Ils tombent donc dans `location /`, donc sur le SPA : ils ne sont pas joignables
 depuis l'extérieur, sans qu'aucune règle de blocage ait à être écrite. Y toucher, c'est les
