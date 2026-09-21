@@ -53,332 +53,90 @@ Trois pièges sont documentés en tête du `docker-compose.yml`, ils ne se devin
 
 ### Airflow (issues #115, #116 et #119)
 
-Trois services Airflow sont définis dans `docker-compose.yml`. Les `docker compose profiles` ne
-sont pas utilisés : le démarrage reste explicite via `make airflow-up` et Airflow ne fait pas
-partie de la boucle `make dev`.
+Trois services, `docker compose profiles` non utilisés (démarrage explicite via `make
+airflow-up`, pas dans `make dev`) :
 
 | Service | Rôle | Points notables |
 |---|---|---|
-| `airflow-init` | Migre la base de métadonnées et crée le compte admin | Conteneur jetable (`restart: "no"`). `webserver` et `scheduler` attendent qu'il se termine avec succès |
-| `airflow-webserver` | Interface Airflow sur le port `8080` | Avec `LocalExecutor`, il n'exécute aucune tâche lui-même |
-| `airflow-scheduler` | Planifie et exécute les tâches | Les DAGs tournent en sous-processus avec `LocalExecutor` |
+| `airflow-init` | Migre la base de métadonnées, crée le compte admin | Conteneur jetable (`restart: "no"`), ne redémarre jamais. `webserver`/`scheduler` attendent qu'il se termine avec succès |
+| `airflow-webserver` | UI, port `8080` | `LocalExecutor` : n'exécute aucune tâche lui-même |
+| `airflow-scheduler` | Planifie et **exécute** les tâches (`LocalExecutor`) | Les DAGs y tournent en sous-processus (`uv run --no-sync python -m ...`), c'est lui qui a besoin du volume `airflow_ml_state` |
 
-`LocalExecutor` exécute les tâches dans le scheduler et non dans le webserver.
+Construits depuis `etl/airflow/Dockerfile`, contexte `.` (racine du repo, pas `etl/airflow/`) :
+l'image doit pouvoir `COPY` les sources de `ml/` **et** de `apps/backend/` pour se synchroniser
+deux environnements Python **3.14** (`/opt/ml/.venv` et `/opt/backend/.venv`, `uv sync --locked` à
+la construction), distincts du Python 3.12 qui fait tourner Airflow lui-même. Les DAGs shellent
+vers ces venvs plutôt que d'importer LightGBM, MLflow ou SQLAlchemy dans le process Airflow.
+Le choix et ses contreparties sont dans
+l'[ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md).
 
-Les services sont construits depuis :
-
-```text
-etl/airflow/Dockerfile
-```
-
-avec la racine du dépôt comme contexte Docker.
-
-Airflow 2.10.4 fonctionne avec Python 3.12, tandis que le pipeline ML et le backend utilisent des
-dépendances Python 3.14.
-
-L'image Airflow embarque donc deux environnements distincts :
-
-```text
-/opt/ml/.venv
-/opt/backend/.venv
-```
-
-Le premier contient le pipeline Machine Learning.
-
-Le second contient le backend EnerVision utilisé par les DAGs `alertes` et
-`historical_import`.
-
-Cette séparation évite d'installer directement LightGBM, MLflow ou les dépendances SQLAlchemy du
-backend dans l'environnement Python utilisé par Airflow.
-
-Le choix est décrit dans
-[l'ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md).
-
-Les DAGs actuellement présents sont :
-
-| DAG | Planification | Ce qu'il exécute |
+| DAG | Planification | Ce qu'il lance, et où |
 |---|---|---|
-| `ml_train` | manuelle | `enervision_ml.train` dans `/opt/ml/.venv` |
-| `ml_score` | `0 * * * *` | `enervision_ml.score` dans `/opt/ml/.venv` |
-| `alertes` | `15 * * * *` | `app.detection.internal_alerts` puis `app.cli generate-recommendations` dans `/opt/backend/.venv` |
-| `historical_import` | manuelle | `app.etl.historical_import` dans `/opt/backend/.venv` |
-
-#### Import historique
-
-Le DAG :
-
-```text
-historical_import
-```
-
-est défini dans :
-
-```text
-etl/airflow/dags/historical_import.py
-```
-
-Il ne contient aucune logique d'import propre.
-
-Il utilise un `BashOperator` pour exécuter le module backend existant :
-
-```text
-app.etl.historical_import
-```
-
-dans l'environnement :
-
-```text
-/opt/backend/.venv
-```
-
-Le flux est donc :
-
-```text
-Airflow scheduler
-      |
-      v
-historical_import
-      |
-      v
-BashOperator
-      |
-      v
-app.etl.historical_import
-      |
-      v
-PostgreSQL / TimescaleDB
-```
-
-Les fichiers historiques locaux sont montés en lecture seule dans les services Airflow :
-
-```text
-./data/raw:/opt/data/raw:ro
-```
-
-Les chemins utilisés depuis le conteneur sont :
-
-```text
-/opt/data/raw/all_sites_combined.csv
-/opt/data/raw/dataset_metadata.json
-```
-
-Le montage en lecture seule empêche les traitements Airflow de modifier les fichiers sources.
-
-Le dataset historique sert uniquement à initialiser les données de l'environnement.
-
-Le DAG utilise donc :
-
-```text
-schedule = None
-catchup = False
-max_active_runs = 1
-```
-
-Il est déclenché manuellement.
-
-`max_active_runs = 1` empêche deux imports du même dataset de s'exécuter simultanément.
-
-La tâche possède également :
-
-```text
-retries = 1
-retry_delay = 2 minutes
-execution_timeout = 30 minutes
-```
-
-Le traitement historique étant idempotent, une reprise après une erreur transitoire ne doit pas
-créer de doublons.
-
-Deux exécutions manuelles successives ont été validées avec succès.
-
-Après les deux exécutions, PostgreSQL/TimescaleDB contenait toujours :
-
-```text
-122647
-```
-
-lectures avec :
-
-```text
-source = "csv"
-```
-
-La deuxième exécution n'a donc pas dupliqué les lectures historiques.
-
-#### DAG alertes
-
-Le DAG `alertes` est planifié à la quinzième minute de chaque heure.
-
-La règle `anomaly` compare une lecture à la `prediction` du même instant, que `ml_score` écrit à
-l'heure pile. Le décalage laisse donc du temps au scoring pour terminer.
-
-Aucune dépendance Airflow explicite n'est cependant déclarée entre `ml_score` et `alertes`.
-Quatre règles de détection sur cinq ne dépendent pas du modèle, et l'absence d'un modèle entraîné
-ne doit pas empêcher les autres alertes d'être produites.
-
-Les deux tâches du DAG `alertes` s'enchaînent :
-
-```text
-detection
-    |
-    v
-recommandations
-```
-
-`recommendation.alert_id` étant une clé étrangère `NOT NULL`, la génération des recommandations
-est exécutée après la détection.
-
-Les traitements sont idempotents en base grâce aux contraintes :
-
-```text
-uq_alert_source_reference
-uq_recommendation_alert_rule
-```
-
-Chaque tâche possède deux tentatives, deux minutes d'attente entre les tentatives et un plafond
-de cinq minutes par tentative.
-
-#### DAGs ML
-
-`ml_train` reste manuel.
-
-Réentraîner le modèle est coûteux et `train.py` remplace actuellement le modèle existant sans
-comparer automatiquement les métriques du nouveau modèle avec celles du précédent.
-
-Tant que ce mécanisme de sélection n'existe pas, le réentraînement reste déclenché humainement.
-
-`ml_score` est planifié toutes les heures et réutilise le modèle produit par `ml_train`.
-
-Il utilise :
-
-```text
-max_active_runs = 1
-retries = 2
-execution_timeout = 30 minutes
-```
-
-Deux scorings ne peuvent donc pas s'exécuter simultanément sur les mêmes données.
-
-#### Configuration Airflow
-
-`airflow-init` s'appuie sur l'entrypoint de l'image Airflow avec :
-
-```text
-_AIRFLOW_DB_MIGRATE
-_AIRFLOW_WWW_USER_*
-```
-
-Une migration de la base Airflow qui échoue fait échouer `airflow-init`.
-
-Le `webserver` et le `scheduler` dépendent du succès de ce service et ne démarrent donc pas sur
-une base de métadonnées non initialisée.
-
-Les variables Airflow sont fournies depuis le fichier `.env`.
-
-Les secrets ne sont pas passés dans les arguments des processus.
-
-Les variables `AIRFLOW_*` ne sont volontairement pas déclarées avec `${VAR:?}` dans le bloc
-commun de Docker Compose : Compose interpole le fichier complet même lorsqu'un seul service est
-démarré.
-
-La validation des secrets nécessaires est réalisée par `airflow-init`.
-
-Le scheduler reçoit également les variables nécessaires aux traitements backend :
-
-```text
-DATABASE_URL
-APP_SECRET_KEY
-```
-
-`APP_SECRET_KEY` est alimentée par :
-
-```text
-AIRFLOW_APP_SECRET_KEY
-```
-
-Cette clé est distincte de celle utilisée par l'API EnerVision.
-
-#### Base de métadonnées Airflow
-
-Airflow utilise une base PostgreSQL dédiée :
-
-```text
-airflow
-```
-
-Elle est créée lors de l'initialisation de PostgreSQL par :
-
-```text
-db/init/120-airflow-database.sql
-```
-
-Sur un volume `pgdata` déjà existant, les scripts de `docker-entrypoint-initdb.d` ne sont pas
-rejoués automatiquement.
-
-Dans ce cas, la base peut être créée manuellement une fois :
-
-```powershell
-docker compose exec db psql -U enervision -d enervision -c "CREATE DATABASE airflow;"
-```
-
-#### CI Airflow
-
-Le workflow :
-
-```text
-.github/workflows/airflow.yml
-```
-
-utilise Python 3.12 via :
-
-```text
-etl/airflow/.python-version
-```
-
-Il vérifie :
-
-```text
-formatage Ruff
-analyse statique Ruff
-tests d'intégrité des DAGs
-construction de l'image Airflow
-```
-
-La construction de l'image embarque :
-
-```text
-ml/
-apps/backend/
-```
-
-Une modification de ces composants peut donc casser l'image Airflow.
-
-La CI vérifie également sans accès réseau que les commandes utilisées par les DAGs sont
-importables depuis leurs environnements respectifs.
-
-Pour l'import historique, elle exécute notamment :
-
-```text
-python -m app.etl.historical_import --help
-```
-
-depuis `/opt/backend`.
-
-Cette vérification permet de détecter une dépendance backend manquante ou un environnement Docker
-incomplet sans avoir besoin de démarrer PostgreSQL.
-
-#### Dépendance système LightGBM
-
-`libgomp1` est installé explicitement dans l'image Airflow.
-
-LightGBM dépend de cette bibliothèque OpenMP.
-
-Sans elle, l'image Docker pourrait être construite correctement mais l'import de LightGBM
-échouerait au moment de l'exécution avec une erreur liée à :
-
-```text
-libgomp.so.1
-```
+| `ml_train` | manuelle | `enervision_ml.train`, dans `/opt/ml/.venv` |
+| `ml_score` | `0 * * * *` | `enervision_ml.score`, dans `/opt/ml/.venv` |
+| `alertes` | `15 * * * *` | `app.detection.internal_alerts` puis `app.cli generate-recommendations`, dans `/opt/backend/.venv` |
+| `historical_import` | manuelle | `app.etl.historical_import`, dans `/opt/backend/.venv` ; les fichiers de `data/raw` sont montés en lecture seule dans `/opt/data/raw` |
+
+Le DAG `historical_import` réutilise le pipeline historique existant sans dupliquer sa logique.
+Il reste manuel, car le dataset sert à initialiser l'environnement. Le montage
+`./data/raw:/opt/data/raw:ro` permet au scheduler de lire les fichiers CSV/JSON sans pouvoir les
+modifier.
+
+**Pourquoi `alertes` tourne à la quinzième minute.** Sa règle `anomaly` compare une lecture à la
+`prediction` du même instant, que `ml_score` écrit à l'heure pile. Le décalage laisse le scoring
+finir. Aucune dépendance n'est déclarée entre les deux DAGs pour autant, ni `ExternalTaskSensor` ni
+tâche greffée : quatre règles de détection sur cinq ne touchent pas au modèle, et un modèle jamais
+entraîné ne doit pas priver le parc de ses alertes. Le décalage est donc une convention et non une
+garantie : le plafond de `ml_score` est de 30 minutes, et un scoring qui déborde de `:15` prive
+`anomaly` de la `prediction` de l'heure, qu'elle ne retrouvera au passage suivant que si sa fenêtre
+la couvre encore. Les quatre autres règles ne s'en aperçoivent pas.
+
+Ses deux tâches s'enchaînent en revanche (`recommendation.alert_id` est une clé étrangère `NOT
+NULL`), et toutes deux sont rejouables sans risque : l'idempotence est portée par la base,
+`uq_alert_source_reference` et `uq_recommendation_alert_rule`. Chacune a 2 tentatives, 2 minutes
+d'attente entre elles et un plafond de 5 minutes **par tentative** : au pire, reprises comprises,
+l'enchaînement occupe 38 minutes, ce qui le garde sous le pas horaire qu'un `max_active_runs=1`
+rend contraignant.
+
+`airflow-init` s'appuie sur l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`,
+`_AIRFLOW_WWW_USER_*`) plutôt que sur un script maison : l'entrypoint porte le code de sortie, une
+migration ratée (typiquement la base `airflow` absente, cf. ci-dessous) fait échouer le service et
+`webserver`/`scheduler` ne démarrent pas sur une base non migrée. Le mot de passe du compte admin
+passe par l'environnement, jamais par `argv` (ni `ps`, ni `docker compose config`).
+
+Les variables `AIRFLOW_*` ne sont volontairement pas en `${VAR:?}` : Compose interpole le fichier
+entier avant de filtrer les services, une variable requise manquante casserait `make db-up`,
+`make dev`... pour tout poste dont le `.env` est antérieur. Elles valent `${VAR:-}` et c'est
+`airflow-init` qui refuse de démarrer (clé Fernet, clé Flask, mot de passe ou
+`AIRFLOW_APP_SECRET_KEY` vides).
+
+Le conteneur reçoit deux variables du backend en plus de `ML_DATABASE_URL` : `DATABASE_URL`, en
+dialecte asyncpg, et `APP_SECRET_KEY`, alimentée par `AIRFLOW_APP_SECRET_KEY`. Cette dernière est
+**délibérément différente** de celle de l'API. La configuration du backend refuse de se construire
+sans clé, mais la détection ne signe ni ne vérifie aucun jeton : un Airflow compromis, qui permet
+déjà d'exécuter du code depuis son interface, ne doit pas livrer par-dessus la clé de signature
+des JWT.
+
+**Pourquoi `ml_train` est manuel.** Réentraîner est coûteux et sa cadence n'est pas une décision
+prise. Surtout, `train.py` écrase le modèle sans comparer ses métriques à celles de l'ancien : un
+cron déploierait silencieusement un modèle dégradé. Tant que ce garde-fou n'existe pas, le
+déclenchement reste humain. `ml_score`, lui, est planifié à l'heure, avec `max_active_runs=1`
+(pas deux scorings simultanés dans `prediction`), 2 tentatives et un plafond de 30 minutes.
+
+CI : `.github/workflows/airflow.yml` (Python 3.12 via `etl/airflow/.python-version`) lance lint et
+tests d'intégrité des DAGs, et construit l'image (elle `COPY` `ml/` et `apps/backend/`, une
+modification de l'un ou de l'autre peut donc la casser, d'où leurs chemins dans les déclencheurs)
+avant de vérifier que les deux environnements s'y importent sans réseau.
+
+Piège à connaître : sur un volume `pgdata` déjà peuplé (poste de dev existant plutôt que premier
+`make db-up`), `db/init/120-airflow-database.sql` ne se rejoue pas (PostgreSQL n'exécute
+`docker-entrypoint-initdb.d/` que sur un volume vide). Créer la base `airflow` à la main une fois :
+`docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "CREATE DATABASE airflow;"`.
+
+`libgomp1` est installé explicitement dans l'image (`apt-get`, en root) : l'image Airflow de base
+est minimale et n'embarque pas la runtime OpenMP dont LightGBM a besoin, sans quoi l'erreur
+(`OSError: libgomp.so.1`) n'apparaît qu'à la première tâche réellement exécutée, pas à la
+construction de l'image.
 
 ## Machine cible, exécution Docker
 

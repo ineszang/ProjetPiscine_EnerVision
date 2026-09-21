@@ -18,6 +18,8 @@ COMMANDE_BACKEND = "cd /opt/backend && env -u VIRTUAL_ENV uv run --no-sync pytho
 
 CSV_PATH = "/opt/data/raw/all_sites_combined.csv"
 METADATA_PATH = "/opt/data/raw/dataset_metadata.json"
+SOURCE_TIMEZONE = "UTC"
+BATCH_SIZE = 1000
 
 with DAG(
     dag_id="historical_import",
