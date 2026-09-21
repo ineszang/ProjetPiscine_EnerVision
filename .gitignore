@@ -66,6 +66,9 @@ ml/mlruns/
 ml/mlartifacts/
 ml/mlflow.db
 
+# TLS : certificats du reverse proxy, générés par script ou par certbot
+infra/proxy/tls/*.pem
+
 # IDE et OS
 .idea/
 .vscode/

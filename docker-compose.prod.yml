@@ -1,0 +1,66 @@
+# Piège : `APP_ENV` et `APP_DEBUG` sont en dur et non en `${APP_ENV:-prod}` : le `.env` du poste
+# vaut `local` et reprendrait le dessus, ce qui laisserait le cookie sans `__Secure-` et
+# rouvrirait `/docs`. Hors `local`, l'API exige en retour une origine CORS non vide.
+# Piège : les listes de ports se cumulent à la fusion des deux fichiers. `!reset` est le seul
+# moyen de dépublier 8000 et 3000 : sans lui, l'API resterait joignable en clair à côté du proxy.
+
+name: enervision
+
+services:
+  db:
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+
+  mailpit:
+    ports: !override
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+
+  backend:
+    ports: !reset null
+    command:
+      - uvicorn
+      - app.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      - --forwarded-allow-ips=*
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: "false"
+      APP_TRUST_PROXY_HEADERS: "true"
+      APP_CORS_ORIGINS: https://${PUBLIC_HOST:?PUBLIC_HOST est requis pour la stack complète}
+      APP_FRONTEND_RESET_PASSWORD_URL: https://${PUBLIC_HOST}/reset-password
+
+  frontend:
+    ports: !reset null
+
+  proxy:
+    image: nginx:1.28-alpine
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/proxy/conf.d:/etc/nginx/conf.d:ro
+      - ./infra/proxy/tls:/etc/nginx/tls:ro
+      - acme_webroot:/var/www/certbot
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot
+    profiles: ["acme"]
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - acme_webroot:/var/www/certbot
+      - ./infra/proxy/tls:/tls
+      - ./infra/proxy/acme-deploy-hook.sh:/deploy-hook.sh:ro
+
+volumes:
+  acme_webroot:
+  letsencrypt:
