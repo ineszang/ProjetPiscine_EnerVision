@@ -65,6 +65,7 @@ ml/models/*
 ml/mlruns/
 ml/mlartifacts/
 ml/mlflow.db*
+ml/.env
 
 # IDE et OS
 .idea/

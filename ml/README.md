@@ -59,6 +59,13 @@ lags/moyennes glissantes, une fuite qui masquerait un surapprentissage.
 
 ## Serveur MLflow (conteneur)
 
+Premiere utilisation : copier `.env.example` en `.env` et y choisir un mot de passe PostgreSQL
+(lettres et chiffres uniquement). Le fichier `.env` est ignore par git.
+
+```
+Copy-Item .env.example .env
+```
+
 Un serveur MLflow (PostgreSQL pour les metadonnees, volume pour les artefacts) se lance avec
 Docker. Prerequis : Docker Desktop demarre.
 

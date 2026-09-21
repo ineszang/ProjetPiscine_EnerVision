@@ -3,7 +3,7 @@ services:
     image: postgres:16
     environment:
       POSTGRES_USER: mlflow
-      POSTGRES_PASSWORD: mlflow
+      POSTGRES_PASSWORD: ${MLFLOW_DB_PASSWORD:?definir MLFLOW_DB_PASSWORD dans ml/.env}
       POSTGRES_DB: mlflow
     volumes:
       - mlflow-db-data:/var/lib/postgresql/data
@@ -24,7 +24,7 @@ services:
     command: >
       mlflow server
       --host 0.0.0.0 --port 5000
-      --backend-store-uri postgresql://mlflow:mlflow@mlflow-db:5432/mlflow
+      --backend-store-uri postgresql://mlflow:${MLFLOW_DB_PASSWORD}@mlflow-db:5432/mlflow
       --artifacts-destination /mlartifacts
       --serve-artifacts
 
