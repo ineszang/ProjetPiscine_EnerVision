@@ -51,7 +51,7 @@ Trois pièges sont documentés en tête du `docker-compose.yml`, ils ne se devin
 - `LocalExecutor` exécute les tâches comme sous-processus du **scheduler**, jamais du webserver :
   c'est le scheduler qui a besoin du volume `airflow_ml_state` (modèle, magasin MLflow).
 
-### Airflow (issues #115 et #116)
+### Airflow (issues #115, #116 et #119)
 
 Trois services, `docker compose profiles` non utilisés (démarrage explicite via `make
 airflow-up`, pas dans `make dev`) :
@@ -75,6 +75,12 @@ l'[ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md).
 | `ml_train` | manuelle | `enervision_ml.train`, dans `/opt/ml/.venv` |
 | `ml_score` | `0 * * * *` | `enervision_ml.score`, dans `/opt/ml/.venv` |
 | `alertes` | `15 * * * *` | `app.detection.internal_alerts` puis `app.cli generate-recommendations`, dans `/opt/backend/.venv` |
+| `historical_import` | manuelle | `app.etl.historical_import`, dans `/opt/backend/.venv` ; les fichiers de `data/raw` sont montés en lecture seule dans `/opt/data/raw` |
+
+Le DAG `historical_import` réutilise le pipeline historique existant sans dupliquer sa logique.
+Il reste manuel, car le dataset sert à initialiser l'environnement. Le montage
+`./data/raw:/opt/data/raw:ro` permet au scheduler de lire les fichiers CSV/JSON sans pouvoir les
+modifier.
 
 **Pourquoi `alertes` tourne à la quinzième minute.** Sa règle `anomaly` compare une lecture à la
 `prediction` du même instant, que `ml_score` écrit à l'heure pile. Le décalage laisse le scoring

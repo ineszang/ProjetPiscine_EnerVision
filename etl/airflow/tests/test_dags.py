@@ -10,12 +10,13 @@ from airflow.models.dagbag import DagBag
 
 DAGS_FOLDER = Path(__file__).resolve().parent.parent / "dags"
 
-DAG_IDS = ["ml_train", "ml_score", "alertes"]
+DAG_IDS = ["ml_train", "ml_score", "alertes", "historical_import"]
 TACHES = [
     ("ml_train", "train"),
     ("ml_score", "score"),
     ("alertes", "detection"),
     ("alertes", "recommandations"),
+    ("historical_import", "import_historical"),
 ]
 
 
@@ -47,6 +48,10 @@ def test_alertes_runs_after_the_hourly_scoring(dagbag: DagBag) -> None:
     assert dagbag.dags["alertes"].timetable.summary == "15 * * * *"
 
 
+def test_historical_import_has_no_schedule(dagbag: DagBag) -> None:
+    assert dagbag.dags["historical_import"].timetable.summary == "None"
+
+
 def test_ml_train_task_calls_the_training_module(dagbag: DagBag) -> None:
     tache = dagbag.dags["ml_train"].get_task("train")
     assert "enervision_ml.train" in tache.bash_command
@@ -67,10 +72,27 @@ def test_alertes_recommendation_task_calls_the_backend_cli(dagbag: DagBag) -> No
     assert "app.cli generate-recommendations" in tache.bash_command
 
 
+def test_historical_import_calls_the_existing_backend_module(dagbag: DagBag) -> None:
+    tache = dagbag.dags["historical_import"].get_task("import_historical")
+    assert "app.etl.historical_import" in tache.bash_command
+
+
+def test_historical_import_uses_the_expected_source_files(dagbag: DagBag) -> None:
+    commande = dagbag.dags["historical_import"].get_task("import_historical").bash_command
+
+    assert "--csv /opt/data/raw/all_sites_combined.csv" in commande
+    assert "--metadata /opt/data/raw/dataset_metadata.json" in commande
+
+
 @pytest.mark.parametrize("task_id", ["detection", "recommandations"])
 def test_alertes_tasks_run_in_the_backend_environment(dagbag: DagBag, task_id: str) -> None:
     # Le backend a son propre venv dans l'image, distinct de celui de ml/ (ADR 0008).
     assert "/opt/backend" in dagbag.dags["alertes"].get_task(task_id).bash_command
+
+
+def test_historical_import_runs_in_the_backend_environment(dagbag: DagBag) -> None:
+    commande = dagbag.dags["historical_import"].get_task("import_historical").bash_command
+    assert "/opt/backend" in commande
 
 
 def test_alertes_generates_recommendations_after_detecting(dagbag: DagBag) -> None:
@@ -131,6 +153,10 @@ def test_ml_score_retries_after_a_transient_failure(dagbag: DagBag) -> None:
 def test_alertes_retries_after_a_transient_failure(dagbag: DagBag, task_id: str) -> None:
     # Les deux commandes sont idempotentes en base, une reprise ne duplique rien.
     assert dagbag.dags["alertes"].get_task(task_id).retries >= 1
+
+
+def test_historical_import_retries_after_a_transient_failure(dagbag: DagBag) -> None:
+    assert dagbag.dags["historical_import"].get_task("import_historical").retries >= 1
 
 
 @pytest.mark.parametrize(("dag_id", "task_id"), TACHES)

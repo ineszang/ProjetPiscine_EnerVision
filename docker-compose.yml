@@ -36,6 +36,7 @@ x-airflow-common: &airflow-common
   volumes:
     - ./etl/airflow/dags:/opt/airflow/dags
     - ./etl/airflow/plugins:/opt/airflow/plugins
+    - ./data/raw:/opt/data/raw:ro
     - airflow_logs:/opt/airflow/logs
     - airflow_ml_state:/opt/ml/state
   restart: unless-stopped

@@ -91,11 +91,12 @@ jobs:
           bash -c "cd /opt/ml && env -u VIRTUAL_ENV uv run --no-sync python -m enervision_ml.train --help"
 
       # `--help` sort par argparse avant `get_settings()` : ni base ni secret requis, et
-      # l'import du module prouve que l'environnement /opt/backend est complet. Les deux
-      # commandes du DAG `alertes` sont couvertes, `app.cli` tirant tout FastAPI derrière lui.
-      - name: Vérifie que les deux commandes du DAG alertes s'importent sans réseau
+      # l'import des modules prouve que l'environnement /opt/backend est complet.
+      # Les deux commandes du DAG `alertes` et la commande du DAG historique sont couvertes.
+      - name: Vérifie que les trois commandes backend s'importent sans réseau
         run: >
           docker run --rm --network none enervision-airflow:ci
           bash -c "cd /opt/backend
           && env -u VIRTUAL_ENV uv run --no-sync python -m app.detection.internal_alerts --help
-          && env -u VIRTUAL_ENV uv run --no-sync python -m app.cli generate-recommendations --help"
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.cli generate-recommendations --help
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.etl.historical_import --help"
