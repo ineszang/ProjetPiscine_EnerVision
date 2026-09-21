@@ -1,4 +1,6 @@
-.ev-table-card {
+// Piège : `ev-card` pose son padding sur `:host`, compilé en `[_nghost-…]` (même spécificité
+// qu'une classe) et injecté après la feuille globale ; il faut le sélecteur d'élément pour gagner.
+ev-card.ev-table-card {
   padding: 0;
   overflow: hidden;
 }
