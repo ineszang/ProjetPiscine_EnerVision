@@ -80,10 +80,17 @@ l'[ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md).
 `prediction` du même instant, que `ml_score` écrit à l'heure pile. Le décalage laisse le scoring
 finir. Aucune dépendance n'est déclarée entre les deux DAGs pour autant, ni `ExternalTaskSensor` ni
 tâche greffée : quatre règles de détection sur cinq ne touchent pas au modèle, et un modèle jamais
-entraîné ne doit pas priver le parc de ses alertes. Ses deux tâches s'enchaînent en revanche
-(`recommendation.alert_id` est une clé étrangère `NOT NULL`), et toutes deux sont rejouables sans
-risque : l'idempotence est portée par la base, `uq_alert_source_reference` et
-`uq_recommendation_alert_rule`.
+entraîné ne doit pas priver le parc de ses alertes. Le décalage est donc une convention et non une
+garantie : le plafond de `ml_score` est de 30 minutes, et un scoring qui déborde de `:15` prive
+`anomaly` de la `prediction` de l'heure, qu'elle ne retrouvera au passage suivant que si sa fenêtre
+la couvre encore. Les quatre autres règles ne s'en aperçoivent pas.
+
+Ses deux tâches s'enchaînent en revanche (`recommendation.alert_id` est une clé étrangère `NOT
+NULL`), et toutes deux sont rejouables sans risque : l'idempotence est portée par la base,
+`uq_alert_source_reference` et `uq_recommendation_alert_rule`. Chacune a 2 tentatives, 2 minutes
+d'attente entre elles et un plafond de 5 minutes **par tentative** : au pire, reprises comprises,
+l'enchaînement occupe 38 minutes, ce qui le garde sous le pas horaire qu'un `max_active_runs=1`
+rend contraignant.
 
 `airflow-init` s'appuie sur l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`,
 `_AIRFLOW_WWW_USER_*`) plutôt que sur un script maison : l'entrypoint porte le code de sortie, une

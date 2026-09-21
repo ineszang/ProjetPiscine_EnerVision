@@ -26,9 +26,9 @@ COMMANDE_BACKEND = "cd /opt/backend && env -u VIRTUAL_ENV uv run --no-sync pytho
 # `uq_alert_source_reference` et `uq_recommendation_alert_rule`) : reprendre ne duplique rien.
 TENTATIVES = 2
 DELAI_ENTRE_TENTATIVES = timedelta(minutes=2)
-# La somme des deux plafonds reste sous le pas horaire : une exécution pendue ne doit pas
-# empiéter sur la suivante.
-PLAFOND_PAR_TACHE = timedelta(minutes=15)
+# `execution_timeout` vaut par tentative : c'est le pire cas des deux tâches enchaînées, reprises
+# et délais compris, qui doit tenir sous le pas horaire. Les tests d'intégrité en font le calcul.
+PLAFOND_PAR_TACHE = timedelta(minutes=5)
 
 with DAG(
     dag_id="alertes",

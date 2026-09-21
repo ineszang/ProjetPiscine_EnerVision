@@ -5,6 +5,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from airflow.models.baseoperator import BaseOperator
 from airflow.models.dagbag import DagBag
 
 DAGS_FOLDER = Path(__file__).resolve().parent.parent / "dags"
@@ -106,14 +107,20 @@ def test_ml_score_execution_timeout_stays_below_its_hourly_step(dagbag: DagBag) 
     assert timeout < timedelta(hours=1)
 
 
-def test_alertes_execution_timeouts_stay_below_its_hourly_step(dagbag: DagBag) -> None:
-    # Les deux taches s'enchainent : c'est leur somme qui doit tenir dans le pas horaire.
-    plafonds = [
-        dagbag.dags["alertes"].get_task(task_id).execution_timeout
-        for task_id in ("detection", "recommandations")
+def duree_au_pire(tache: BaseOperator) -> timedelta:
+    # `execution_timeout` plafonne une tentative, pas la tache : deux reprises occupent trois
+    # plafonds et deux delais d'attente.
+    assert tache.execution_timeout is not None
+    return (tache.retries + 1) * tache.execution_timeout + tache.retries * tache.retry_delay
+
+
+def test_alertes_worst_case_stays_below_its_hourly_step(dagbag: DagBag) -> None:
+    # Les deux taches s'enchainent : c'est leur somme, reprises comprises, qui doit tenir dans le
+    # pas horaire, sinon `max_active_runs=1` fait attendre l'execution suivante.
+    taches = [
+        dagbag.dags["alertes"].get_task(task_id) for task_id in ("detection", "recommandations")
     ]
-    assert all(plafond is not None for plafond in plafonds)
-    assert sum(plafonds, timedelta()) < timedelta(hours=1)
+    assert sum((duree_au_pire(tache) for tache in taches), timedelta()) < timedelta(hours=1)
 
 
 def test_ml_score_retries_after_a_transient_failure(dagbag: DagBag) -> None:
