@@ -17,8 +17,11 @@ contredisent, c'est l'ADR qui fait foi et la vue qui est en retard.
 | [40-data.md](40-data.md) | Frontières `db/` et `alembic/`, cycle de vie d'une mesure, modèle |
 
 L'observabilité et la CI/CD n'ont pas de document propre : ce sont des sections des documents
-ci-dessus, tant que `monitoring/` et `etl/airflow/` ne contiennent que des `.gitkeep`. Elles en
-sortiront le jour où elles auront de la matière. Un fichier vide de plus n'aide personne.
+ci-dessus, tant que `monitoring/` ne contient que des `.gitkeep`. Elles en sortiront le jour où
+elles auront de la matière. Un fichier vide de plus n'aide personne.
+
+L'orchestration Airflow, elle, en a depuis les issues #115 et #116 : trois DAGs, leur image et
+leurs contraintes sont décrits dans [10-infra.md](10-infra.md).
 
 La sécurité applicative, elle, a désormais de la matière : la vue consolidée reste dans
 [00-vue-ensemble.md](00-vue-ensemble.md), le détail dans [20-backend.md](20-backend.md), la
