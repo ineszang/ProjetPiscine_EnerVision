@@ -256,12 +256,19 @@ auraient pu comparer des lectures/choisir une prévision au hasard. `_detect_spi
 explicitement les paires de lectures qui partagent le même horodatage (deux `source` pour un seul
 instant réel, pas une variation).
 
-La détection est un script lancé à la main, pas encore ordonnancé par Airflow (contrairement à
-`enervision_ml.score`, orchestré par le DAG `ml_score` depuis l'issue #115) : `uv run python -m app.detection.internal_alerts [--site-id ...] [--now ...]`, dans
-`apps/backend` puisque les règles s'appuient sur les repositories ORM de l'API plutôt que sur une
-connexion SQL directe (contrairement à `app/etl/historical_import.py`). Cette issue (#104)
-débloquait #38 (moteur de règles pour recommandations), dont la FK `alert_id` `NOT NULL` n'avait
-jusqu'ici rien à référencer côté `source="enervision"`.
+La détection s'exécute dans `apps/backend`, puisque les règles s'appuient sur les repositories ORM
+de l'API plutôt que sur une connexion SQL directe (contrairement à
+`app/etl/historical_import.py`) : `uv run python -m app.detection.internal_alerts [--site-id ...]
+[--now ...]`, ou `make detect-alerts`. Cette issue (#104) débloquait #38 (moteur de règles pour
+recommandations), dont la FK `alert_id` `NOT NULL` n'avait jusqu'ici rien à référencer côté
+`source="enervision"`.
+
+Depuis l'issue #116, le lancement n'est plus manuel : le DAG Airflow `alertes` enchaîne cette
+détection et la génération des recommandations, toutes les heures à la quinzième minute. Airflow
+exécute le code du backend en sous-processus, dans son propre environnement, ce que décide
+l'[ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md) ; le détail de l'ordonnancement est
+dans [10-infra.md](10-infra.md). La ligne de commande reste le moyen de rejouer une fenêtre
+passée, ce que `--now` permet et que le DAG ne fait pas.
 
 ### `/health/ready`
 

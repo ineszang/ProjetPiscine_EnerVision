@@ -4,8 +4,9 @@ name: Airflow
 # (contrairement à backend.yml et ml.yml) : apache-airflow 2.10 ne supporte pas 3.14. Le 3.14 de
 # ml/ ne vit que dans l'image Docker, dans son propre environnement (cf. etl/airflow/Dockerfile).
 #
-# Piège : l'image COPY les fichiers de dépendances et le code de ml/. Une modification de ml/
-# peut donc casser sa construction, d'où ces chemins dans les déclencheurs.
+# Piège : l'image COPY les fichiers de dépendances et le code de ml/ et de apps/backend/. Une
+# modification de l'un ou de l'autre peut donc casser sa construction, d'où ces chemins dans
+# les déclencheurs, alors même que ce workflow ne teste ni le modèle ni l'API.
 
 on:
   push:
@@ -14,6 +15,9 @@ on:
       - "ml/pyproject.toml"
       - "ml/uv.lock"
       - "ml/enervision_ml/**"
+      - "apps/backend/pyproject.toml"
+      - "apps/backend/uv.lock"
+      - "apps/backend/app/**"
       - ".github/workflows/airflow.yml"
   pull_request:
     paths:
@@ -21,6 +25,9 @@ on:
       - "ml/pyproject.toml"
       - "ml/uv.lock"
       - "ml/enervision_ml/**"
+      - "apps/backend/pyproject.toml"
+      - "apps/backend/uv.lock"
+      - "apps/backend/app/**"
       - ".github/workflows/airflow.yml"
 
 permissions:
@@ -73,7 +80,7 @@ jobs:
       - name: Récupère le dépôt
         uses: actions/checkout@v4
 
-      - name: Construit l'image (contexte à la racine, elle COPY ml/)
+      - name: Construit l'image (contexte à la racine, elle COPY ml/ et apps/backend/)
         run: docker build -f etl/airflow/Dockerfile -t enervision-airflow:ci .
 
       # Vérifie ce qui ne casse qu'à l'exécution, pas à la construction : libgomp1 absent
@@ -82,3 +89,13 @@ jobs:
         run: >
           docker run --rm --network none enervision-airflow:ci
           bash -c "cd /opt/ml && env -u VIRTUAL_ENV uv run --no-sync python -m enervision_ml.train --help"
+
+      # `--help` sort par argparse avant `get_settings()` : ni base ni secret requis, et
+      # l'import du module prouve que l'environnement /opt/backend est complet. Les deux
+      # commandes du DAG `alertes` sont couvertes, `app.cli` tirant tout FastAPI derrière lui.
+      - name: Vérifie que les deux commandes du DAG alertes s'importent sans réseau
+        run: >
+          docker run --rm --network none enervision-airflow:ci
+          bash -c "cd /opt/backend
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.detection.internal_alerts --help
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.cli generate-recommendations --help"
