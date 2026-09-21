@@ -1,0 +1,160 @@
+name: DAST
+
+# Scan dynamique OWASP ZAP de l'API (issue #41). Il attaque une API qui tourne : le job démarre
+# la base et le backend sur le runner, crée un compte `lecteur` jetable (scripts/dast-token.sh),
+# puis lance ZAP sur le contrat OpenAPI avec le jeton de ce compte.
+#
+# Non bloquant pour l'instant : le volume d'alertes d'un premier passage est inconnu. Le rapport
+# est publié en artefact et dans le résumé du job. Le fixer en seuil viendra une fois les alertes
+# triées.
+#
+# Piège : ce scan tape la configuration par défaut du backend (`APP_ENV=local`, pas de TLS, pas
+# de reverse proxy). Il ne dit rien des en-têtes ni du TLS posés par le proxy en production, et
+# remontera des alertes (HSTS absent...) qui n'existent pas derrière lui.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Un scan actif est long : hebdomadaire plutôt qu'à chaque PR.
+    - cron: "0 3 * * 1"
+  pull_request:
+    # Ne se lance sur une PR que si le scan lui-même change.
+    paths:
+      - ".github/workflows/dast.yml"
+      - "scripts/dast-token.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap:
+    name: Scan OWASP ZAP de l'API
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    # Même image que docker-compose.yml : la première migration refuse de s'appliquer sans
+    # l'extension TimescaleDB (cf. backend.yml).
+    services:
+      db:
+        image: timescale/timescaledb-ha:pg17
+        env:
+          POSTGRES_USER: enervision
+          POSTGRES_PASSWORD: change_me
+          POSTGRES_DB: enervision_dast
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U enervision -d enervision_dast"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 40s
+
+    env:
+      # Base jetable : ZAP y écrira et le script y crée deux comptes.
+      DATABASE_URL: postgresql+asyncpg://enervision:change_me@localhost:5433/enervision_dast
+      APP_SECRET_KEY: secret-de-scan-assez-long-pour-le-validateur
+      APP_ENV: local
+      # Le jeton du lecteur doit survivre à toute la durée du scan (15 minutes par défaut).
+      # 3600 est le plafond accepté par la configuration.
+      APP_ACCESS_TOKEN_TTL_SECONDS: "3600"
+      PGPASSWORD: change_me
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        run: uv python install
+        working-directory: apps/backend
+
+      - name: Synchronise les dépendances sans dévier du verrou
+        run: uv sync --frozen --no-dev
+        working-directory: apps/backend
+
+      - name: Active TimescaleDB sur la base du scan
+        run: psql -h localhost -p 5433 -U enervision -d enervision_dast -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
+
+      - name: Applique les migrations
+        run: uv run alembic upgrade head
+        working-directory: apps/backend
+
+      - name: Démarre l'API
+        run: |
+          nohup uv run uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 \
+            > "$RUNNER_TEMP/api.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:8000/api/v1/health/ready >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "L'API ne répond pas sur /health/ready" >&2
+          cat "$RUNNER_TEMP/api.log" >&2
+          exit 1
+        working-directory: apps/backend
+
+      - name: Crée le compte lecteur du scan
+        id: jeton
+        run: |
+          jeton="$(../../scripts/dast-token.sh)"
+          echo "::add-mask::$jeton"
+          echo "jeton=$jeton" >> "$GITHUB_OUTPUT"
+        working-directory: apps/backend
+
+      # `--network host` : ZAP atteint l'API sur le localhost du runner. Le dossier de sortie doit
+      # être inscriptible par l'utilisateur du conteneur (uid 1000).
+      #
+      # Les routes d'authentification qui changent l'état du compte du scan sont exclues : un
+      # scan actif y déclencherait la limitation de débit du login, la réinitialisation de mots de
+      # passe et la fermeture des sessions, sans rien apprendre de plus.
+      - name: Scan ZAP
+        id: zap
+        continue-on-error: true
+        run: |
+          mkdir -p zap-out && chmod 777 zap-out
+          docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py \
+            -t http://localhost:8000/openapi.json -f openapi \
+            -T 30 \
+            -r zap-report.html -J zap-report.json -w zap-report.md \
+            -z "-config replacer.full_list(0).description=auth \
+                -config replacer.full_list(0).enabled=true \
+                -config replacer.full_list(0).matchtype=REQ_HEADER \
+                -config replacer.full_list(0).matchstring=Authorization \
+                -config replacer.full_list(0).regex=false \
+                -config replacer.full_list(0).replacement='Bearer ${{ steps.jeton.outputs.jeton }}' \
+                -config globalexcludeurl.url_list.url(0).description=auth-etat \
+                -config globalexcludeurl.url_list.url(0).enabled=true \
+                -config globalexcludeurl.url_list.url(0).regex='.*/api/v1/auth/(login|password|logout-all|forgot-password|reset-password).*'"
+
+      - name: Publie le résumé
+        if: always()
+        run: |
+          if [ -f zap-out/zap-report.md ]; then
+            cat zap-out/zap-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Aucun rapport ZAP produit, voir le journal du job." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Publie les rapports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: zap-out/
+          if-no-files-found: warn
+
+      # Un scan sans compte authentifié ne testerait que les routes publiques : mieux vaut le
+      # dire que le laisser passer pour vert.
+      - name: Journal de l'API en cas d'échec
+        if: failure() || steps.zap.outcome == 'failure'
+        run: cat "$RUNNER_TEMP/api.log" || true

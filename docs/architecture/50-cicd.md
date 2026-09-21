@@ -59,7 +59,7 @@ flowchart TB
 
 ## Déclenchement
 
-Les cinq workflows se déclenchent sur `push` **et** sur `pull_request`, filtrés par **chemin** :
+Les workflows de qualité se déclenchent sur `push` **et** sur `pull_request`, filtrés par **chemin** :
 `backend.yml` sur `apps/backend/**`, `frontend.yml` sur `apps/frontend/**`, `ml.yml` sur `ml/**`,
 `airflow.yml` sur `etl/airflow/**` **plus des chemins de `ml/` et de `apps/backend/`**, chacun
 incluant son propre fichier de workflow dans le filtre pour qu'une modification du pipeline
@@ -187,12 +187,48 @@ run. Aucune clé de déploiement n'existe encore, puisqu'il n'y a pas de déploi
 déploiement est porté par l'issue #21, les secrets qu'il consommera et leur injection par
 l'issue #22.
 
+## Scan DAST (OWASP ZAP)
+
+Statut : `En cours`. Le workflow `dast.yml` attaque l'API **en fonctionnement**, ce que ni Bandit,
+ni `pip-audit`, ni Sonar ne font. Il se lance à la main (`workflow_dispatch`), chaque lundi à 3h
+UTC, et sur une PR qui modifie le scan lui-même. Pas à chaque PR : un scan actif dure plusieurs
+minutes.
+
+Le job démarre sur le runner la base (même image TimescaleDB que `docker-compose.yml`, base
+jetable) et le backend, puis `scripts/dast-token.sh` crée un compte **`lecteur`** et rend son
+jeton. ZAP charge le contrat `/openapi.json` (`zap-api-scan.py -f openapi`) et envoie ce jeton
+dans l'en-tête `Authorization`. Sans lui, ZAP ne verrait que les deux sondes et `/auth/login`.
+
+Trois décisions à savoir défendre :
+
+- **Le compte du scan est `lecteur`, jamais `admin`.** Un scan actif avec un jeton admin frapperait
+  `POST /users` et la réinitialisation de mots de passe pour de bon. Le script passe par un admin
+  jetable pour créer le lecteur (l'API n'a pas d'inscription publique) puis ne s'en sert plus.
+- **Un compte neuf est en `must_change_password`**, et toute route gardée le refuse tant que le
+  mot de passe n'est pas changé. Le script fait ce changement et vérifie `GET /sites` = 200 avant
+  de rendre le jeton ; sans cela, tout le scan authentifié ne testerait que des `403`.
+- **`APP_ACCESS_TOKEN_TTL_SECONDS=3600`** (plafond de la configuration) : le jeton par défaut
+  dure 15 minutes et le scan bien plus.
+
+Les routes d'authentification qui changent l'état du compte (`login`, `password`, `logout-all`,
+`forgot-password`, `reset-password`) sont exclues du scan actif : elles y déclencheraient la
+limitation de débit et fermeraient les sessions sans rien apprendre de plus.
+
+**Non bloquant pour l'instant** (`continue-on-error`). Le volume d'alertes d'un premier passage est
+inconnu ; le rapport HTML/JSON/Markdown est publié en artefact `zap-report` et dans le résumé du
+job. Fixer un seuil viendra une fois les alertes triées.
+
+**Limite à ne pas oublier :** le scan tape la configuration par défaut du backend (`APP_ENV=local`,
+pas de TLS, pas de reverse proxy). Il remontera des alertes qui n'existent pas derrière le proxy
+(HSTS absent...) et ne dit **rien** des en-têtes ni du TLS que le proxy pose en production. Un
+second passage sur la stack complète reste à faire.
+
 ## Ce qui manque, et pourquoi
 
 | Manque | Issue | Conséquence assumée |
 |---|---|---|
 | Job de déploiement (CD) | #21 | La chaîne s'arrête au merge. Rien ne part vers une machine |
-| DAST (OWASP ZAP) | #41 | Aucune vérification sur l'application en fonctionnement, seulement sur le code et les dépendances |
+| DAST bloquant | #41 | Le scan ZAP existe mais ne bloque rien : aucun seuil n'est fixé tant que les alertes du premier passage ne sont pas triées |
 | Tests end to end | #46 | Les parcours utilisateur ne sont pas vérifiés en CI |
 | Tests de charge | #47 | Aucun garde-fou de performance |
 | Scan d'image de conteneur | aucune | Les `Dockerfile` sont construits en local, pas analysés |
