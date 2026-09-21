@@ -663,10 +663,8 @@ mock_api_import.py
 
 La logique d'extraction, de transformation et de chargement est donc disponible pour les deux sources de données du MVP.
 
-La prochaine étape consiste à orchestrer ces traitements avec Apache Airflow.
+Airflow tourne désormais réellement (`etl/airflow/`, `make airflow-up`), mais il orchestre pour l'instant le pipeline ML (`ml_train`/`ml_score`, issue #115), pas encore ces deux imports : orchestrer `historical_import.py` et `mock_api_import.py` (normalisation et chargement micro-batch, issues #15/#16) reste à faire.
 
-Airflow permettra de planifier les traitements, gérer leur ordre d'exécution, suivre leur état et remonter les erreurs.
-
-Airflow ne remplacera pas la logique ETL Python existante. Les scripts actuels resteront responsables de l'extraction, de la validation, de la transformation et du chargement.
+Airflow permet de planifier les traitements, gérer leur ordre d'exécution, suivre leur état et remonter les erreurs. Il ne remplace pas la logique ETL Python existante : les scripts actuels restent responsables de l'extraction, de la validation, de la transformation et du chargement. `etl/airflow/dags/ml_train.py` et `ml_score.py` montrent le patron retenu (des `BashOperator` qui invoquent le script tel quel).
 
 Le pipeline Data servira ensuite à préparer les données nécessaires au modèle de Machine Learning.

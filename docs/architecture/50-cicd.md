@@ -36,6 +36,11 @@ flowchart TB
     ms["sast<br/>bandit"]
   end
 
+  subgraph afw["Airflow · airflow.yml"]
+    av["verification<br/>ruff, intégrité des DAGs"]
+    ab["image<br/>construction de l'image"]
+  end
+
   subgraph sq["SonarQube · sonarqube.yml"]
     sb1["build-front / test-front"]
     sb2["build-back / test-back"]
@@ -46,24 +51,33 @@ flowchart TB
   push --> fb --> ft
   push --> fd
   push --> mv & ms
+  push --> av & ab
   push --> sb1 & sb2 --> sscan
   sscan -.-> cd["deploy<br/>issue #21"]
 ```
 
 ## Déclenchement
 
-Les quatre workflows se déclenchent sur `push` **et** sur `pull_request`, filtrés par **chemin** :
+Les cinq workflows se déclenchent sur `push` **et** sur `pull_request`, filtrés par **chemin** :
 `backend.yml` sur `apps/backend/**`, `frontend.yml` sur `apps/frontend/**`, `ml.yml` sur `ml/**`,
-chacun incluant son propre fichier de workflow dans le filtre pour qu'une modification du pipeline
-déclenche le pipeline.
+`airflow.yml` sur `etl/airflow/**` **et sur `ml/**`**, chacun incluant son propre fichier de
+workflow dans le filtre pour qu'une modification du pipeline déclenche le pipeline.
+
+Le filtre d'`airflow.yml` mérite un mot : il inclut `ml/pyproject.toml`, `ml/uv.lock` et
+`ml/enervision_ml/**` parce que l'image Airflow copie le code et les dépendances du module ML.
+Une modification de `ml/` peut donc casser la construction de cette image, et le filtre le voit.
 
 **Piège à connaître** : il n'y a **aucun filtre de branche**. Une branche de travail déclenche la
 CI complète à chaque push, et un merge vers n'importe quelle branche la déclenche aussi. C'est
 délibéré pendant le projet (retour au plus tôt, et la CI tournera sur `main` dès la remontée sans
 rien changer), mais ce serait à borner sur un dépôt à forte fréquence de push.
 
-`backend.yml` et `ml.yml` déclarent en plus un groupe de concurrence par référence git avec
-`cancel-in-progress`, ce qui annule un run devenu obsolète par un push plus récent.
+`backend.yml`, `ml.yml` et `airflow.yml` déclarent en plus un groupe de concurrence par référence
+git avec `cancel-in-progress`, ce qui annule un run devenu obsolète par un push plus récent.
+
+**Piège de version** : `etl/airflow` tourne en **Python 3.12** et non 3.14, parce qu'Airflow 2.10
+ne supporte pas encore 3.14. Le 3.14 du module ML ne vit, dans ce contexte, que dans l'image
+Docker et son propre environnement.
 
 ## Ce qui bloque un merge
 
@@ -79,6 +93,8 @@ rien changer), mais ce serait à borner sur un dépôt à forte fréquence de pu
 | **SAST `bandit`** | backend (`app`), ml (`enervision_ml`) | **MEDIUM et au-dessus** | Bloque |
 | Quality gate SonarCloud | tout le dépôt | gate par défaut, couverture du **code neuf** | Bloque |
 | Build `npm run build` | frontend | compilation | Bloque |
+| Intégrité des DAGs | airflow | chargement des DAGs sans erreur d'import | Bloque |
+| Construction de l'image Airflow | airflow | `docker build` de `etl/airflow/Dockerfile` | Bloque |
 
 Deux seuils portent une décision qu'il faut savoir défendre :
 

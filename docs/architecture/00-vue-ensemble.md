@@ -57,7 +57,7 @@ flowchart TB
   navigateur --> front
   front -.-> api
   api --> db
-  airflow -.-> db
+  airflow --> db
   prom -.-> api
   grafana -.-> db
   grafana -.-> prom
@@ -66,6 +66,10 @@ flowchart TB
 Le lien `front -.-> api` reste en pointillé : le frontend appelle bien une API, mais un
 intercepteur répond à sa place tant que les endpoints n'existent pas. Voir
 [30-frontend.md](30-frontend.md).
+
+Le lien `airflow --> db` est maintenant en trait plein : deux DAGs orchestrent l'entraînement et
+le scoring du modèle ML (issue #115), cf. plus bas et [20-backend.md](20-backend.md). Le reste du
+périmètre Airflow envisagé (ingestion, issues #15/#16) reste en pointillé, non construit.
 
 Le lien `prom -.-> api` de même : l'API expose bien `/metrics` au format Prometheus, mais aucun
 collecteur ne vient le lire.
@@ -80,14 +84,15 @@ collecteur ne vient le lire.
 | ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`. Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../ML-START.md). Automatisation (Airflow) et surveillance de dérive (EC06, #44/#45) pas encore construites |
 | Infra | Terraform, k3s single-node | `infra/terraform` | `En cours` | Module d'installation du cluster. Jamais appliqué, aucune ressource Kubernetes déclarée |
 | Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Cible` | Rien, hors le `/metrics` exposé par l'API |
-| ETL | Apache Airflow | `etl/airflow` | `Cible` | Rien |
-| CI/CD | GitHub Actions | `.github/workflows` | `En cours` | 4 workflows, 14 jobs : lint, typage, tests avec seuil de couverture bloquant, tests d'intégration sur TimescaleDB réel, audit de dépendances, SAST Bandit, quality gate SonarCloud. Détail dans [50-cicd.md](50-cicd.md). **Aucun job de déploiement** (#21) |
+| ETL | Apache Airflow | `etl/airflow` | `En cours` | Webserver + scheduler (LocalExecutor) tournent via docker-compose, base de métadonnées Postgres dédiée. Deux DAGs (`ml_train` manuel, `ml_score` `@hourly`) orchestrent le pipeline ML existant en sous-processus `uv run` (issue #115). L'ingestion (issues #15/#16) n'a pas encore de DAG |
+| CI/CD | GitHub Actions | `.github/workflows` | `En cours` | 5 workflows, 16 jobs : lint, typage, tests avec seuil de couverture bloquant, tests d'intégration sur TimescaleDB réel, audit de dépendances, SAST Bandit, quality gate SonarCloud, intégrité des DAGs Airflow. Détail dans [50-cicd.md](50-cicd.md). **Aucun job de déploiement** (#21) |
 
 ## Flux bout en bout
 
-Statut : `En cours`. Tout le chemin de lecture existe (base, API, frontend), ainsi que l'ingestion
-par import depuis un CSV historique et depuis l'API Mock. **Le seul maillon absent est
-l'orchestration** : Airflow ne tourne pas, l'ingestion et le scoring sont lancés à la main.
+Statut : `En cours`. **Le chemin de lecture tourne** : base, API et frontend. **Le chemin
+d'ingestion dessiné ci-dessous n'existe pas** : les deux DAGs livrés (`ml_train`, `ml_score`,
+issue #115) orchestrent le pipeline ML, pas l'ingestion, qui reste lancée à la main par les
+scripts d'import (issues #15 et #16).
 
 ```mermaid
 sequenceDiagram

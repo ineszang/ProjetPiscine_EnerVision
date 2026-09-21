@@ -17,7 +17,7 @@ contredisent, c'est l'ADR qui fait foi et la vue qui est en retard.
 | [40-data.md](40-data.md) | Frontières `db/` et `alembic/`, cycle de vie d'une mesure, modèle |
 | [50-cicd.md](50-cicd.md) | Workflows, gates bloquantes, SonarCloud, Dependabot, ce qui manque |
 
-La CI/CD a désormais son document : quatre workflows et quatorze jobs, c'est assez de matière pour
+La CI/CD a désormais son document : cinq workflows et seize jobs, c'est assez de matière pour
 qu'une section de plus dans une autre vue devienne illisible. L'observabilité, elle, n'en a
 toujours pas : `monitoring/` ne contient que des `.gitkeep`. Elle en sortira le jour où elle aura
 de la matière. Un fichier vide de plus n'aide personne.
