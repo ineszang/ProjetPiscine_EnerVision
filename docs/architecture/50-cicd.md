@@ -219,7 +219,17 @@ alors que ZAP n'avait importé que **2 URL sur 26 opérations** du contrat (`Num
 2`) : il n'avait envoyé que des requêtes vouées au 404, sans jamais atteindre une route gardée
 (rapport : 100 % de réponses 4xx, zéro alerte). ZAP « réussit » dans ce cas. Le job porte donc un
 garde-fou qui, lui, **bloque** : il échoue si moins de 10 URL sont importées. Le journal interne de
-ZAP (`zap.log`) est publié dans l'artefact `zap-report` pour diagnostiquer un import raté.
+ZAP (`zap.log`) et sa sortie complète (`zap-stdout.log`) sont publiés dans l'artefact `zap-report`
+(dossier `zap-logs/`) pour diagnostiquer un import raté.
+
+Diagnostic du premier passage : `zap-api-scan.py` appelle `importUrl` sur `/openapi.json`, ZAP répond
+**400**, le contrat n'est pas chargé et ZAP se rabat sur l'exploration de la racine. Le job charge
+donc le contrat **depuis un fichier** (`-t /zap/wrk/openapi.json -O http://localhost:8000`) et
+renomme dans cette copie, sans toucher au contrat versionné, les deux schémas de sécurité aux noms
+accentués (`Jeton d'accès`, `Cookie de rafraîchissement`) que l'analyseur de ZAP peut refuser. La
+cause exacte du 400 n'est pas confirmée : si l'import échoue encore, `zap-logs/zap.log` la donne.
+Piège de permissions : le dossier `zap-out` appartient à l'uid 1000 du conteneur, le runner n'y écrit
+plus après le `chown` ; les journaux vont donc dans `zap-logs/`, que le runner possède.
 
 **Non bloquant pour l'instant** (`continue-on-error`) pour ce qui est des alertes. Le volume d'alertes d'un premier passage est
 inconnu ; le rapport HTML/JSON/Markdown est publié en artefact `zap-report` et dans le résumé du

@@ -130,11 +130,26 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          mkdir -p zap-out
-          sudo chown 1000:1000 zap-out
+          mkdir -p zap-out zap-logs
+          # Le contrat est chargé depuis un fichier : `importUrl` a répondu 400 au premier passage
+          # et ZAP est alors reparti explorer la racine (2 URL, que des 404).
+          curl -fsS http://localhost:8000/openapi.json -o zap-out/openapi.json
+          # Les noms des schémas de sécurité du contrat sont accentués (`Jeton d'accès`...) : ZAP
+          # les analyse mal. Seule la copie donnée à ZAP est renommée, le contrat versionné reste
+          # tel quel.
+          python3 - <<'PY'
+          import json, pathlib
+          chemin = pathlib.Path("zap-out/openapi.json")
+          contrat = chemin.read_text(encoding="utf-8")
+          for ancien, nouveau in (("Jeton d'accès", "JetonAcces"), ("Cookie de rafraîchissement", "CookieRafraichissement")):
+              contrat = contrat.replace(ancien, nouveau)
+          json.loads(contrat)
+          chemin.write_text(contrat, encoding="utf-8")
+          PY
+          sudo chown -R 1000:1000 zap-out
           docker run --name zap --network host -v "$PWD/zap-out:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py \
-            -t http://localhost:8000/openapi.json -f openapi \
+            -t /zap/wrk/openapi.json -f openapi -O http://localhost:8000 \
             -T 30 -d \
             -r zap-report.html -J zap-report.json -w zap-report.md \
             -z "-config replacer.full_list(0).description=auth \
@@ -151,8 +166,9 @@ jobs:
       - name: Récupère les journaux de ZAP
         if: always()
         run: |
-          cp "$RUNNER_TEMP/zap-stdout.log" zap-out/zap-stdout.log 2>/dev/null || true
-          docker cp zap:/home/zap/.ZAP/zap.log zap-out/zap.log 2>/dev/null || true
+          mkdir -p zap-logs
+          cp "$RUNNER_TEMP/zap-stdout.log" zap-logs/zap-stdout.log || true
+          docker cp zap:/home/zap/.ZAP/zap.log zap-logs/zap.log || true
           docker rm -f zap >/dev/null 2>&1 || true
 
       # `continue-on-error` sur le scan ne doit pas faire passer pour vert un scan qui n'a rien
@@ -161,11 +177,11 @@ jobs:
       # opérations). Les alertes restent non bloquantes, ce garde-fou-là bloque.
       - name: Vérifie que le contrat a bien été importé
         run: |
-          importees="$(sed -n 's/.*Number of Imported URLs: \([0-9]*\).*/\1/p' zap-out/zap-stdout.log | tail -1)"
+          importees="$(sed -n 's/.*Number of Imported URLs: \([0-9]*\).*/\1/p' "$RUNNER_TEMP/zap-stdout.log" | tail -1)"
           minimum=10
           echo "URL importées depuis le contrat OpenAPI : ${importees:-aucune}"
           if [ "${importees:-0}" -lt "$minimum" ]; then
-            echo "::error::ZAP n'a importé que ${importees:-0} URL du contrat OpenAPI (minimum attendu : $minimum). Le scan n'a pas testé l'API, voir zap-out/zap.log dans l'artefact zap-report."
+            echo "::error::ZAP n'a importé que ${importees:-0} URL du contrat OpenAPI (minimum attendu : $minimum). Le scan n'a pas testé l'API, voir zap-logs/zap.log dans l'artefact zap-report."
             exit 1
           fi
 
@@ -183,7 +199,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zap-report
-          path: zap-out/
+          path: |
+            zap-out/
+            zap-logs/
           if-no-files-found: warn
 
       # Un scan sans compte authentifié ne testerait que les routes publiques : mieux vaut le
