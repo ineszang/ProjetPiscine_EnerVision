@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     database_pool_size: int = 5
     database_max_overflow: int = 10
 
+    mock_api_base_url: str = "https://api-mock.charlieandre.fr"
+    mock_api_username: str | None = None
+    mock_api_password: SecretStr | None = None
+    mock_api_timeout_seconds: float = Field(default=10.0, gt=0)
+
     jwt_issuer: str = "enervision-api"
     jwt_audience: str = "enervision-web"
     access_token_ttl_seconds: int = Field(default=900, ge=60, le=3600)
