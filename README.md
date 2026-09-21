@@ -116,6 +116,12 @@ nom de domaine public ne résout vers la machine. Routage, mode ACME et renouvel
 [`infra/proxy/README.md`](infra/proxy/README.md) ; la décision et ses motifs dans
 [l'ADR 0007](docs/adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
 
+Sur la VM ENI, deux environnements cohabitent, recette sur `dev` et production sur `main`,
+chacun dans son dossier et son projet Compose : `scripts/provision-host.sh` les prépare, le
+workflow `deploy.yml` les redéploie à chaque push par un runner auto-hébergé. Ports, noms
+d'hôte et garde-fous dans [`docs/architecture/10-infra.md`](docs/architecture/10-infra.md) et
+[l'ADR 0009](docs/adr/0009-deux-environnements-compose-sur-la-vm-eni.md).
+
 ## Conventions
 
 - Branches : `feat/`, `fix/`, `chore/`, `docs/`, `test/` suivi d'un libelle court.

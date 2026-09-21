@@ -7,6 +7,7 @@ quel contexte, quelles décisions sont arrêtées, et ce qui manque encore entre
 |---|---|---|
 | Docker Compose | Développer et recetter sur le poste | `Fait` |
 | Docker Compose plus reverse proxy | Déployer sur la machine on-premise | `Fait` |
+| Deux projets Compose sur la VM ENI, recette et production | Déploiement continu depuis GitHub | `Fait` |
 | k3s single-node | Cible à terme | `En cours` |
 
 ## Poste de développement
@@ -169,6 +170,30 @@ Deux conséquences se propagent jusqu'à l'application, et elles ne se devinent 
 - `APP_TRUST_PROXY_HEADERS` passe à vrai en même temps, sinon la limitation de débit par IP
   compte sur l'IP du proxy et devient globale.
 
+### Deux environnements sur la même machine
+
+Statut : `Fait`. Décision et motifs dans l'[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md).
+La VM `eadl-2025-nantes-g3` porte la recette et la production, chacune dans son clone du dépôt,
+son `.env` et son projet Compose. Le nom de projet préfixe volumes, réseau et conteneurs : rien
+n'est partagé. `scripts/provision-host.sh` prépare les deux dossiers, génère les secrets et les
+certificats, et ne démarre rien.
+
+| | Recette | Production |
+|---|---|---|
+| Branche, environnement GitHub | `dev`, `rec` | `main`, `prod` |
+| Dossier, projet Compose | `/srv/enervision/rec`, `enervision-rec` | `/srv/enervision/prod`, `enervision-prod` |
+| URL | `https://rec.enervision.local:8443` | `https://enervision.local` |
+| Proxy HTTP, HTTPS | `127.0.0.1:8081`, `8443` | `80`, `443` |
+| PostgreSQL, Mailpit, Airflow, sur `127.0.0.1` | `5434`, `8026`, `8082` | `5433`, `8025`, `8080` |
+
+Les deux noms d'hôte visent la même IP, à déclarer dans le `/etc/hosts` des postes. Deux noms
+distincts sont nécessaires : le cookie `__Secure-ev_refresh` est posé par hôte, pas par port.
+La redirection HTTP de la recette est ramenée sur la boucle locale parce que la configuration
+Nginx renvoie vers `https://$host` sans port, c'est-à-dire vers la production.
+
+Le déploiement est décrit dans [50-cicd.md](50-cicd.md) : un runner GitHub Actions installé sur
+la VM aligne le dossier sur la branche poussée et lance `make stack-up`.
+
 ## Cible à terme, k3s
 
 Statut : `En cours`. Le module `infra/terraform/modules/k3s/` installe le cluster. Il n'a jamais
@@ -227,6 +252,9 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | Deux racines, `dev` et `prod` | Séparation des états et des variables par environnement | `environments/` |
 | Terminaison TLS par un reverse proxy Nginx en Compose | L'ingress k3s supposait un registre et des manifestes qui n'existent pas, à quatre jours du rendu | `docker-compose.prod.yml`, [ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md) |
 | Certificat auto-signé par défaut, chemin ACME câblé | Aucun domaine public ne résout vers la machine : le défi HTTP-01 ne peut pas aboutir | `scripts/tls-selfsigned.sh`, `infra/proxy/acme-deploy-hook.sh` |
+| Un projet Compose par environnement, sur la même machine | Une seule VM, et l'isolation par nom de projet ne demande ni cluster ni registre | `.env` de chaque dossier, [ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md) |
+| Runner GitHub Actions auto-hébergé sur la VM | Les runners hébergés par GitHub ne joignent pas une adresse privée d'école | `.github/workflows/deploy.yml` |
+| Secrets dans le `.env` de chaque environnement, sur la machine | Ni dans git, ni dans GitHub : le runner n'a rien à recevoir | `scripts/provision-host.sh` |
 
 ## Ports et noms
 
@@ -237,7 +265,7 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | API | `8000` | Identique en conteneur et hors conteneur |
 | Frontend, `ng serve` | `4200` | Boucle de développement. Valeur par défaut d'`APP_CORS_ORIGINS` |
 | Frontend en conteneur | `3000` | Ce qu'écoute le nginx de l'image, en conteneur comme côté hôte |
-| Reverse proxy | `80` et `443` | Les seuls ports publiés par `docker-compose.prod.yml`. 80 ne sert que la redirection et le défi ACME |
+| Reverse proxy | `80` et `443` | Les seuls ports publiés par `docker-compose.prod.yml`, via `PROXY_HTTP_PORT` et `PROXY_HTTPS_PORT`. 80 ne sert que la redirection et le défi ACME. La recette publie `8443` et `127.0.0.1:8081` |
 | SSH du serveur | `22` par défaut | `ssh_port`, redéfinissable |
 | Base applicative | `enervision` | Variable `POSTGRES_DB` |
 | Base de test | `enervision_test` | Créée par `db/init/110-test-database.sql`, nom attendu en dur par `apps/backend/tests/conftest.py` |
