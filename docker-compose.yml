@@ -98,7 +98,7 @@ services:
   frontend:
     build: ./apps/frontend
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${FRONTEND_PORT:-3000}:3000"
     restart: unless-stopped
 
   # Conteneur unique, jamais redemarre. La migration et la creation du premier compte sont
