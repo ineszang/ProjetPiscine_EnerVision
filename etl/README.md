@@ -344,6 +344,6 @@ uv run ruff check app\etl tests\etl
 
 L'import historique constitue la première brique du pipeline Data EnerVision.
 
-La prochaine étape consiste à orchestrer les traitements ETL avec Apache Airflow, puis à préparer les données nécessaires à l'entraînement du modèle de Machine Learning.
+Airflow tourne désormais réellement (`etl/airflow/`, `make airflow-up`), mais orchestre pour l'instant le pipeline ML (`ml_train`/`ml_score`, issue #115), pas encore ce pipeline ETL : orchestrer `historical_import.py` (normalisation et chargement micro-batch, issues #15/#16) reste à faire.
 
-Airflow sera utilisé comme orchestrateur des traitements existants et ne remplacera pas la logique métier déjà implémentée dans le pipeline ETL.
+Le principe reste le même que documenté à l'origine : Airflow orchestre les traitements existants sans remplacer leur logique métier, cf. `etl/airflow/dags/ml_train.py`/`ml_score.py` pour un exemple concret de ce patron (des `BashOperator` qui invoquent le script tel quel).

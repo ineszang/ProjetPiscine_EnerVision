@@ -48,6 +48,33 @@ Deux pièges sont documentés en tête du `docker-compose.yml`, ils ne se devine
   l'image, dont `timescaledb-tune`. Ajouter un fichier dans `db/init/` impose donc une ligne dans
   le compose. Voir [`db/README.md`](../../db/README.md).
 
+### Airflow (`ml_train`/`ml_score`, issue #115)
+
+Trois services, `docker compose profiles` non utilisés (démarrage explicite via `make
+airflow-up`, pas dans `make dev`) :
+
+| Service | Rôle | Points notables |
+|---|---|---|
+| `airflow-init` | Migre la base de métadonnées, crée le compte admin | Conteneur jetable (`restart: "no"`), ne redémarre jamais. `webserver`/`scheduler` attendent qu'il se termine avec succès |
+| `airflow-webserver` | UI, port `8080` | `LocalExecutor` : n'exécute aucune tâche lui-même |
+| `airflow-scheduler` | Planifie et **exécute** les tâches (`LocalExecutor`) | Les DAGs y tournent en sous-processus (`uv run --frozen --no-dev python -m enervision_ml...`), c'est lui qui a besoin du volume `airflow_ml_state` |
+
+Construits depuis `etl/airflow/Dockerfile`, contexte `.` (racine du repo, pas `etl/airflow/`) :
+l'image doit pouvoir `COPY` `ml/pyproject.toml`/`ml/uv.lock`/`ml/enervision_ml` pour se
+synchroniser un second environnement Python **3.14** (`/opt/ml/.venv`, `uv sync --locked` à la
+construction), distinct du Python 3.12 qui fait tourner Airflow lui-même. Les DAGs shellent vers
+ce venv plutôt que d'importer LightGBM/MLflow dans le process Airflow.
+
+Piège à connaître : sur un volume `pgdata` déjà peuplé (poste de dev existant plutôt que premier
+`make db-up`), `db/init/120-airflow-database.sql` ne se rejoue pas (PostgreSQL n'exécute
+`docker-entrypoint-initdb.d/` que sur un volume vide). Créer la base `airflow` à la main une fois :
+`docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "CREATE DATABASE airflow;"`.
+
+`libgomp1` est installé explicitement dans l'image (`apt-get`, en root) : l'image Airflow de base
+est minimale et n'embarque pas la runtime OpenMP dont LightGBM a besoin, sans quoi l'erreur
+(`OSError: libgomp.so.1`) n'apparaît qu'à la première tâche réellement exécutée, pas à la
+construction de l'image.
+
 ## Cible de déploiement
 
 Statut : `En cours`. Le module `infra/terraform/modules/k3s/` installe le cluster. Il n'a jamais
@@ -116,6 +143,8 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | SSH du serveur | `22` par défaut | `ssh_port`, redéfinissable |
 | Base applicative | `enervision` | Variable `POSTGRES_DB` |
 | Base de test | `enervision_test` | Créée par `db/init/110-test-database.sql`, nom attendu en dur par `apps/backend/tests/conftest.py` |
+| Base de métadonnées Airflow | `airflow` | Créée par `db/init/120-airflow-database.sql`, même conteneur `db` |
+| Webserver Airflow | `8080` | `make airflow-up`. Scheduler et webserver ne publient que ce port ; les tâches (`LocalExecutor`) tournent côté scheduler, sans port propre |
 
 ## Le trou entre les deux topologies
 
