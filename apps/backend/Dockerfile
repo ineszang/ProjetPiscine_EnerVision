@@ -1,3 +1,8 @@
+# syntax=docker/dockerfile:1
+FROM docker
+COPY --from=docker/buildx-bin /buildx /usr/libexec/docker/cli-plugins/docker-buildx
+RUN docker buildx version
+
 FROM python:3.14-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.26 /uv /uvx /bin/
@@ -8,16 +13,12 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project --no-dev
+COPY uv.lock pyproject.toml /app/
+RUN uv sync --locked --no-install-project --no-dev
 
 COPY . /app
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev
-
+RUN uv sync --locked --no-dev
 
 FROM python:3.14-slim AS runtime
 
