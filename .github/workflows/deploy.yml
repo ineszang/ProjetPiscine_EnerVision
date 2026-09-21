@@ -21,6 +21,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, linux, eni-g3]
+    timeout-minutes: 30
     environment:
       name: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
       url: ${{ github.ref_name == 'main' && 'https://enervision.local' || 'https://rec.enervision.local:8443' }}
@@ -50,5 +51,7 @@ jobs:
             sleep 5
           done
           echo "L'API ne répond pas après 3 minutes" >&2
-          cd "/srv/enervision/${ENVIRONNEMENT}" && docker compose ps
+          cd "/srv/enervision/${ENVIRONNEMENT}"
+          docker compose ps
+          docker compose logs --tail=50 backend proxy
           exit 1

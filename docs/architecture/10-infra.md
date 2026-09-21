@@ -7,7 +7,7 @@ quel contexte, quelles décisions sont arrêtées, et ce qui manque encore entre
 |---|---|---|
 | Docker Compose | Développer et recetter sur le poste | `Fait` |
 | Docker Compose plus reverse proxy | Déployer sur la machine on-premise | `Fait` |
-| Deux projets Compose sur la VM ENI, recette et production | Déploiement continu depuis GitHub | `Fait` |
+| Deux projets Compose sur la VM ENI, recette et production | Déploiement continu depuis GitHub | `En cours` |
 | k3s single-node | Cible à terme | `En cours` |
 
 ## Poste de développement
@@ -172,8 +172,9 @@ Deux conséquences se propagent jusqu'à l'application, et elles ne se devinent 
 
 ### Deux environnements sur la même machine
 
-Statut : `Fait`. Décision et motifs dans l'[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md).
-La VM `eadl-2025-nantes-g3` porte la recette et la production, chacune dans son clone du dépôt,
+Statut : `En cours`, la machine n'étant pas encore provisionnée. Décision et motifs dans
+l'[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md).
+La VM `eadl-2025-nantes-g3` portera la recette et la production, chacune dans son clone du dépôt,
 son `.env` et son projet Compose. Le nom de projet préfixe volumes, réseau et conteneurs : rien
 n'est partagé. `scripts/provision-host.sh` prépare les deux dossiers, génère les secrets et les
 certificats, et ne démarre rien.

@@ -90,7 +90,12 @@ fi
 
 cat <<FIN
 
-Démarrage, dans chaque dossier : make stack-up
-Le runner GitHub Actions (label eni-g3) refera la même chose à chaque push sur dev et main.
+Démarrage, dans chaque dossier : make stack-up, qui applique aussi les migrations.
+Premier administrateur, stack démarrée, dans chaque dossier :
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend \\
+      python -m app.cli create-admin --email <adresse>
+Le runner GitHub Actions (label eni-g3) rejouera le déploiement à chaque push sur dev et main.
+L'installer sous le propriétaire de $RACINE, sinon git refuse ces dépôts et le .env en 600 lui
+échappe : relancer au besoin ce script avec PROPRIETAIRE=<utilisateur du runner>.
 Depuis un poste : ajouter « $ADRESSE enervision.local rec.enervision.local » à /etc/hosts.
 FIN

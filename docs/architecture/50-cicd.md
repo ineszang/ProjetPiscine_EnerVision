@@ -6,13 +6,15 @@ vérifié, ce qui bloque, et ce qui ne l'est pas.
 | Étage | Sert à | Statut |
 |---|---|---|
 | Intégration continue | Interdire le merge d'un code qui casse la qualité, les tests ou la sécurité | `Fait` |
-| Livraison continue | Déployer chaque branche d'intégration sur son environnement de la VM ENI | `Fait` |
+| Livraison continue | Déployer chaque branche d'intégration sur son environnement de la VM ENI | `En cours` |
 
-Le **D** de CI/CD existe depuis le 21/09 : `deploy.yml` déploie `dev` en recette et `main` en
+Le **D** de CI/CD est écrit depuis le 21/09 : `deploy.yml` déploie `dev` en recette et `main` en
 production sur la VM de l'école, par un runner auto-hébergé (issue #21,
-[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)). Sa limite, nommée ici
-plutôt que découverte en soutenance : les images sont construites sur la machine à chaque
-déploiement, aucun artefact n'est publié puis promu d'un environnement à l'autre.
+[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)). Il n'a encore rien
+déployé : la machine n'est pas provisionnée et le runner n'y est pas enregistré. Statut à
+basculer sur `Fait` au premier déploiement vert. Sa limite, nommée ici plutôt que découverte en
+soutenance : les images sont construites sur la machine à chaque déploiement, aucun artefact
+n'est publié puis promu d'un environnement à l'autre.
 
 ## Vue d'ensemble
 
@@ -105,9 +107,12 @@ entrant n'est ouvert.
 | `push` sur `main` | `prod` | `/srv/enervision/prod` | approbation d'un relecteur dans l'environnement `prod`, branche `main` seule autorisée |
 
 Le job aligne le clone sur la branche (`fetch`, `checkout`, `reset --hard`), lance
-`make stack-up`, qui reconstruit les images et redémarre les conteneurs, puis attend jusqu'à trois
-minutes que `/api/v1/health/ready` réponde derrière le proxy. Un groupe de concurrence par
-branche, sans annulation, empêche deux déploiements simultanés du même environnement.
+`make stack-up`, qui reconstruit les images, redémarre les conteneurs puis applique les
+migrations Alembic dans le conteneur backend, et attend jusqu'à trois minutes que
+`/api/v1/health/ready` réponde derrière le proxy. Cette sonde ne vérifie que la connexion à la
+base et la présence de TimescaleDB : sans la migration, le déploiement serait vert sur une base
+sans schéma, et c'est pourquoi `make stack-up` la porte. Un groupe de concurrence par branche,
+sans annulation, empêche deux déploiements simultanés du même environnement.
 
 Le job ne fait pas de `actions/checkout` dans son espace de travail, et c'est voulu : le dossier
 de l'environnement est stable, hors du runner, parce que `.env`, certificats et volumes doivent
@@ -116,9 +121,13 @@ survivre d'un déploiement à l'autre.
 **Piège à connaître.** Un runner auto-hébergé sur un dépôt public exécute ce qu'un workflow lui
 envoie, et une PR de fork peut réécrire un workflow. Trois parades, et les trois sont
 nécessaires : `deploy.yml` ne se déclenche jamais sur `pull_request` ; le runner tourne sous un
-utilisateur dédié membre du groupe `docker`, jamais root ; le dépôt exige une approbation pour
-les workflows des PR externes (Settings, Actions, « Require approval for all outside
-collaborators »). Les workflows de CI restent sur `ubuntu-latest`.
+utilisateur dédié membre du groupe `docker`, jamais root ; le dépôt doit exiger une approbation
+pour les workflows des PR externes (Settings, Actions, « Require approval for all outside
+collaborators »), ce qui reste à activer. Les workflows de CI restent sur `ubuntu-latest`.
+
+Cet utilisateur dédié doit posséder `/srv/enervision` : sinon git refuse les deux clones pour
+propriété douteuse et le `.env` en `600` lui échappe. `PROPRIETAIRE=<utilisateur du runner>`
+passé à `scripts/provision-host.sh` fixe ce propriétaire.
 
 La machine se prépare avec `scripts/provision-host.sh`, qui vérifie Docker et Compose 2.24.4 ou
 plus, clone les deux branches, génère les secrets de chaque `.env` et les certificats
