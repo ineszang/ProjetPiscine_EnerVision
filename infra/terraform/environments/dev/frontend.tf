@@ -70,6 +70,24 @@ resource "docker_container" "frontend" {
   depends_on = [docker_image.frontend]
 }
 
+resource "null_resource" "create_network" {
+  provisioner "remote-exec" {
+    connection {
+      type        = "ssh"
+      host        = var.ssh_host
+      port        = var.ssh_port
+      user        = var.ssh_user
+      password    = var.ssh_password
+      private_key = try(file(pathexpand(var.ssh_private_key_path)), null)
+      timeout     = "5m"
+    }
+
+    inline = [
+      "sudo docker network create enervision_default 2>/dev/null || true"
+    ]
+  }
+}
+
 # Déploiement du container sur le serveur via SSH
 resource "null_resource" "deploy_to_server" {
   depends_on = [docker_image.frontend]
@@ -114,6 +132,8 @@ resource "null_resource" "deploy_to_server" {
       "sudo docker build -t ${local.image_name}:${local.image_tag} .",
       "sudo docker run -d \\",
       "  --name ${local.container_name} \\",
+      "  --network enervision_default \\",
+      "  --network-alias frontend \\",
       "  -p ${var.frontend_port}:3000 \\",
       "  --restart always \\",
       "  -v /var/log/enervision:/var/log/nginx \\",
