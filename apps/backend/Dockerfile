@@ -11,12 +11,13 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project --no-dev
+    uv sync --locked --no-install-project --no-dev --no-build
 
+# Le projet lui-meme n'est pas installe (pas de second `uv sync`) : il tourne depuis /app, le
+# repertoire de travail, et rien ne lit ses metadonnees. L'installer imposerait de le construire
+# (backend hatchling), donc de retirer `--no-build` de l'etape ci-dessus, qui garantit que
+# l'installation des dependances n'execute aucun script de build (regle Sonar docker:S8541).
 COPY . /app
-
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev
 
 
 FROM python:3.14-slim AS runtime

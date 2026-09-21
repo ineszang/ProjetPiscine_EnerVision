@@ -178,12 +178,16 @@ async def test_the_database_refuses_two_tokens_sharing_a_fingerprint(
         user_agent=None,
     )
 
+    famille = uuid.uuid4()
+    empreinte = fingerprint_refresh(secret)
+    expiration = datetime.now(UTC) + DUREE
+
     with pytest.raises(IntegrityError):
         await depot.create(
             user_id=compte,
-            family_id=uuid.uuid4(),
-            token_hash=fingerprint_refresh(secret),
-            expires_at=datetime.now(UTC) + DUREE,
+            family_id=famille,
+            token_hash=empreinte,
+            expires_at=expiration,
             client_ip=None,
             user_agent=None,
         )

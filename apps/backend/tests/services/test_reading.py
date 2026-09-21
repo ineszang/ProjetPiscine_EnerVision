@@ -116,13 +116,11 @@ async def test_list_history_normalizes_naive_datetimes_to_utc() -> None:
 async def test_list_history_raises_when_start_is_after_end() -> None:
     service = ReadingService(readings=FakeRepository([]))
 
+    debut = datetime(2026, 9, 2, tzinfo=UTC)
+    fin = datetime(2026, 9, 1, tzinfo=UTC)
+
     with pytest.raises(FenetreInverseeError):
-        await service.list_history(
-            start=datetime(2026, 9, 2, tzinfo=UTC),
-            end=datetime(2026, 9, 1, tzinfo=UTC),
-            limit=500,
-            offset=0,
-        )
+        await service.list_history(start=debut, end=fin, limit=500, offset=0)
 
 
 async def test_list_history_raises_when_start_equals_end() -> None:
