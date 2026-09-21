@@ -85,17 +85,18 @@ collecteur ne vient le lire.
 | Backend | FastAPI, Python 3.14 | `apps/backend` | `En cours` | Factory, configuration, journalisation, 2 sondes de santé, `/metrics`, contrat OpenAPI versionné, routes `sites`, `alerts`, `recommendations`, `stats/summary`, `readings`, `sensors/status` et `predictions` en lecture (endpoints → services → repositories → models) |
 | Frontend | Angular 22, Node 24 | `apps/frontend` | `En cours` | Tableau de bord sur route `/dashboard`, authentification complète (garde de route, intercepteur de jeton), cinq services HTTP, graphiques Chart.js. `stats`/`alerts` sur fixtures, `predictions` branché sur l'API réelle |
 | Base | PostgreSQL 17 + TimescaleDB | `db` | `Fait` | Bootstrap de l'extension, base de test, chaîne Alembic. Schéma applicatif créé (`site`, `dataset`, `reading` en hypertable, `prediction`, `alert`, `recommendation`) |
-| ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`, orchestré par Airflow (`ml_train`/`ml_score`). Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../../ML-START.md). Surveillance de dérive (EC06, #44/#45) pas encore construite |
+| ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`, orchestré par Airflow (`ml_train`/`ml_score`). Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../ML-START.md). Surveillance de dérive (EC06, #44/#45) pas encore construite |
 | Infra | Docker Compose, Nginx, Terraform, k3s single-node | `infra`, `docker-compose.prod.yml` | `En cours` | Reverse proxy et overlay de déploiement écrits et validés, jamais lancés sur le serveur ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)). Module d'installation k3s jamais appliqué, aucune ressource Kubernetes déclarée |
 | Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Cible` | Rien, hors le `/metrics` exposé par l'API |
 | ETL | Apache Airflow | `etl/airflow` | `En cours` | Webserver + scheduler (LocalExecutor) tournent via docker-compose, base de métadonnées Postgres dédiée. Trois DAGs en sous-processus `uv run` : `ml_train` manuel et `ml_score` `@hourly` pour le pipeline ML (issue #115), `alertes` à `15 * * * *` pour la détection et les recommandations (issue #116, [ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md)). L'ingestion (issues #15/#16) n'a pas encore de DAG |
-| CI/CD | GitHub Actions | `.github/workflows` | `Cible` | Rien |
+| CI/CD | GitHub Actions | `.github/workflows` | `En cours` | 5 workflows, 16 jobs : lint, typage, tests avec seuil de couverture bloquant, tests d'intégration sur TimescaleDB réel, audit de dépendances, SAST Bandit, quality gate SonarCloud, intégrité des DAGs Airflow. Détail dans [50-cicd.md](50-cicd.md). **Aucun job de déploiement** (#21) |
 
 ## Flux bout en bout
 
-Statut : `Cible`. Ce flux d'ingestion (Source → Airflow → hypertable) n'existe pas encore : les
-deux DAGs livrés à ce jour (`ml_train`/`ml_score`, issue #115) orchestrent le pipeline ML, pas
-l'ingestion. Seule la base tourne réellement parmi les maillons ci-dessous.
+Statut : `En cours`. **Le chemin de lecture tourne** : base, API et frontend. **Le chemin
+d'ingestion dessiné ci-dessous n'existe pas** : les trois DAGs livrés (`ml_train`, `ml_score`,
+issue #115 ; `alertes`, issue #116) orchestrent le pipeline ML et la détection d'alertes, pas
+l'ingestion, qui reste lancée à la main par les scripts d'import (issues #15 et #16).
 
 ```mermaid
 sequenceDiagram
@@ -168,7 +169,9 @@ consolidée.
 - **Certificat reconnu** : aucun nom de domaine public ne résout vers la machine, donc le défi
   HTTP-01 de Let's Encrypt ne peut pas aboutir. Le certificat servi est auto-signé, le chemin ACME
   est livré et documenté mais pas exercé.
-- **Analyse de dépendances et de conteneurs** dans la CI, qui relève du chantier CI/CD.
+- **Analyse des images de conteneur** dans la CI. Celle des dépendances, elle, est en place
+  (`pip-audit`, `npm audit`, Dependabot sur 5 écosystèmes), de même que le SAST Bandit. Voir
+  [50-cicd.md](50-cicd.md).
 
 ## Décisions structurantes
 
