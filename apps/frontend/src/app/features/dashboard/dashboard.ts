@@ -59,8 +59,8 @@ const TON_PAR_STATUT_PREDICTION: Record<PredictionStatus, BadgeTone> = {
 export class Dashboard implements OnInit {
   private statsService = inject(StatsService);
   private alertsService = inject(AlertsService);
+  public auth = inject(AuthService);
   private predictionsService = inject(PredictionsService);
-  private auth = inject(AuthService);
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
 
