@@ -30,6 +30,11 @@ const TON_PAR_STATUT_PREDICTION: Record<PredictionStatus, BadgeTone> = {
   error: 'danger',
 };
 
+const SEUIL_CHARGE_SOUTENUE = 70;
+const SEUIL_CHARGE_CRITIQUE = 90;
+
+export type LoadTone = 'success' | 'warning' | 'danger';
+
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -95,6 +100,24 @@ export class Dashboard implements OnInit {
 
   badgeToneForPredictionStatus(status: PredictionStatus): BadgeTone {
     return TON_PAR_STATUT_PREDICTION[status];
+  }
+
+  loadTone(percent: number): LoadTone {
+    if (percent >= SEUIL_CHARGE_CRITIQUE) {
+      return 'danger';
+    }
+    return percent >= SEUIL_CHARGE_SOUTENUE ? 'warning' : 'success';
+  }
+
+  loadHint(percent: number): string {
+    switch (this.loadTone(percent)) {
+      case 'danger':
+        return 'Proche de la capacité du parc';
+      case 'warning':
+        return 'Charge soutenue';
+      default:
+        return 'Marge confortable';
+    }
   }
 
   onLogout(): void {

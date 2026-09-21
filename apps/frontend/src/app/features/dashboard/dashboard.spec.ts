@@ -161,6 +161,71 @@ describe('Dashboard', () => {
     expect(navigateSpy).toHaveBeenCalledWith(['/login']);
   });
 
+  it('affiche l’heure du dernier relevé et les indicateurs du parc', () => {
+    vi.useFakeTimers();
+    const { fixture } = setup({
+      stats: of({
+        timestamp: '2026-09-18T09:00:00Z',
+        total_sites: 7,
+        total_consumption_kw: 1234.5,
+        total_capacity_kw: 5000,
+        average_load_percent: 24.7,
+        sites: [],
+      }),
+    });
+
+    fixture.detectChanges();
+    vi.advanceTimersByTime(1);
+    fixture.detectChanges();
+
+    const texte = fixture.nativeElement.textContent as string;
+    expect(texte).toContain('Actualisé à');
+    expect(texte).toContain('7 sites suivis');
+    expect(texte).toContain('Marge confortable');
+    expect(fixture.nativeElement.querySelector('.progress-bar__fill--success')).not.toBeNull();
+  });
+
+  it('présente les prévisions en tableau avec un lien vers chaque site', () => {
+    const { fixture } = setup({
+      predictions: predictionsMock([
+        {
+          site_id: 'SITE001',
+          site_name: 'Usine Nantes',
+          prediction: {
+            target_at: '2026-09-18T10:00:00Z',
+            target_metric: 'consumption_kwh',
+            period_minutes: 60,
+            predicted_value: 118.4,
+            status: 'available',
+            failure_reason: null,
+            model_reference: 'lightgbm-v1',
+            created_at: '2026-09-18T09:00:00Z',
+          },
+        },
+        { site_id: 'SITE002', site_name: 'Bureau Lille', prediction: null },
+      ]),
+    });
+
+    fixture.detectChanges();
+
+    const table = fixture.nativeElement.querySelector('table.ev-table');
+    expect(table).not.toBeNull();
+    expect(table.textContent).toContain('118.4 kWh');
+    expect(table.textContent).toContain('Pas encore de prévision');
+    expect(fixture.nativeElement.querySelector('a[href="/sites/SITE001"]')).not.toBeNull();
+  });
+
+  it('colore la charge moyenne selon les seuils 70 % et 90 %', () => {
+    const { fixture } = setup();
+    const dashboard = fixture.componentInstance;
+
+    expect(dashboard.loadTone(69.9)).toBe('success');
+    expect(dashboard.loadTone(70)).toBe('warning');
+    expect(dashboard.loadTone(89.9)).toBe('warning');
+    expect(dashboard.loadTone(90)).toBe('danger');
+    expect(dashboard.loadHint(95)).toBe('Proche de la capacité du parc');
+  });
+
   it('distingue le ton des statuts de prévision', () => {
     const { fixture } = setup();
     const dashboard = fixture.componentInstance;
