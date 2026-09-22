@@ -13,6 +13,9 @@ locals {
   en_tant_que    = "${var.ssh_user == "root" ? "" : "sudo "}runuser -u ${var.proprietaire} --"
   provisionneur  = "${path.root}/../../../../scripts/provision-host.sh"
   runner_archive = "actions-runner-linux-x64-${var.runner_version}.tar.gz"
+  # Substitution shell, evaluee par le sh -c distant : un nom de runner doit etre unique dans
+  # le depot, le nom d'hote l'est deja et le reste si cette racine sert a une autre machine.
+  runner_nom = var.runner_nom != "" ? var.runner_nom : "$(hostname -s)"
 }
 
 resource "null_resource" "docker_engine" {
@@ -89,13 +92,14 @@ resource "null_resource" "environnements" {
 }
 
 # Piege : le jeton d'enregistrement expire en une heure. Un `apply` rejoue cette ressource des
-# que `runner_version` ou `runner_labels` change, et redemande donc un jeton frais.
+# que `runner_version`, `runner_labels` ou `runner_nom` change, et redemande donc un jeton frais.
 resource "null_resource" "runner_github" {
   depends_on = [null_resource.environnements]
 
   triggers = {
     version = var.runner_version
     labels  = var.runner_labels
+    nom     = local.runner_nom
     dossier = var.runner_dossier
   }
 
@@ -123,7 +127,7 @@ resource "null_resource" "runner_github" {
         if [ ! -f ${var.runner_dossier}/.runner ]; then
           ${local.en_tant_que} sh -c 'cd ${var.runner_dossier} && ./config.sh --unattended --replace \
             --url ${var.runner_url} --token ${var.runner_token} \
-            --labels ${var.runner_labels} --name ${var.runner_labels} --work _work'
+            --labels ${var.runner_labels} --name ${local.runner_nom} --work _work'
           ${local.sudo}${var.runner_dossier}/svc.sh install ${var.proprietaire}
         fi
         ${local.sudo}${var.runner_dossier}/svc.sh start

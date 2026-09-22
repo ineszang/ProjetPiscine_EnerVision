@@ -16,3 +16,7 @@ runner_version = "2.330.0"
 # depot peut le creer. terraform.tfvars est ignore par git, mais le jeton ne doit pas y rester
 # apres l'apply.
 runner_token = "A_RENSEIGNER"
+
+# Nom du runner cote GitHub. Vide par defaut : le nom d'hote de la machine. A renseigner
+# seulement si deux runners doivent tourner sur la meme machine, leurs noms devant differer.
+# runner_nom = "eni-g3-bis"

@@ -77,6 +77,12 @@ variable "runner_labels" {
   default     = "eni-g3"
 }
 
+variable "runner_nom" {
+  type        = string
+  description = "Nom du runner cote GitHub, unique dans le depot. Vide : le nom d'hote de la machine, qui reste unique si cette racine est reprise pour une seconde VM. A renseigner pour faire tourner deux runners sur la meme machine."
+  default     = ""
+}
+
 variable "runner_dossier" {
   type        = string
   description = "Dossier d'installation du runner sur la machine."
