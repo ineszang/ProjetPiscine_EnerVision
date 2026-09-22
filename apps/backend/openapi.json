@@ -1859,6 +1859,94 @@
           }
         ]
       }
+    },
+    "/api/v1/monitoring/drift": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Dernier rapport de dérive par site, plus la ligne globale",
+        "operationId": "get_drift_api_v1_monitoring_drift_get",
+        "security": [
+          {
+            "Jeton d'accès": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "site_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DriftReportResponse"
+                  },
+                  "title": "Response Get Drift Api V1 Monitoring Drift Get"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erreur interne. `correlation` identifie la trace côté serveur, qui n'est pas renvoyée au client.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InternalErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Jeton absent, illisible, périmé, ou rendu caduc par un changement de rôle ou une désactivation. L'en-tête `WWW-Authenticate` porte la cause dans `error=`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Droits insuffisants, ou mot de passe provisoire à changer quand `detail` vaut `password_change_required`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Corps invalide. Le détail nomme le champ fautif et le type d'erreur, jamais la valeur envoyée.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1976,6 +2064,180 @@
           "sensor"
         ],
         "title": "AlertType"
+      },
+      "DriftReportResponse": {
+        "properties": {
+          "site_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Id"
+          },
+          "computed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Computed At"
+          },
+          "window_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window End"
+          },
+          "reference_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Start"
+          },
+          "reference_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference End"
+          },
+          "n_observations": {
+            "type": "integer",
+            "title": "N Observations"
+          },
+          "mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mae"
+          },
+          "mape": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mape"
+          },
+          "bias": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bias"
+          },
+          "reference_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Mae"
+          },
+          "coverage_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Ratio"
+          },
+          "insufficient_data_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insufficient Data Ratio"
+          },
+          "model_references": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Model References"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DriftStatus"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "site_id",
+          "computed_at",
+          "window_start",
+          "window_end",
+          "reference_start",
+          "reference_end",
+          "n_observations",
+          "mae",
+          "mape",
+          "bias",
+          "reference_mae",
+          "coverage_ratio",
+          "insufficient_data_ratio",
+          "model_references",
+          "status",
+          "reason"
+        ],
+        "title": "DriftReportResponse"
+      },
+      "DriftStatus": {
+        "type": "string",
+        "enum": [
+          "stable",
+          "derive",
+          "indetermine"
+        ],
+        "title": "DriftStatus"
       },
       "ErrorResponse": {
         "properties": {
@@ -3277,6 +3539,10 @@
     {
       "name": "predictions",
       "description": "Dernière prévision de consommation par site, calculée hors ligne par le pipeline de scoring (`ml/`) et simplement lue ici. Accessible à partir du rôle `lecteur`."
+    },
+    {
+      "name": "monitoring",
+      "description": "Surveillance de la dérive du modèle : écart entre les prévisions déjà écrites et les lectures réellement arrivées, par site et tous sites confondus. Réservé à partir du rôle `operateur`, qui agit sur un pipeline dégradé."
     }
   ]
 }

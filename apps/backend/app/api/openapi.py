@@ -90,6 +90,14 @@ TAGS: Final[list[dict[str, Any]]] = [
             "de scoring (`ml/`) et simplement lue ici. Accessible à partir du rôle `lecteur`."
         ),
     },
+    {
+        "name": "monitoring",
+        "description": (
+            "Surveillance de la dérive du modèle : écart entre les prévisions déjà écrites et "
+            "les lectures réellement arrivées, par site et tous sites confondus. Réservé à "
+            "partir du rôle `operateur`, qui agit sur un pipeline dégradé."
+        ),
+    },
 ]
 
 cookie_de_rafraichissement = APIKeyCookie(
@@ -143,6 +151,17 @@ REPONSES_AUTHENTIFIEES: Final[Reponses] = {
 }
 
 REPONSES_ADMIN: Final[Reponses] = {
+    **REPONSES_AUTHENTIFIEES,
+    403: {
+        "model": ErrorResponse,
+        "description": (
+            "Droits insuffisants, ou mot de passe provisoire à changer quand `detail` vaut "
+            "`password_change_required`."
+        ),
+    },
+}
+
+REPONSES_OPERATEUR: Final[Reponses] = {
     **REPONSES_AUTHENTIFIEES,
     403: {
         "model": ErrorResponse,

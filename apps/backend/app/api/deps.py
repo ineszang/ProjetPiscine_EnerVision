@@ -24,6 +24,7 @@ from app.core.security import decode_access_token as decode_token
 from app.db.session import get_session
 from app.repositories.alert import AlertRepository
 from app.repositories.audit_log import AuditLogRepository
+from app.repositories.drift import DriftRepository
 from app.repositories.login_attempt import LoginAttemptRepository
 from app.repositories.password_reset_attempt import PasswordResetAttemptRepository
 from app.repositories.password_reset_token import PasswordResetTokenRepository
@@ -35,6 +36,7 @@ from app.repositories.site import SiteRepository
 from app.repositories.user import UserRepository
 from app.services.alert import AlertService
 from app.services.auth import AuthService, LoginPolicy, PasswordResetPolicy
+from app.services.drift import DriftService
 from app.services.prediction import PredictionService
 from app.services.reading import ReadingService
 from app.services.recommendation import RecommendationService
@@ -230,6 +232,13 @@ def get_prediction_service(session: SessionDep) -> PredictionService:
 
 
 PredictionServiceDep = Annotated[PredictionService, Depends(get_prediction_service)]
+
+
+def get_drift_service(session: SessionDep) -> DriftService:
+    return DriftService(DriftRepository(session))
+
+
+DriftServiceDep = Annotated[DriftService, Depends(get_drift_service)]
 
 
 async def get_current_principal(
