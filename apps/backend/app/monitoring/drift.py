@@ -66,6 +66,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="En deçà, le verdict est `indetermine` plutôt qu'un chiffre trompeur.",
     )
     parser.add_argument(
+        "--bias-threshold",
+        type=float,
+        default=defauts.seuil_biais,
+        help=(
+            "Biais absolu en kWh au-delà duquel le verdict bascule en dérive. "
+            "Zéro, le défaut, laisse le biais informatif : voir l'ADR 0011."
+        ),
+    )
+    parser.add_argument(
         "--fail-on-drift",
         action="store_true",
         help="Sort en code non nul si une dérive est constatée, pour que la tâche rougisse.",
@@ -78,6 +87,7 @@ def seuils_depuis(args: argparse.Namespace) -> Seuils:
         fenetre=timedelta(hours=args.window_hours),
         grace=timedelta(hours=args.grace_hours),
         min_observations=args.min_observations,
+        seuil_biais=args.bias_threshold,
     )
 
 

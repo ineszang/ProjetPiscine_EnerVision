@@ -218,3 +218,54 @@ async def test_drift_compares_the_recent_window_to_the_reference_one(
     rapports = await service(depot, min_observations=10, mae_plancher=1.0).evaluate(now=INSTANT)
 
     assert next(r for r in rapports if r.site_id is None).status == attendu
+
+
+async def test_drift_leaves_the_bias_out_of_the_verdict_by_default() -> None:
+    # Le modèle surestime de 3 kWh à chaque heure, et le verdict reste `stable` : le biais est
+    # mesuré et servi, il ne juge pas tant que `--bias-threshold` n'a pas été réglé (ADR 0011).
+    depot = FauxDepot(
+        recentes=paires(nombre=30, prevu=13.0, reel=10.0),
+        anciennes=paires(nombre=30, prevu=13.0, reel=10.0),
+        comptages=[ComptageStatut(site_id="SITE001", status="available", nombre=30)],
+    )
+
+    rapports = await service(depot, min_observations=10).evaluate(now=INSTANT)
+
+    global_ = next(rapport for rapport in rapports if rapport.site_id is None)
+    assert global_.status == STATUT_STABLE
+    assert global_.bias == 3.0
+
+
+@pytest.mark.parametrize(
+    ("prevu", "attendu"),
+    [(13.0, STATUT_DERIVE), (11.0, STATUT_STABLE)],
+    ids=["biais_au_dela", "biais_sous_le_seuil"],
+)
+async def test_drift_reports_derive_on_the_bias_once_a_threshold_is_set(
+    prevu: float, attendu: str
+) -> None:
+    # MAE récente et MAE de référence sont égales : seul le biais peut faire basculer le verdict.
+    depot = FauxDepot(
+        recentes=paires(nombre=30, prevu=prevu, reel=10.0),
+        anciennes=paires(nombre=30, prevu=prevu, reel=10.0),
+        comptages=[ComptageStatut(site_id="SITE001", status="available", nombre=30)],
+    )
+
+    rapports = await service(depot, min_observations=10, seuil_biais=2.0).evaluate(now=INSTANT)
+
+    global_ = next(rapport for rapport in rapports if rapport.site_id is None)
+    assert global_.status == attendu
+
+
+async def test_drift_prefers_the_mae_reason_when_both_the_mae_and_the_bias_exceed() -> None:
+    depot = FauxDepot(
+        recentes=paires(nombre=30, prevu=20.0, reel=10.0),
+        anciennes=paires(nombre=30, prevu=11.0, reel=10.0),
+        comptages=[ComptageStatut(site_id="SITE001", status="available", nombre=30)],
+    )
+
+    rapports = await service(depot, min_observations=10, seuil_biais=2.0).evaluate(now=INSTANT)
+
+    global_ = next(rapport for rapport in rapports if rapport.site_id is None)
+    assert global_.status == STATUT_DERIVE
+    assert "MAE" in (global_.reason or "")

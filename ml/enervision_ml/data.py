@@ -43,8 +43,8 @@ NUMERIC_COLUMNS = [
     "capacity_kw",
 ]
 
-# Piege : `reading.is_working_hours` est nullable et entre dans les features. Une seule lecture a
-# NULL rend la colonne `object`, que LightGBM refuse ("pandas dtypes must be int, float or bool").
+# Piege : `is_working_hours` est nullable et entre dans les features. Toujours `float64`, jamais
+# `bool` : `astype(bool)` ferait un `True` d'une absence, et les deux chargeurs divergeraient.
 FLAG_COLUMNS = ["is_working_hours"]
 
 _READING_QUERY = text(
@@ -113,10 +113,15 @@ def load_recent_from_database(
 
 
 def load_from_csv(csv_path: Path) -> pd.DataFrame:
-    """Lit le jeu de donnees CSV historique (chemin de demarrage, hors base)."""
+    """Lit le jeu de donnees CSV historique (chemin de demarrage, hors base).
+
+    `is_working_hours` passe par `_typer` comme le chemin base, et non par un `astype(bool)` : le
+    fichier livre porte cette colonne en `0`/`1`, donc une case vide arrive en `NaN` et `astype`
+    la rendrait `True` sans rien signaler. Les deux chargeurs rendent ainsi le meme schema, ce que
+    `docs/ML-START.md` promet.
+    """
     frame = pd.read_csv(csv_path, parse_dates=["timestamp"])
     frame["capacity_kw"] = float("nan")
-    frame["is_working_hours"] = frame["is_working_hours"].astype(bool)
 
     return _typer(frame[OUTPUT_COLUMNS])
 
@@ -131,12 +136,18 @@ def _typer(frame: pd.DataFrame) -> pd.DataFrame:
     n'importe quelle autre colonne mesuree entierement absente sur une fenetre de scoring, pas
     seulement `capacity_kw`.
 
+    Les colonnes de `FLAG_COLUMNS` sont en outre ramenees a `float64` : ce sont des drapeaux
+    nullables, et c'est le seul dtype qui survive a l'absence sans inventer de valeur. Sans cela,
+    le meme chargeur rendrait `bool`, `int64` ou `float64` selon le contenu de la fenetre lue.
+
     Piege additionnel : `NUMERIC_COLUMNS` inclut `consumption_kwh`, la cible du modele, pas
     seulement des variables explicatives. Une valeur non numerique y devient donc silencieusement
     `NaN` aussi bien a l'entrainement (ou `train.py` l'exclura ensuite via son `dropna`) qu'au
     scoring -- ce n'est pas un effet de bord limite aux colonnes mesurees.
     """
     typee = frame.copy()
-    for colonne in (*NUMERIC_COLUMNS, *FLAG_COLUMNS):
+    for colonne in NUMERIC_COLUMNS:
         typee[colonne] = pd.to_numeric(typee[colonne], errors="coerce")
+    for colonne in FLAG_COLUMNS:
+        typee[colonne] = pd.to_numeric(typee[colonne], errors="coerce").astype("float64")
     return typee

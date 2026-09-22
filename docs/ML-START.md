@@ -25,7 +25,7 @@ Le choix du modèle est dans l'ADR 0005. Ce document ne les répète pas.
 |---|---|---|
 | `load_from_csv(path)` | `ml/data/all_sites_combined.csv` | Chemin de démarrage, tant que la base n'est pas peuplée |
 | `load_from_database(connection)` | `reading` joint à `site`, **historique complet** | Entraînement |
-| `load_recent_from_database(connection, since=…)` | `reading` joint à `site`, **borné par `since`** | Scoring |
+| `load_recent_from_database(connection, since=…, until=…)` | `reading` joint à `site`, **borné des deux côtés** | Scoring |
 
 L'égalité des schémas n'est pas un confort : c'est ce qui permet de valider tout le pipeline sur
 CSV, sans base joignable, et d'obtenir le même comportement une fois la base peuplée. Une

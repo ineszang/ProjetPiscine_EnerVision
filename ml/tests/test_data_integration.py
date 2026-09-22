@@ -142,6 +142,21 @@ def test_load_recent_from_database_types_a_null_is_working_hours_as_float64(
     assert list(frame["is_working_hours"].isna()) == [True, False]
 
 
+def test_load_recent_from_database_types_is_working_hours_as_float64_even_without_a_null(
+    connexion_ml: Connection,
+) -> None:
+    # Sans cette garantie, le dtype dependrait du contenu de la fenetre lue : `bool` ici, `float64`
+    # des qu'une seule lecture est a NULL, et le schema des deux chargeurs cesserait d'etre egal.
+    site_id = insere_site(connexion_ml)
+    insere_lectures(connexion_ml, site_id, heures=2, fin=ANCRAGE)
+
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE - timedelta(hours=2), until=ANCRAGE
+    )
+
+    assert frame["is_working_hours"].dtype == "float64"
+
+
 def test_both_loaders_produce_the_same_columns_in_the_same_order(
     connexion_ml: Connection, tmp_path: Path
 ) -> None:

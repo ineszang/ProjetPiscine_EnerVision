@@ -106,3 +106,11 @@ def test_main_exits_zero_when_drift_is_detected_without_the_flag(
 
     assert code == 0
     assert capsys.readouterr().out != ""
+
+
+def test_parse_args_leaves_the_bias_threshold_disabled_by_default() -> None:
+    assert cli.parse_args([]).bias_threshold == 0.0
+
+
+def test_seuils_depuis_carries_the_bias_threshold() -> None:
+    assert cli.seuils_depuis(cli.parse_args(["--bias-threshold", "2.5"])).seuil_biais == 2.5

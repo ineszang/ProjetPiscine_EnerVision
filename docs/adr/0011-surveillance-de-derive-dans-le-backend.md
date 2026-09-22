@@ -97,6 +97,13 @@ modèle change n'est pas une dérive, c'est une régression de réentraînement.
   l'identique.
 - La CLI sort en code non nul sous `--fail-on-drift` seulement. Par défaut, constater une dérive
   n'est pas un échec d'exécution.
+- **Le biais ne fait pas basculer le verdict par défaut** : `Seuils.seuil_biais` vaut `0`, ce qui
+  désactive la règle. Le plafond de MAE se dérive de la fenêtre de référence, donc il vaut pour
+  n'importe quel site ; un seuil de biais, lui, s'exprime en kWh et ne se transpose pas d'un
+  bureau de 10 kWh à une usine de 1 000 kWh. En déclarer un sans l'avoir calibré sur la vraie
+  série ferait rougir la tâche sans rien prouver. Le `bias` signé reste calculé, stocké et servi
+  par `GET /api/v1/monitoring/drift` : il se lit, il ne juge pas encore. `--bias-threshold`
+  l'active site par site quand une valeur aura été mesurée.
 
 ## Effet de bord assumé sur le pipeline
 
