@@ -17,8 +17,8 @@
     <ev-alert severity="danger" class="banner-error">{{ message }}</ev-alert>
   }
 
-  <ev-card class="table-card">
-    <table class="sites-table">
+  <ev-card class="ev-table-card">
+    <table class="ev-table">
       <thead>
         <tr>
           <th>Nom</th>
@@ -36,7 +36,9 @@
             <td>{{ site.site_type }}</td>
             <td>{{ site.location || '-' }}</td>
             <td>{{ site.capacity_kw ?? '-' }}</td>
-            <td><ev-badge [tone]="badgeToneForStatus(site.status)">{{ site.status ?? '-' }}</ev-badge></td>
+            <td>
+              <ev-badge [tone]="badgeToneForStatus(site.status)">{{ site.status ?? '-' }}</ev-badge>
+            </td>
             <td><a [routerLink]="['/sites', site.site_id]" class="ev-link">Détail</a></td>
           </tr>
         }

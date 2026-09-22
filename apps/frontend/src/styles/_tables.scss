@@ -1,0 +1,43 @@
+// Piège : `ev-card` pose son padding sur `:host`, compilé en `[_nghost-…]` (même spécificité
+// qu'une classe) et injecté après la feuille globale ; il faut le sélecteur d'élément pour gagner.
+ev-card.ev-table-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ev-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th,
+  td {
+    padding: 0.85rem 1.25rem;
+    text-align: left;
+    border-bottom: 1px solid var(--color-border-light);
+  }
+
+  th {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  tbody tr:hover td {
+    background: var(--color-bg);
+  }
+}
+
+.ev-table__number {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ev-table__muted {
+  color: var(--color-text-muted);
+}

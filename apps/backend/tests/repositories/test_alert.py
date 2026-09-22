@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.energy import Alert
+from app.repositories import alert as module_alert
 from app.repositories.alert import AlertRepository
 from app.schemas.alert import AlertSeverity
 from tests.repositories.test_site import creer as creer_site
@@ -146,3 +147,20 @@ async def test_create_many_does_nothing_for_an_empty_list(session: AsyncSession)
     creees = await depot.create_many([])
 
     assert creees == []
+
+
+async def test_create_many_inserts_every_alert_across_several_batches(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(module_alert, "TAILLE_DE_LOT", 2)
+    site = await creer_site(session)
+    depot = AlertRepository(session)
+    a_inserer = [
+        _alerte_a_inserer(site_id=site.site_id, source_alert_id=f"threshold:lot-{index}")
+        for index in range(5)
+    ]
+
+    creees = await depot.create_many(a_inserer)
+    await session.rollback()
+
+    assert len(creees) == 5

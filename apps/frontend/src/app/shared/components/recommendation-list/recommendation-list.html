@@ -1,0 +1,48 @@
+@if (error(); as message) {
+  <ev-alert severity="danger" class="reco-list__banner">{{ message }}</ev-alert>
+} @else if (loading() && !hasData()) {
+  <p class="reco-list__state" aria-live="polite">Chargement des recommandations…</p>
+} @else if (visibleGroups().length === 0) {
+  <ev-alert severity="success" class="reco-list__banner">{{ emptyMessage() }}</ev-alert>
+}
+
+<div class="reco-list" [attr.aria-busy]="loading()">
+  @for (group of visibleGroups(); track group.alert.alert_id) {
+    <ev-card
+      class="reco-group"
+      [class.reco-group--focus]="group.alert.alert_id === alertId()"
+      [id]="'alerte-' + group.alert.alert_id"
+    >
+      <header class="reco-group__alert">
+        <div class="reco-group__meta">
+          <ev-badge [tone]="toneFor(group.alert.severity)">{{
+            severityLabel(group.alert.severity)
+          }}</ev-badge>
+          <span class="reco-group__type">{{ typeLabel(group.alert.type) }}</span>
+          @if (!siteId()) {
+            <a [routerLink]="['/sites', group.alert.site_id]" class="ev-link">{{
+              group.siteName
+            }}</a>
+          }
+          <time [attr.datetime]="group.alert.timestamp">{{
+            group.alert.timestamp | date: 'dd/MM/yyyy HH:mm'
+          }}</time>
+        </div>
+        <p class="reco-group__message">{{ group.alert.message }}</p>
+      </header>
+      <ol class="reco-group__items">
+        @for (reco of group.recommendations; track reco.recommendation_id) {
+          <li class="reco">
+            <div class="reco__head">
+              <strong class="reco__action">{{ reco.action }}</strong>
+              <ev-badge [tone]="ruleTone(reco.rule_reference)">{{
+                ruleLabel(reco.rule_reference)
+              }}</ev-badge>
+            </div>
+            <p class="reco__explanation">{{ reco.explanation }}</p>
+          </li>
+        }
+      </ol>
+    </ev-card>
+  }
+</div>
