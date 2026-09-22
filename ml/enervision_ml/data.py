@@ -43,6 +43,10 @@ NUMERIC_COLUMNS = [
     "capacity_kw",
 ]
 
+# Piege : `reading.is_working_hours` est nullable et entre dans les features. Une seule lecture a
+# NULL rend la colonne `object`, que LightGBM refuse ("pandas dtypes must be int, float or bool").
+FLAG_COLUMNS = ["is_working_hours"]
+
 _READING_QUERY = text(
     """
     SELECT
@@ -126,6 +130,6 @@ def _typer(frame: pd.DataFrame) -> pd.DataFrame:
     scoring -- ce n'est pas un effet de bord limite aux colonnes mesurees.
     """
     typee = frame.copy()
-    for colonne in NUMERIC_COLUMNS:
+    for colonne in (*NUMERIC_COLUMNS, *FLAG_COLUMNS):
         typee[colonne] = pd.to_numeric(typee[colonne], errors="coerce")
     return typee
