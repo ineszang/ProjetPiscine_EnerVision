@@ -74,6 +74,11 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
+          # `prune-cache` vaut `true` par défaut sur ce commit : l'étape de post-job « Pruning
+          # cache » est restée bloquée 5 minutes avant d'échouer (exit code 2), sans lien avec le
+          # scan lui-même (les 16 étapes précédentes passaient). Le prune n'est qu'une optimisation
+          # de taille de cache, pas une garantie : le désactiver ici retire le blocage.
+          prune-cache: false
 
       - name: Installe l'interpréteur déclaré par .python-version
         run: uv python install
