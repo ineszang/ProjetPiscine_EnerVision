@@ -21,12 +21,11 @@ services:
       - "127.0.0.1:5000:5000"
     volumes:
       - mlflow-artifacts:/mlartifacts
-    command: >
-      mlflow server
-      --host 0.0.0.0 --port 5000
-      --backend-store-uri postgresql://mlflow:${MLFLOW_DB_PASSWORD}@mlflow-db:5432/mlflow
-      --artifacts-destination /mlartifacts
-      --serve-artifacts
+    environment:
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD}
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - exec mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri "postgresql://mlflow:$$MLFLOW_DB_PASSWORD@mlflow-db:5432/mlflow" --artifacts-destination /mlartifacts --serve-artifacts
 
 volumes:
   mlflow-db-data:

@@ -155,7 +155,7 @@ du `docker-compose.yml` principal (réseau, volumes et démarrage séparés).
 
 | Service | Image | Points notables |
 |---|---|---|
-| `mlflow-db` | `postgres:16` | Stocke le tracking store MLflow. Mot de passe obligatoire via `MLFLOW_DB_PASSWORD` |
+| `mlflow-db` | `postgres:17` | Stocke le tracking store MLflow. Mot de passe obligatoire via `MLFLOW_DB_PASSWORD` |
 | `mlflow` | Construite depuis `ml/` | Expose l'UI et l'API MLflow sur `127.0.0.1:5000`. Artefacts sur volume `mlflow-artifacts`, tracking store sur `mlflow-db` |
 
 Portée actuelle : environnement de tracking et de registre de modèles pour le développement
