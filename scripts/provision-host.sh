@@ -97,5 +97,7 @@ Premier administrateur, stack démarrée, dans chaque dossier :
 Le runner GitHub Actions (label eni-g3) rejouera le déploiement à chaque push sur dev et main.
 L'installer sous le propriétaire de $RACINE, sinon git refuse ces dépôts et le .env en 600 lui
 échappe : relancer au besoin ce script avec PROPRIETAIRE=<utilisateur du runner>.
+Données historiques : git ne porte pas data/raw, déposer les fichiers dans chaque dossier avant
+de déclencher le DAG historical_import.
 Depuis un poste : ajouter « $ADRESSE enervision.local rec.enervision.local » à /etc/hosts.
 FIN
