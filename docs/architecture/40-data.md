@@ -289,6 +289,10 @@ Chaque table remplit un rôle précis dans le traitement et l'exploitation des d
 | `recommendation` | Proposer des actions et expliquer la règle qui les motive | Règles métier d'EnerVision |
 | `drift_report` | Suivre l'écart entre prévisions et réalisé, par site et tous sites confondus | Surveillance de dérive d'EnerVision |
 
+Le scoring (`ml_score`) charge le modèle depuis un fichier local (`models/lightgbm-consumption.txt`)
+et trace son empreinte SHA-256 dans `prediction.model_reference`. Il ne lit aucune version depuis
+le Model Registry MLflow (`ml/`) : ce registre sert aujourd'hui à la traçabilité des
+entraînements, pas au déploiement du modèle de scoring.
 Les anomalies historiques décrites dans les JSON sont conservées dans `dataset.metadata`.
 
 Elles servent à l'analyse des données et ne sont pas considérées comme des alertes actuelles.

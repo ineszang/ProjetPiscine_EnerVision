@@ -10,6 +10,7 @@ dans quel contexte, quelles décisions sont arrêtées, et ce qui manque encore 
 | Deux projets Compose sur la VM ENI, recette et production | Déploiement continu depuis GitHub | `En cours` |
 | Provisionnement Terraform de la VM | Préparer la machine et enregistrer le runner | `En cours` |
 | k3s single-node | Cible à terme | `En cours` |
+| MLflow (`ml/`) | Tracker les expériences et le registre de modèles en local | `Fait`, non relié aux autres topologies |
 
 ## Poste de développement
 
@@ -149,6 +150,34 @@ est minimale et n'embarque pas la runtime OpenMP dont LightGBM a besoin, sans qu
 (`OSError: libgomp.so.1`) n'apparaît qu'à la première tâche réellement exécutée, pas à la
 construction de l'image.
 
+### MLflow (`ml/`)
+
+Statut : `Fait`, en local uniquement. Défini par `ml/docker-compose.mlflow.yml`, indépendant
+du `docker-compose.yml` principal (réseau, volumes et démarrage séparés).
+
+| Service | Image | Points notables |
+|---|---|---|
+| `mlflow-db` | `postgres:17` | Stocke le tracking store MLflow. Mot de passe obligatoire via `MLFLOW_DB_PASSWORD` |
+| `mlflow` | Construite depuis `ml/` | Expose l'UI et l'API MLflow sur `127.0.0.1:5000`. Artefacts sur volume `mlflow-artifacts`, tracking store sur `mlflow-db` |
+
+Portée actuelle : environnement de tracking et de registre de modèles pour le développement
+local uniquement. Ce compose n'est relié ni à `docker-compose.prod.yml`, ni aux deux
+environnements Compose de la VM ENI, ni à la cible k3s. Le magasin utilisé par Airflow pour
+`ml_train`/`ml_score` (SQLite, volume `airflow_ml_state`) en est distinct — les deux MLflow ne
+se voient pas tant que `MLFLOW_TRACKING_URI` n'est pas posé côté Airflow.
+
+Limite connue : le DAG Airflow `ml_train` enregistre lui aussi une version a chaque execution
+via `registered_model_name` (magasin SQLite du volume `airflow_ml_state`, distinct de ce
+serveur). Versions et artefacts s'y accumulent sans politique de nettoyage -- fonctionne en
+l'etat, mais a surveiller si les entrainements deviennent frequents.
+
+Pour relier les runs Airflow (`ml_train`, magasin SQLite local) a ce serveur MLflow, positionner
+`MLFLOW_TRACKING_URI=http://mlflow:5000` dans l'environnement du service `airflow-scheduler` (ou
+`http://host.docker.internal:5000` si le serveur MLflow tourne hors du reseau Compose principal),
+et s'assurer que le conteneur Airflow peut joindre le service `mlflow` -- ce qui suppose de les
+rapprocher sur le meme reseau Docker ou d'exposer MLflow autrement qu'en `127.0.0.1` uniquement
+(cf. point 1 sur l'exposition du port). Non fait a ce jour : aucun besoin de centraliser les runs
+d'entrainement Airflow et locaux n'a encore ete identifie.
 ## Machine cible, exécution Docker
 
 Statut : `Fait`. Défini par l'overlay `docker-compose.prod.yml`, appliqué par-dessus le
