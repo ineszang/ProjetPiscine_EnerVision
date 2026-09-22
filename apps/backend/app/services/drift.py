@@ -42,7 +42,7 @@ class Seuils:
     ratio_derive: float = 1.25
     mae_plancher: float = 0.0
     # Un biais se compte en kWh, donc ne se transpose pas d'un site à l'autre : zéro le désactive,
-    # sans cesser de le mesurer. Réglé par `--bias-threshold`, arbitrage dans l'ADR 0011.
+    # sans cesser de le mesurer. Réglé par `--bias-threshold`, arbitrage dans l'ADR 0013.
     seuil_biais: float = 0.0
     seuil_couverture: float = 0.8
 

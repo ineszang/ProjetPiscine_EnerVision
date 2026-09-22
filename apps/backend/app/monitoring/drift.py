@@ -71,7 +71,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=defauts.seuil_biais,
         help=(
             "Biais absolu en kWh au-delà duquel le verdict bascule en dérive. "
-            "Zéro, le défaut, laisse le biais informatif : voir l'ADR 0011."
+            "Zéro, le défaut, laisse le biais informatif : voir l'ADR 0013."
         ),
     )
     parser.add_argument(

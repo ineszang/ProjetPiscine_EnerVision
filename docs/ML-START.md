@@ -93,7 +93,7 @@ La table `prediction` **n'a pas de contrainte d'unicité sur `(site_id, target_a
 insère une ligne de plus au lieu d'écraser la précédente. C'est délibéré, et c'est ce qui rend
 possible la comparaison prévision contre réalisé. La surveillance de dérive s'en sert : elle
 retient, pour chaque `(site_id, target_at)`, la ligne du run le plus récent, celle-là même que
-sert `GET /api/v1/predictions`. Voir l'[ADR 0011](adr/0011-surveillance-de-derive-dans-le-backend.md).
+sert `GET /api/v1/predictions`. Voir l'[ADR 0013](adr/0013-surveillance-de-derive-dans-le-backend.md).
 
 Trois contraintes de cohérence sont portées par la base et non par le code applicatif :
 `status = 'available'` exige une `predicted_value` et interdit un `failure_reason` ;
@@ -183,7 +183,7 @@ l'entraînement, dont le DAG `ml_train` n'a pas de planification.
 La surveillance de dérive traverse cette frontière **dans le sens de la table vers le backend**,
 sans la percer : elle relit `prediction` et `reading` en SQL, ne charge aucun modèle, et n'appelle
 pas MLflow. Son calcul, son seuil et son refus de comparer à la métrique d'entraînement sont dans
-l'[ADR 0011](adr/0011-surveillance-de-derive-dans-le-backend.md).
+l'[ADR 0013](adr/0013-surveillance-de-derive-dans-le-backend.md).
 
 ---
 
@@ -194,4 +194,4 @@ l'[ADR 0011](adr/0011-surveillance-de-derive-dans-le-backend.md).
 - [ADR 0006](adr/0006-moteur-de-regles-dans-le-backend.md) : ce qui consomme les prédictions
 - [`architecture/20-backend.md`](architecture/20-backend.md) : le contrat de `GET /predictions`
 - [`architecture/40-data.md`](architecture/40-data.md) : le modèle de données
-- [ADR 0011](adr/0011-surveillance-de-derive-dans-le-backend.md) : la surveillance de dérive
+- [ADR 0013](adr/0013-surveillance-de-derive-dans-le-backend.md) : la surveillance de dérive

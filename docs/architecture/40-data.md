@@ -301,7 +301,7 @@ Les lignes de `drift_report` sont écrites par `app.monitoring.drift`, ordonnanc
 `derive`. Une ligne dont le `site_id` est `NULL` porte le résultat global, tous sites confondus :
 c'est pourquoi l'unicité passe par un index sur `coalesce(site_id, '')` et non par une contrainte,
 qui ne dédoublonnerait jamais deux lignes globales. Le calcul, ses seuils et ce qu'il refuse de
-comparer sont dans l'[ADR 0011](../adr/0011-surveillance-de-derive-dans-le-backend.md).
+comparer sont dans l'[ADR 0013](../adr/0013-surveillance-de-derive-dans-le-backend.md).
 
 Les lignes de `recommendation` sont écrites par le moteur de règles du backend
 (`app/services/recommendation_rules.py`), déclenché par `POST /api/v1/recommendations/generate`,

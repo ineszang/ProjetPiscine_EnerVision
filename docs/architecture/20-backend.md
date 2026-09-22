@@ -235,7 +235,7 @@ n'ajoute rien.
 | Métrique | Ce qu'elle dit |
 |---|---|
 | `mae` | Erreur moyenne en kWh, la métrique même qu'optimise LightGBM |
-| `bias` | Erreur moyenne **signée** : c'est elle qui distingue un modèle plus bruyant d'un modèle qui se trompe systématiquement du même côté. Lue et servie, elle ne fait basculer le verdict que sous `--bias-threshold`, faute d'un seuil en kWh transposable d'un site à l'autre ([ADR 0011](../adr/0011-surveillance-de-derive-dans-le-backend.md)) |
+| `bias` | Erreur moyenne **signée** : c'est elle qui distingue un modèle plus bruyant d'un modèle qui se trompe systématiquement du même côté. Lue et servie, elle ne fait basculer le verdict que sous `--bias-threshold`, faute d'un seuil en kWh transposable d'un site à l'autre ([ADR 0013](../adr/0013-surveillance-de-derive-dans-le-backend.md)) |
 | `mape` | Comparable entre sites de tailles différentes, hors réalisés nuls |
 | `coverage_ratio` | Part des prévisions disponibles qui ont trouvé leur réalisé : mesure le pipeline, pas le modèle |
 | `insufficient_data_ratio` | Part des sites privés d'historique suffisant |
@@ -246,7 +246,7 @@ d'observations, le service dit qu'il ne sait pas plutôt que de rendre un chiffr
 fenêtre est fermée à droite par un délai de grâce de 2 h, le temps que l'ingestion livre le
 réalisé de la dernière heure. `python -m app.monitoring.drift` l'exécute, le DAG `derive`
 l'ordonnance, et `GET /api/v1/monitoring/drift` sert le dernier rapport de chaque site. Les
-arbitrages sont dans l'[ADR 0011](../adr/0011-surveillance-de-derive-dans-le-backend.md).
+arbitrages sont dans l'[ADR 0013](../adr/0013-surveillance-de-derive-dans-le-backend.md).
 
 ### Détection d'alertes internes
 

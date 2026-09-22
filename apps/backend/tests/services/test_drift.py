@@ -222,7 +222,7 @@ async def test_drift_compares_the_recent_window_to_the_reference_one(
 
 async def test_drift_leaves_the_bias_out_of_the_verdict_by_default() -> None:
     # Le modèle surestime de 3 kWh à chaque heure, et le verdict reste `stable` : le biais est
-    # mesuré et servi, il ne juge pas tant que `--bias-threshold` n'a pas été réglé (ADR 0011).
+    # mesuré et servi, il ne juge pas tant que `--bias-threshold` n'a pas été réglé (ADR 0013).
     depot = FauxDepot(
         recentes=paires(nombre=30, prevu=13.0, reel=10.0),
         anciennes=paires(nombre=30, prevu=13.0, reel=10.0),
