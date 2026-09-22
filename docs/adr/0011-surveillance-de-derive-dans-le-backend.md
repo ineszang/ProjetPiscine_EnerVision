@@ -98,9 +98,15 @@ modèle change n'est pas une dérive, c'est une régression de réentraînement.
 - La CLI sort en code non nul sous `--fail-on-drift` seulement. Par défaut, constater une dérive
   n'est pas un échec d'exécution.
 
-## Limite connue
+## Effet de bord assumé sur le pipeline
 
-`enervision_ml.score --now` ne rejoue pas l'historique : `load_recent_from_database` n'a pas de
-borne haute, et `build_scoring_frame` part toujours de la dernière lecture connue. Aucune boucle
-de rattrapage ne peut donc fabriquer de paires prévu/réalisé sur des données figées, et la
-dérive répond `indetermine` tant que le scoring n'a pas tourné plusieurs fois en exploitation.
+La dérive n'a de matière que si des paires prévu/réalisé existent. Or `enervision_ml.score --now`
+ne rejouait pas l'historique : `load_recent_from_database` n'avait pas de borne haute et
+`build_scoring_frame` repartait de la dernière lecture connue, si bien que `target_at` valait
+toujours « fin du jeu + 1 h » et que l'âge de la dernière lecture devenait négatif sans franchir
+le seuil de péremption. Sur le jeu historique, figé au 31/12/2024, aucune boucle de rattrapage
+n'aurait donc rien produit de vérifiable.
+
+`until` est devenu obligatoire sur ce chargeur, et le scoring lui passe son instant de référence.
+Le comportement en exploitation ne change pas, aucune lecture n'étant postérieure à l'heure
+courante ; seul le rattrapage sur données passées devient possible.

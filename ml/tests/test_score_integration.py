@@ -223,3 +223,16 @@ def test_run_scoring_appends_a_second_row_when_it_runs_twice(
     ecrites = parc.predictions_ecrites(site_id)
     assert len(ecrites) == 2
     assert ecrites[0].target_at == ecrites[1].target_at
+
+
+def test_run_scoring_targets_the_hour_after_the_reference_instant(
+    parc: Parc, modele_jetable: Path
+) -> None:
+    site_id = parc.site()
+    parc.lectures(site_id, heures=200, fin=ANCRAGE + timedelta(hours=48))
+    rattrapage = ANCRAGE
+
+    run_scoring(model_path=modele_jetable, now=rattrapage)
+
+    ligne = parc.predictions_ecrites(site_id)[0]
+    assert ligne.target_at == rattrapage + timedelta(hours=1)

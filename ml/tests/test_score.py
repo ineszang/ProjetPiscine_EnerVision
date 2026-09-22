@@ -275,3 +275,24 @@ def test_run_scoring_in_csv_mode_scores_without_touching_a_database(tmp_path: Pa
     assert {r.site_id for r in resultats} == {"site-a", "site-b"}
     assert all(r.status == "available" for r in resultats)
     assert all(r.predicted_value == 7.0 for r in resultats)
+
+
+def test_run_scoring_in_csv_mode_targets_the_hour_after_the_reference_instant(
+    tmp_path: Path,
+) -> None:
+    depart = datetime(2026, 1, 1, tzinfo=UTC)
+    frame = make_recent("site-a", heures=400, depart=depart)
+    csv_path = tmp_path / "recent.csv"
+    frame.to_csv(csv_path, index=False)
+    model_path = tmp_path / "model.txt"
+    model_path.write_bytes(b"peu importe le contenu pour ce test")
+    rattrapage = depart + timedelta(hours=300)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            "enervision_ml.score.lgb.Booster", lambda model_file: FakeBooster(valeur=7.0)
+        )
+
+        resultats = run_scoring(model_path=model_path, csv_path=csv_path, now=rattrapage)
+
+    assert [r.target_at for r in resultats] == [rattrapage + timedelta(hours=1)]

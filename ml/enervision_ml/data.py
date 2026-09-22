@@ -80,7 +80,7 @@ _RECENT_READING_QUERY = text(
         s.capacity_kw
     FROM reading r
     JOIN site s ON s.site_id = r.site_id
-    WHERE r.timestamp >= :since
+    WHERE r.timestamp >= :since AND r.timestamp <= :until
     ORDER BY r.site_id, r.timestamp
     """
 )
@@ -94,14 +94,21 @@ def load_from_database(connection: Connectable) -> pd.DataFrame:
     return _typer(frame[OUTPUT_COLUMNS])
 
 
-def load_recent_from_database(connection: Connectable, *, since: datetime) -> pd.DataFrame:
-    """Lit `reading` + `site` depuis `since` seulement, pour le scoring.
+def load_recent_from_database(
+    connection: Connectable, *, since: datetime, until: datetime
+) -> pd.DataFrame:
+    """Lit `reading` + `site` sur la fenetre `[since, until]`, pour le scoring.
 
-    Piege evite : un `SELECT` sans borne sur l'hypertable complete juste pour scorer le prochain
-    pas horaire serait la meme erreur que celle corrigee sur `GET /readings` (fenetre non
+    Piege evite cote bas : un `SELECT` sans borne sur l'hypertable complete juste pour scorer le
+    prochain pas horaire serait la meme erreur que celle corrigee sur `GET /readings` (fenetre non
     plafonnee sur une table pouvant porter des annees d'historique).
+
+    Piege evite cote haut : `until` est obligatoire, et c'est ce qui donne son sens a `--now`.
+    Sans lui, `build_scoring_frame` repartait de la derniere lecture de toute la table quel que
+    soit l'instant demande, donc `target_at` valait toujours "fin du jeu + 1h" et l'age de la
+    derniere lecture devenait negatif sans que rien ne le signale.
     """
-    frame = pd.read_sql(_RECENT_READING_QUERY, connection, params={"since": since})
+    frame = pd.read_sql(_RECENT_READING_QUERY, connection, params={"since": since, "until": until})
     return _typer(frame[OUTPUT_COLUMNS])
 
 

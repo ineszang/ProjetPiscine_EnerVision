@@ -45,7 +45,9 @@ def test_load_recent_from_database_excludes_readings_before_the_since_bound(
     site_id = insere_site(connexion_ml)
     insere_lectures(connexion_ml, site_id, heures=5, fin=ANCRAGE)
 
-    frame = load_recent_from_database(connexion_ml, since=ANCRAGE - timedelta(hours=2))
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE - timedelta(hours=2), until=ANCRAGE
+    )
 
     assert list(frame["timestamp"]) == [
         ANCRAGE - timedelta(hours=2),
@@ -60,7 +62,9 @@ def test_load_recent_from_database_includes_a_reading_exactly_at_the_since_bound
     site_id = insere_site(connexion_ml)
     insere_lecture(connexion_ml, site_id, instant=ANCRAGE)
 
-    frame = load_recent_from_database(connexion_ml, since=ANCRAGE)
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE, until=ANCRAGE + timedelta(hours=3)
+    )
 
     assert len(frame) == 1
 
@@ -71,7 +75,9 @@ def test_load_recent_from_database_keeps_timestamps_timezone_aware(
     site_id = insere_site(connexion_ml)
     insere_lecture(connexion_ml, site_id, instant=ANCRAGE)
 
-    frame = load_recent_from_database(connexion_ml, since=ANCRAGE)
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE, until=ANCRAGE + timedelta(hours=3)
+    )
 
     assert frame["timestamp"].dt.tz is not None
 
@@ -83,7 +89,9 @@ def test_load_recent_from_database_orders_readings_by_site_then_timestamp(
     for decalage in (2, 0, 1):
         insere_lecture(connexion_ml, site_id, instant=ANCRAGE + timedelta(hours=decalage))
 
-    frame = load_recent_from_database(connexion_ml, since=ANCRAGE)
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE, until=ANCRAGE + timedelta(hours=3)
+    )
 
     assert list(frame["timestamp"]) == [
         ANCRAGE,
@@ -95,7 +103,9 @@ def test_load_recent_from_database_orders_readings_by_site_then_timestamp(
 def test_load_recent_from_database_returns_the_contract_columns_even_without_any_row(
     connexion_ml: Connection,
 ) -> None:
-    frame = load_recent_from_database(connexion_ml, since=ANCRAGE + timedelta(days=365))
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE + timedelta(days=365), until=ANCRAGE + timedelta(days=400)
+    )
 
     assert frame.empty
     assert list(frame.columns) == OUTPUT_COLUMNS
@@ -107,7 +117,9 @@ def test_load_recent_from_database_types_a_fully_null_capacity_kw_as_float64(
     site_id = insere_site(connexion_ml, capacity_kw=None)
     insere_lectures(connexion_ml, site_id, heures=3, fin=ANCRAGE)
 
-    frame = load_recent_from_database(connexion_ml, since=ANCRAGE - timedelta(hours=2))
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE - timedelta(hours=2), until=ANCRAGE
+    )
 
     assert frame["capacity_kw"].dtype == "float64"
     assert frame["capacity_kw"].isna().all()
@@ -122,7 +134,9 @@ def test_load_recent_from_database_types_a_null_is_working_hours_as_float64(
         connexion_ml, site_id, instant=ANCRAGE + timedelta(hours=1), is_working_hours=True
     )
 
-    frame = load_recent_from_database(connexion_ml, since=ANCRAGE)
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE, until=ANCRAGE + timedelta(hours=3)
+    )
 
     assert frame["is_working_hours"].dtype == "float64"
     assert list(frame["is_working_hours"].isna()) == [True, False]
@@ -147,8 +161,23 @@ def test_both_loaders_produce_the_same_columns_in_the_same_order(
         }
     ).to_csv(csv_path, index=False)
 
-    depuis_la_base = load_recent_from_database(connexion_ml, since=ANCRAGE - timedelta(hours=1))
+    depuis_la_base = load_recent_from_database(
+        connexion_ml, since=ANCRAGE - timedelta(hours=1), until=ANCRAGE
+    )
     depuis_le_csv = load_from_csv(csv_path)
 
     assert list(depuis_la_base.columns) == list(depuis_le_csv.columns)
     assert depuis_la_base.dtypes.to_dict() == depuis_le_csv.dtypes.to_dict()
+
+
+def test_load_recent_from_database_excludes_readings_after_the_until_bound(
+    connexion_ml: Connection,
+) -> None:
+    site_id = insere_site(connexion_ml)
+    insere_lectures(connexion_ml, site_id, heures=5, fin=ANCRAGE + timedelta(hours=4))
+
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE - timedelta(days=1), until=ANCRAGE
+    )
+
+    assert list(frame["timestamp"]) == [ANCRAGE]

@@ -102,11 +102,13 @@ Trois contraintes de cohérence sont portées par la base et non par le code app
 sont vérifiées depuis le code qui écrit par `ml/tests/test_score_integration.py`, sur une vraie
 base : un double ne prouverait rien d'une contrainte SQL.
 
-**Limite connue de `--now`.** L'option décale l'instant de référence, pas la fenêtre de lecture :
-`load_recent_from_database` n'a pas de borne haute et `build_scoring_frame` part toujours de la
-dernière lecture connue. `target_at` vaut donc « dernière lecture du jeu + 1 h » quelle que soit
-la valeur passée, et aucune boucle de rattrapage ne peut fabriquer de paires prévu/réalisé sur un
-jeu figé.
+**`--now` borne la fenêtre des deux côtés.** `load_recent_from_database` exige un `until` autant
+qu'un `since`, et le scoring lui passe l'instant de référence. Sans cette borne haute,
+`build_scoring_frame` repartait de la dernière lecture de toute la table quelle que soit la valeur
+demandée : `target_at` valait toujours « fin du jeu + 1 h », et l'âge de la dernière lecture
+devenait négatif sans franchir le seuil de péremption. Rejouer le scoring sur des instants passés
+produit désormais des prévisions dont le réalisé existe déjà, ce dont la surveillance de dérive a
+besoin pour se démontrer sur un jeu figé.
 
 ### `model_reference` est un hachage, pas un nom de fichier
 
