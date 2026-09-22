@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installe uv
         uses: astral-sh/setup-uv@v5
@@ -78,7 +78,7 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Construit l'image (contexte à la racine, elle COPY ml/ et apps/backend/)
         run: docker build -f etl/airflow/Dockerfile -t enervision-airflow:ci .

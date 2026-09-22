@@ -24,7 +24,7 @@ jobs:
   build-front:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -40,7 +40,7 @@ jobs:
     needs: build-front
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -64,7 +64,7 @@ jobs:
   build-back:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Installe uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -95,7 +95,7 @@ jobs:
     needs: build-back
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Installe uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -115,7 +115,7 @@ jobs:
   test-ml:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Installe uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -148,7 +148,7 @@ jobs:
     if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Téléchargement du rapport de couverture (Front)
