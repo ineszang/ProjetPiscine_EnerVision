@@ -35,7 +35,7 @@ DEMO_NOW ?= 2024-12-31T00:00:00Z
         lint format typecheck test test-cov test-integration check \
         openapi docker-build db-up db-down db-reset db-logs db-psql db-wait db-ensure-airflow \
         migrate bootstrap-admin services-up demo-data demo-data-force \
-        ml-lint ml-typecheck ml-test ml-check ml-train ml-score detect-alerts recommendations \
+        ml-lint ml-typecheck ml-test ml-check ml-train ml-score mlflow-up detect-alerts recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs \
         tls-selfsigned tls-acme tls-renew stack-up stack-down stack-logs
 
@@ -117,6 +117,14 @@ ml-train: ## Entraine le modele LightGBM. CSV=chemin optionnel, sinon lit ML_DAT
 
 ml-score: ## Score le prochain pas horaire et l'ecrit dans `prediction`. CSV= et NOW= optionnels
 	cd $(ML) && uv run python -m enervision_ml.score $(if $(CSV),--csv $(CSV),) $(if $(NOW),--now $(NOW),)
+
+mlflow-up: ## Démarre le serveur MLflow (tracking + registry) en conteneur. ml/.env requis
+	@test -n "$(strip $(ML_ENV_DB_PASSWORD))" \
+		|| { echo "MLFLOW_DB_PASSWORD absente de ml/.env (copier ml/.env.example)"; exit 1; }
+	@echo "$(ML_ENV_DB_PASSWORD)" | grep -qE '^[A-Za-z0-9]+$$' \
+		|| { echo "MLFLOW_DB_PASSWORD doit contenir uniquement lettres et chiffres (interpolee dans l'URI postgresql://)"; exit 1; }
+	cd $(ML) && docker compose -f docker-compose.mlflow.yml up -d --build
+	@echo "mlflow   -> http://localhost:5000"
 
 detect-alerts: ## Détecte les alertes internes depuis les lectures en base. SITE= et NOW= optionnels
 	cd $(BACKEND) && uv run python -m app.detection.internal_alerts $(if $(SITE),--site-id $(SITE),) $(if $(NOW),--now $(NOW),)
