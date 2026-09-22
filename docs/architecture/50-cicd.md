@@ -313,6 +313,20 @@ Décisions à savoir défendre :
   `-config`/`-configfile` chargé à un niveau visible sans `-d` : les copies de `zap.log` et
   `zap-stdout.log` publiées en artefact sont donc caviardées avant publication.
 
+**Deux pièges d'autorisation** sur ce fichier de configuration (`zap-auth.conf`), tous les deux
+propres au montage bind Docker : le conteneur y lit avec son propre uid (1000), distinct de celui
+du runner qui l'a écrit, sans remappage automatique.
+
+- Un `chmod 600` seul rend le fichier illisible pour le conteneur (« File not readable :
+  /zap/auth.conf »). ZAP échoue dès le lancement, mais `zap-api-scan.py` attend les `-T` minutes
+  complètes avant d'abandonner : dix minutes qui ressemblent à un scan actif, pour un daemon mort
+  depuis le début. Corrigé par `sudo chown 1000:1000` du fichier avant de le passer à `644`.
+- Ce `chown` déplace la propriété du fichier hors de l'utilisateur du runner : un `chmod` qui
+  suit sans `sudo` échoue alors (« Operation not permitted »), et le `-e` implicite des étapes
+  bash de GitHub Actions arrête toute l'étape avant même `docker run` — un scan « réussi » en une
+  fraction de seconde, sans le moindre journal ni rapport produit. Les deux commandes doivent
+  passer par `sudo`.
+
 Les routes d'authentification qui changent l'état du compte (`login`, `password`, `logout-all`,
 `forgot-password`, `reset-password`) sont exclues du scan actif : elles y déclencheraient la
 limitation de débit et fermeraient les sessions sans rien apprendre de plus.

@@ -192,8 +192,14 @@ jobs:
           # ZAP échoue alors dès le lancement (« File not readable: /zap/auth.conf »), et
           # `zap-api-scan.py` attend `-T` minutes complètes avant d'abandonner : dix minutes qui
           # ressemblent à un scan actif, pour un daemon mort depuis le début.
+          #
+          # Piège vécu (numéro deux) : une fois le fichier passé à l'uid 1000 par `sudo chown`,
+          # l'utilisateur du runner n'en est plus propriétaire et un `chmod` sans `sudo` échoue
+          # (« Operation not permitted »). Avec le `-e` implicite de bash sur les étapes GitHub
+          # Actions, cette erreur arrêtait toute l'étape avant même `docker run` : scan « réussi »
+          # en une fraction de seconde, sans le moindre journal ni rapport produit.
           sudo chown 1000:1000 "$RUNNER_TEMP/zap-auth.conf"
-          chmod 644 "$RUNNER_TEMP/zap-auth.conf"
+          sudo chmod 644 "$RUNNER_TEMP/zap-auth.conf"
           docker run --name zap --network host \
             -v "$PWD/zap-out:/zap/wrk:rw" \
             -v "$RUNNER_TEMP/zap-auth.conf:/zap/auth.conf:ro" \
