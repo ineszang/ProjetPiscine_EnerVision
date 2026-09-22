@@ -148,12 +148,15 @@ docker-build: ## Construit l'image du backend
 tls-selfsigned: ## Génère le certificat de démonstration. PUBLIC_HOST=..., FORCE=1 pour écraser
 	./scripts/tls-selfsigned.sh $(if $(FORCE),--force,)
 
-stack-up: ## Démarre la stack complète derrière le reverse proxy (80/443). PUBLIC_HOST=... au besoin
+# Piège : l'image backend ne migre pas au démarrage, et `/health/ready` ne teste que la connexion
+# et l'extension. Sans `alembic upgrade head`, la stack démarre verte sur une base sans schéma.
+stack-up: ## Démarre la stack derrière le reverse proxy, puis migre la base. PUBLIC_HOST=... au besoin
 	@test -f infra/proxy/tls/fullchain.pem \
 		|| { echo "Aucun certificat dans infra/proxy/tls. Lancer d'abord make tls-selfsigned"; exit 1; }
 	@openssl x509 -in infra/proxy/tls/fullchain.pem -noout -checkhost "$(PUBLIC_HOST)" >/dev/null \
 		|| { echo "Le certificat ne couvre pas $(PUBLIC_HOST). Relancer make tls-selfsigned PUBLIC_HOST=$(PUBLIC_HOST) FORCE=1"; exit 1; }
 	$(COMPOSE_PROD) up -d --build
+	$(COMPOSE_PROD) exec -T backend alembic upgrade head
 
 stack-down: ## Arrête la stack complète en conservant les données
 	$(COMPOSE_PROD) stop
