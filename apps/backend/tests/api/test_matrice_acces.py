@@ -227,24 +227,26 @@ async def test_a_real_token_reaches_exactly_the_routes_of_its_rank(
     assert ecarts == []
 
 
-# Contrainte : `operateur` n'ouvre aujourd'hui aucune route de plus que `lecteur`, faute d'écriture
-# métier dans l'API. Figer l'égalité rend la régression visible le jour où une route d'opérateur
-# arrive sans que `ROLE_MINIMUM` soit mis à jour.
+# Contrainte : les deux rangs ne se séparent que sur les routes que `ROLE_MINIMUM` réserve à
+# `operateur`. Une route d'opérateur ajoutée sans être classée fait diverger les statuts sans
+# qu'aucune entrée ne l'annonce, et une garde d'opérateur posée par erreur sur une route de
+# lecture fait diverger ce qui devait rester identique.
 @pytest.mark.integration
-async def test_the_operator_rank_opens_nothing_more_than_the_reader_rank(
+async def test_the_operator_rank_diverges_from_the_reader_rank_only_where_declared(
     comptes_par_role: dict[Role, str], client: AsyncClient
 ) -> None:
     lecteur = await authentifie(client, comptes_par_role[Role.LECTEUR])
     operateur = await authentifie(client, comptes_par_role[Role.OPERATEUR])
-    divergences: list[tuple[str, str]] = []
+    ecarts: list[tuple[str, str]] = []
 
-    for methode, chemin in ROLE_MINIMUM:
+    for (methode, chemin), minimum in ROLE_MINIMUM.items():
         cote_lecteur = await appelle(client, methode, chemin, headers=lecteur)
         cote_operateur = await appelle(client, methode, chemin, headers=operateur)
-        if cote_lecteur.status_code != cote_operateur.status_code:
-            divergences.append((methode, chemin))
+        diverge = cote_lecteur.status_code != cote_operateur.status_code
+        if diverge is not (minimum is Role.OPERATEUR):
+            ecarts.append((methode, chemin))
 
-    assert divergences == []
+    assert ecarts == []
 
 
 # Piège : `/auth/logout-all` prend un `CurrentPrincipalDep` nu, donc elle échappe au gate
