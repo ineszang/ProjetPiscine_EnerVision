@@ -10,6 +10,15 @@ updates:
       frontend-dependencies:
         patterns:
           - "*"
+    ignore:
+      # Pourquoi : @angular/build épingle typescript (>=6.0 <6.1) et vitest (^4). Une majeure
+      # de l'un ou l'autre casse `npm ci` tant qu'Angular ne suit pas.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/coverage-v8"
+        update-types: ["version-update:semver-major"]
 
   # Backend — uv (lit pyproject.toml / uv.lock)
   - package-ecosystem: "uv"
