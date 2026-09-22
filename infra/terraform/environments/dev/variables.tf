@@ -76,3 +76,15 @@ variable "deployment_environment" {
     error_message = "L'environnement doit être dev, rec ou prod."
   }
 }
+
+variable "vault_username" {
+  description = "Username Vault"
+  type        = string
+  sensitive   = false
+}
+
+variable "vault_password" {
+  description = "Password Vault"
+  type        = string
+  sensitive   = true
+}

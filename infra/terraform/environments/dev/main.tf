@@ -10,3 +10,19 @@ module "k3s" {
   k3s_disable_components = var.k3s_disable_components
   kubeconfig_output_path = var.kubeconfig_output_path
 }
+
+provider "vault" {
+  # Adresse du serveur Vault (dev)
+  address = "https://10.101.200.37:8200"
+
+  # Auth par userpass 
+  auth_login {
+    path = "auth/userpass/login/${var.vault_username}"
+    parameters = {
+      login    = var.vault_username
+      password = var.vault_password
+    }
+  }
+  # Skip verify pour dev uniquement (pas en prod!)
+  # skip_client_verification = true
+}
