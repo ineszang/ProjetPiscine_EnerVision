@@ -5,8 +5,8 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from airflow.models.baseoperator import BaseOperator
-from airflow.models.dagbag import DagBag
+from airflow.dag_processing.dagbag import DagBag
+from airflow.sdk import BaseOperator
 
 DAGS_FOLDER = Path(__file__).resolve().parent.parent / "dags"
 
@@ -21,7 +21,7 @@ TACHES = [
 
 @pytest.fixture(scope="module")
 def dagbag() -> DagBag:
-    return DagBag(dag_folder=str(DAGS_FOLDER), include_examples=False)
+    return DagBag(dag_folder=str(DAGS_FOLDER))
 
 
 def test_dags_folder_has_no_import_error(dagbag: DagBag) -> None:
@@ -33,18 +33,18 @@ def test_every_expected_dag_is_discovered(dagbag: DagBag) -> None:
 
 
 def test_ml_train_has_no_schedule(dagbag: DagBag) -> None:
-    assert dagbag.dags["ml_train"].timetable.summary == "None"
+    assert dagbag.dags["ml_train"].schedule is None
 
 
 def test_ml_score_runs_every_hour(dagbag: DagBag) -> None:
-    # `@hourly` est un alias Airflow pour ce cron, c'est sous cette forme que `.summary` le rend.
-    assert dagbag.dags["ml_score"].timetable.summary == "0 * * * *"
+    # `@hourly` est un alias Airflow pour ce cron, c'est sous cette forme que la timetable le rend.
+    assert dagbag.dags["ml_score"].timetable.expression == "0 * * * *"
 
 
 def test_alertes_runs_after_the_hourly_scoring(dagbag: DagBag) -> None:
     # Le decalage n'est pas cosmetique : la regle `anomaly` compare une lecture a la `prediction`
     # du meme instant, que `ml_score` ecrit a l'heure pile.
-    assert dagbag.dags["alertes"].timetable.summary == "15 * * * *"
+    assert dagbag.dags["alertes"].timetable.expression == "15 * * * *"
 
 
 def test_ml_train_task_calls_the_training_module(dagbag: DagBag) -> None:
