@@ -63,8 +63,9 @@ secret.
 
 - Deux TimescaleDB sur une machine de 8 Go : sans réglage, chacune se réserverait 25 % de la
   RAM au premier démarrage. L'overlay fixe `TS_TUNE_MEMORY` à 2 Go et `TS_TUNE_NUM_CPUS` à 2 par
-  base, et 2 workers gunicorn par webserver Airflow. La montée à 32 Go prévue par les
-  consignes est à demander.
+  base. Airflow 3 n'a rien à régler de ce côté : son api-server lance un seul worker par défaut,
+  là où le webserver d'Airflow 2 en lançait quatre. La montée à 32 Go prévue par les consignes
+  est à demander.
 - Un runner auto-hébergé sur un dépôt public exécute le code qu'on lui envoie. `deploy.yml` ne
   se déclenche jamais sur `pull_request`, le runner tourne sous un utilisateur dédié, et le
   dépôt doit exiger une approbation pour les workflows des PR externes.
@@ -75,6 +76,7 @@ secret.
   à chaque push : plusieurs minutes par déploiement, acceptable pour la cadence du projet.
 - `environments/prod` de Terraform reste vide. Le provisionnement de la machine est porté par
   `scripts/provision-host.sh`, que Terraform pourra appeler par `remote-exec` le jour où une
-  racine visant la VM existera.
+  racine visant la VM existera. Cette racine existe depuis l'[ADR 0010](0010-terraform-provisionne-github-actions-deploie.md),
+  sous le nom `environments/vm-eni`, et `environments/prod` a disparu avec elle.
 - L'image frontend quitte `dhi.io/nginx`, registre authentifié dont personne n'a l'accès, pour
   `nginx:1.28-alpine`, la même image que le proxy. Elle n'avait jamais été construite.
