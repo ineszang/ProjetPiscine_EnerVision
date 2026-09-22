@@ -17,6 +17,7 @@ DAG_IDS = [
     "alertes",
     "historical_import",
     "mock_api_import",
+    "derive",
 ]
 TACHES = [
     ("ml_train", "train"),
@@ -25,6 +26,7 @@ TACHES = [
     ("alertes", "recommandations"),
     ("historical_import", "import_historical"),
     ("mock_api_import", "import_mock_api"),
+    ("derive", "derive"),
 ]
 
 
@@ -210,6 +212,19 @@ def test_historical_import_retries_after_a_transient_failure(dagbag: DagBag) -> 
 
 def test_mock_api_import_retries_after_a_transient_failure(dagbag: DagBag) -> None:
     assert dagbag.dags["mock_api_import"].get_task("import_mock_api").retries >= 1
+
+
+def test_derive_runs_once_a_day(dagbag: DagBag) -> None:
+    assert dagbag.dags["derive"].timetable.expression == "30 5 * * *"
+
+
+def test_derive_calls_the_backend_drift_module(dagbag: DagBag) -> None:
+    assert "app.monitoring.drift" in dagbag.dags["derive"].get_task("derive").bash_command
+
+
+def test_derive_never_retries_a_detected_drift(dagbag: DagBag) -> None:
+    # Une derive n'est pas une panne passagere : la rejouer la redeclarerait a l'identique.
+    assert dagbag.dags["derive"].get_task("derive").retries == 0
 
 
 @pytest.mark.parametrize(("dag_id", "task_id"), TACHES)

@@ -169,6 +169,8 @@ dans [10-infra.md](10-infra.md).
 | Typage `mypy` | backend (`app`), ml (strict) | zéro erreur | Bloque |
 | Tests unitaires `pytest` | backend, ml | **`--cov-fail-under=85`** côté backend | Bloque |
 | Tests d'intégration | backend | marqueur `integration`, base réelle | Bloque |
+| Tests d'intégration ML ↔ DB | ml | marqueur `integration`, base réelle migrée par Alembic | Bloque |
+| Chaîne ML → DB → API | ml | marqueur `chaine`, vrais binaires en sous-processus | Bloque |
 | Audit de dépendances `pip-audit` | backend | sur le **verrou figé** | Bloque |
 | Audit de dépendances `npm audit` | frontend | `--audit-level=high` | Bloque |
 | **SAST `bandit`** | backend (`app`), ml (`enervision_ml`) | **MEDIUM et au-dessus** | Bloque |
@@ -206,6 +208,28 @@ avant `alembic upgrade head`.
 
 La couverture est **désactivée** sur ce job (`pytest -m integration --no-cov`) : il ne joue qu'une
 partie de la suite, et son taux n'aurait aucun sens face au seuil de 85 %.
+
+### Pourquoi le job d'intégration ML installe aussi le backend
+
+Le schéma de la base n'a qu'une source, les six révisions Alembic de `apps/backend/alembic` : le
+backend est propriétaire du schéma, `ml/` n'en est que consommateur. Reconstruire ce schéma à la
+main dans le job ML donnerait un job vert sur une base qui n'est pas la nôtre, exactement l'erreur
+qu'évite déjà le choix de l'image `timescaledb-ha` plutôt qu'un `postgres` nu. Le job installe
+donc les deux environnements uv, applique `alembic upgrade head`, puis joue `-m integration` côté
+`ml/` et `-m chaine` côté backend.
+
+Conséquence sur le déclenchement : les `paths` de `ml.yml` incluent `apps/backend/alembic/**` et
+`apps/backend/app/models/**`. Sans eux, une migration qui renomme une colonne de `reading` ne
+déclencherait pas ce job, le SQL brut du pipeline dériverait du schéma, et **rien ne casserait
+avant la production**. Le prix est qu'une PR touchant seulement une migration lance aussi le lint
+et le typage de `ml/` : environ deux minutes de runner, en parallèle. Même arbitrage que le filtre
+d'`airflow.yml`, qui écoute déjà `ml/**` et `apps/backend/app/**` parce que son image réunit les
+deux.
+
+Le marqueur `chaine` est distinct d'`integration` pour une raison mécanique : le job `integration`
+de `backend.yml` n'installe pas `ml/.venv`, et sélectionnerait sinon un test qui lance les
+binaires du pipeline. Il est aussi exclu d'`addopts`, sans quoi `make test` échouerait sur tout
+poste où `ml/` n'est pas installé.
 
 ## SonarCloud, et l'incident qui a immobilisé trois PR
 
@@ -381,8 +405,17 @@ second passage sur la stack complète reste à faire.
 ## Reproduire la CI en local
 
 `make check` enchaîne formatage, analyse statique, typage et tests du backend, c'est à dire le job
-`verification`. `make ml-check` fait la même chose pour le module ML. Les tests d'intégration
-demandent une base : `make db-up` puis `uv run pytest -m integration`.
+`verification`. `make ml-check` fait la même chose pour le module ML.
+
+Les tests d'intégration demandent une base **migrée**, et `db/init` ne crée `enervision_test` que
+vide :
+
+```bash
+make db-up migrate-test     # la base de test reçoit les six révisions Alembic
+make test-integration       # backend, marqueur `integration`
+make ml-test-integration    # pipeline ML, marqueur `integration`
+make test-chaine            # vrais binaires ML puis relecture par l'API, marqueur `chaine`
+```
 
 Le SAST se rejoue à l'identique : `uvx bandit==1.9.4 --recursive app --severity-level medium
 --confidence-level medium` depuis `apps/backend`, et la même commande sur `enervision_ml` depuis

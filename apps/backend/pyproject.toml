@@ -87,8 +87,11 @@ disallow_untyped_defs = false
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-q --strict-markers -m 'not integration' --cov=app --cov-report=term-missing"
-markers = ["integration: requiert une base PostgreSQL joignable, hors `make test`"]
+addopts = "-q --strict-markers -m 'not integration and not chaine' --cov=app --cov-report=term-missing"
+markers = [
+    "integration: requiert une base PostgreSQL joignable, hors `make test`",
+    "chaine: requiert en plus l'environnement uv de ml/, hors `make test` et hors `-m integration`",
+]
 
 [tool.coverage.run]
 source = ["app"]

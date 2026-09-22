@@ -27,6 +27,13 @@ MAILPIT_UI_PORT := $(or $(strip $(call env-val,MAILPIT_UI_PORT)),8025)
 ML_DATABASE_URL ?= postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_DB)
 export ML_DATABASE_URL
 
+# Piege : la base des tests d'integration n'est pas la base de developpement. Ces tests ecrivent
+# et suppriment des lignes, et leurs fixtures refusent de demarrer ailleurs que sur
+# `enervision_test` (garde sur le nom, cf. ml/tests/conftest.py).
+PG_TEST_DB ?= enervision_test
+TEST_DATABASE_URL ?= postgresql+asyncpg://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_TEST_DB)
+ML_TEST_DATABASE_URL ?= postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_TEST_DB)
+
 # Le jeu historique s'arrete au 31/12/2024 : score et detection ancres a l'horloge reelle ne
 # verraient qu'un parc muet depuis des mois. Cf. `--now` de enervision_ml.score.
 DEMO_NOW ?= 2024-12-31T00:00:00Z
@@ -34,9 +41,10 @@ DEMO_NOW ?= 2024-12-31T00:00:00Z
 .DEFAULT_GOAL := help
 .PHONY: help install install-backend install-frontend install-ml install-airflow \
         dev dev-backend dev-frontend \
-        lint format typecheck test test-cov test-integration check \
+        lint format typecheck test test-cov test-integration ml-test-integration \
+        test-chaine check \
         openapi docker-build db-up db-down db-reset db-logs db-psql db-wait db-ensure-airflow \
-        migrate bootstrap-admin services-up demo-data demo-data-force \
+        migrate migrate-test bootstrap-admin services-up demo-data demo-data-force \
         ml-lint ml-typecheck ml-test ml-check ml-train ml-score mlflow-up detect-alerts recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs \
         tls-selfsigned tls-acme tls-renew stack-up stack-down stack-logs
@@ -113,6 +121,16 @@ ml-test: ## Exécute les tests du pipeline ML (donnees synthetiques, sans base n
 	cd $(ML) && uv run pytest
 
 ml-check: ml-lint ml-typecheck ml-test ## Chaîne de vérification complète du pipeline ML
+
+# La cible surcharge ML_DATABASE_URL, que ce Makefile exporte vers la base de développement : la
+# garde du conftest ferait échouer la cible sans cette surcharge.
+ml-test-integration: ML_DATABASE_URL := $(ML_TEST_DATABASE_URL)
+ml-test-integration: ## Tests ML exigeant une base migrée. Faire `make db-up migrate-test` avant
+	cd $(ML) && uv run pytest -m integration --no-cov
+
+test-chaine: ## Chaîne ML -> DB -> API, vrais binaires. Exige les deux environnements uv
+	cd $(BACKEND) && DATABASE_URL=$(TEST_DATABASE_URL) ML_PYTHON=$(CURDIR)/$(ML)/.venv/bin/python \
+		uv run pytest -m chaine --no-cov
 
 ml-train: ## Entraine le modele LightGBM. CSV=chemin optionnel, sinon lit ML_DATABASE_URL
 	cd $(ML) && uv run python -m enervision_ml.train $(if $(CSV),--csv $(CSV),)
@@ -218,6 +236,9 @@ db-ensure-airflow: ## Crée la base de métadonnées Airflow si le volume pgdata
 
 migrate: ## Applique les migrations Alembic
 	cd $(BACKEND) && uv run alembic upgrade head
+
+migrate-test: ## Applique les migrations sur enervision_test, la base des tests d'intégration
+	cd $(BACKEND) && DATABASE_URL=$(TEST_DATABASE_URL) uv run alembic upgrade head
 
 bootstrap-admin: ## Crée le premier administrateur, mot de passe saisi au clavier
 	cd $(BACKEND) && uv run python -m app.cli create-admin --email $${EMAIL:?EMAIL=... requis}

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from enervision_ml.data import NUMERIC_COLUMNS, load_from_csv
 
@@ -53,3 +54,44 @@ def test_load_from_csv_always_types_capacity_kw_as_float(tmp_path: Path) -> None
 
     assert frame["capacity_kw"].dtype == "float64"
     assert pd.isna(frame["capacity_kw"].iloc[0])
+
+
+@pytest.mark.parametrize("present", ["1", "True"], ids=["entier", "booleen_textuel"])
+def test_load_from_csv_keeps_a_missing_is_working_hours_as_nan(
+    tmp_path: Path, present: str
+) -> None:
+    # Une case vide vaut "on ne sait pas", que LightGBM sait traiter. La rendre `True` inventerait
+    # une heure ouvree, et le modele apprendrait sur une valeur que personne n'a mesuree.
+    csv_path = write_csv(
+        tmp_path,
+        f"SITE001,2026-01-01T00:00:00,10.5,15.0,50.0,0.0,{present},office",
+        "SITE001,2026-01-01T01:00:00,11.5,15.2,50.5,0.0,,office",
+    )
+
+    frame = load_from_csv(csv_path)
+
+    assert frame["is_working_hours"].iloc[0] == 1
+    assert pd.isna(frame["is_working_hours"].iloc[1])
+
+
+@pytest.mark.parametrize(
+    "valeurs",
+    [("1", "0"), ("True", "False")],
+    ids=["entier", "booleen_textuel"],
+)
+def test_load_from_csv_always_types_is_working_hours_as_float(
+    tmp_path: Path, valeurs: tuple[str, str]
+) -> None:
+    # Le dtype ne doit pas dependre de l'ecriture du fichier ni de la presence d'un trou : c'est
+    # ce qui rend comparable le schema des deux chargeurs, cf. `test_data_integration.py`.
+    present, absent = valeurs
+    csv_path = write_csv(
+        tmp_path,
+        f"SITE001,2026-01-01T00:00:00,10.5,15.0,50.0,0.0,{present},office",
+        f"SITE001,2026-01-01T01:00:00,11.5,15.2,50.5,0.0,{absent},office",
+    )
+
+    frame = load_from_csv(csv_path)
+
+    assert frame["is_working_hours"].dtype == "float64"
+    assert list(frame["is_working_hours"]) == [1.0, 0.0]

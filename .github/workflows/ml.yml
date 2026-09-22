@@ -8,10 +8,28 @@ on:
     paths:
       - "ml/**"
       - ".github/workflows/ml.yml"
+      # Le job `integration` monte son schema avec les migrations du backend et joue le test de
+      # chaine qui vit dans ses tests : sans ces chemins, une migration modifiee ne declencherait
+      # rien et le schema deriverait du SQL du pipeline sans que rien ne casse. Meme raisonnement
+      # que le filtre d'airflow.yml, qui inclut deja des chemins de ml/ et de apps/backend/.
+      - "apps/backend/alembic/**"
+      - "apps/backend/app/models/**"
+      - "apps/backend/tests/test_chaine_ml_api.py"
+      - "apps/backend/pyproject.toml"
+      - "apps/backend/uv.lock"
   pull_request:
     paths:
       - "ml/**"
       - ".github/workflows/ml.yml"
+      # Le job `integration` monte son schema avec les migrations du backend et joue le test de
+      # chaine qui vit dans ses tests : sans ces chemins, une migration modifiee ne declencherait
+      # rien et le schema deriverait du SQL du pipeline sans que rien ne casse. Meme raisonnement
+      # que le filtre d'airflow.yml, qui inclut deja des chemins de ml/ et de apps/backend/.
+      - "apps/backend/alembic/**"
+      - "apps/backend/app/models/**"
+      - "apps/backend/tests/test_chaine_ml_api.py"
+      - "apps/backend/pyproject.toml"
+      - "apps/backend/uv.lock"
 
 permissions:
   contents: read
@@ -53,10 +71,90 @@ jobs:
       - name: Typage
         run: uv run mypy enervision_ml tests
 
-      # Aucun test ne touche PostgreSQL ni MLflow distant : tout tourne sur donnees
-      # synthetiques ou un magasin SQLite local jetable (cf. ml/tests/test_train.py).
+      # Les tests exigeant une base portent le marqueur `integration`, ecarte par defaut et
+      # joue par le job `integration` ci-dessous.
       - name: Tests
         run: uv run pytest
+
+  # Le seul job du depot qui dispose a la fois des deux environnements uv et d'une base. Piege :
+  # le schema de la base ML est celui du backend (apps/backend/alembic, proprietaire du schema).
+  # Le reconstruire ici a la main rendrait ce job vert sur une base qui n'est pas la notre.
+  integration:
+    name: ML - DB et chaîne ML - DB - API
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: timescale/timescaledb-ha:pg17
+        env:
+          POSTGRES_USER: enervision
+          POSTGRES_PASSWORD: change_me
+          POSTGRES_DB: enervision_test
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U enervision -d enervision_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 40s
+
+    env:
+      # Deux variables, deux dialectes : Alembic et l'API parlent asyncpg, le pipeline ML parle
+      # psycopg en synchrone. Cf. docs/ML-START.md, section 1.
+      DATABASE_URL: postgresql+asyncpg://enervision:change_me@localhost:5433/enervision_test
+      ML_DATABASE_URL: postgresql+psycopg://enervision:change_me@localhost:5433/enervision_test
+      APP_SECRET_KEY: secret-de-test-assez-long-pour-le-validateur
+      PGPASSWORD: change_me
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            ml/uv.lock
+            apps/backend/uv.lock
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        working-directory: ml
+        run: uv python install
+
+      - name: Synchronise le pipeline ML sans dévier du verrou
+        working-directory: ml
+        run: uv sync --all-groups --frozen
+
+      # Le backend est installé ici parce qu'il porte les migrations, seule source du schéma, et
+      # le test de chaîne, qui interroge l'API.
+      - name: Synchronise le backend sans dévier du verrou
+        working-directory: apps/backend
+        run: uv sync --all-groups --frozen
+
+      # db/init/110-test-database.sql n'est pas monté ici, et sans l'extension la première
+      # révision Alembic refuse de s'appliquer.
+      - name: Active TimescaleDB sur la base de test
+        run: psql -h localhost -p 5433 -U enervision -d enervision_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
+
+      - name: Applique les migrations du backend, propriétaire du schéma
+        working-directory: apps/backend
+        run: uv run alembic upgrade head
+
+      # `-m` en ligne de commande écrase celui d'addopts. Couverture désactivée : ce job ne joue
+      # qu'une partie de la suite, son taux n'aurait pas de sens (même raison que backend.yml).
+      - name: Tests ML exigeant une base
+        working-directory: ml
+        run: uv run pytest -m integration --no-cov
+
+      # Lance les vrais binaires enervision_ml.train et .score en sous-processus, comme les DAGs
+      # ml_train et ml_score, puis relit le résultat par GET /api/v1/predictions.
+      - name: Chaîne complète ML vers DB vers API
+        working-directory: apps/backend
+        env:
+          ML_PYTHON: ${{ github.workspace }}/ml/.venv/bin/python
+        run: uv run pytest -m chaine --no-cov
 
   sast:
     name: Analyse statique de sécurité

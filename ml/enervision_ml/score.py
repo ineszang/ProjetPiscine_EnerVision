@@ -204,7 +204,8 @@ def _load_recent_from_csv(csv_path: Path, *, now: datetime | None) -> tuple[pd.D
     instant = now or (
         brute["timestamp"].max().to_pydatetime() if not brute.empty else datetime.now(UTC)
     )
-    return brute[brute["timestamp"] >= instant - LOOKBACK], instant
+    fenetre = (brute["timestamp"] >= instant - LOOKBACK) & (brute["timestamp"] <= instant)
+    return brute[fenetre], instant
 
 
 def _score_frame(
@@ -240,7 +241,7 @@ def run_scoring(
     engine = create_engine(config.database_url())
     try:
         instant = now or datetime.now(UTC)
-        recent = load_recent_from_database(engine, since=instant - LOOKBACK)
+        recent = load_recent_from_database(engine, since=instant - LOOKBACK, until=instant)
         resultats = _score_frame(recent, model_path=model_path, site_id=site_id, instant=instant)
 
         reference = model_reference(model_path)

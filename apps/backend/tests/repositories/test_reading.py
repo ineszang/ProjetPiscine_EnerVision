@@ -33,6 +33,9 @@ async def creer_lecture(session: AsyncSession, *, site_id: str, **overrides: obj
         timestamp=overrides.get("timestamp", datetime(2026, 9, 16, tzinfo=UTC)),
         source=overrides.get("source", "api_current"),
         consumption_kw=overrides.get("consumption_kw", 10.0),
+        # Nul par defaut : seules les mesures en kWh alimentent la comparaison prevu/realise, et
+        # un override silencieusement ignore laissait la colonne vide sans que rien ne le dise.
+        consumption_kwh=overrides.get("consumption_kwh"),
         data_quality=overrides.get("data_quality", "good"),
         raw_data=overrides.get("raw_data", {}),
     )

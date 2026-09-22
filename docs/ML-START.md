@@ -25,7 +25,7 @@ Le choix du modèle est dans l'ADR 0005. Ce document ne les répète pas.
 |---|---|---|
 | `load_from_csv(path)` | `ml/data/all_sites_combined.csv` | Chemin de démarrage, tant que la base n'est pas peuplée |
 | `load_from_database(connection)` | `reading` joint à `site`, **historique complet** | Entraînement |
-| `load_recent_from_database(connection, since=…)` | `reading` joint à `site`, **borné par `since`** | Scoring |
+| `load_recent_from_database(connection, since=…, until=…)` | `reading` joint à `site`, **borné des deux côtés** | Scoring |
 
 L'égalité des schémas n'est pas un confort : c'est ce qui permet de valider tout le pipeline sur
 CSV, sans base joignable, et d'obtenir le même comportement une fois la base peuplée. Une
@@ -90,14 +90,25 @@ consommation prévue de **l'heure suivant sa dernière lecture connue**, et écr
 ### Ce que le run écrit, et ce qu'il n'écrase pas
 
 La table `prediction` **n'a pas de contrainte d'unicité sur `(site_id, target_at)`** : chaque run
-insère une ligne de plus au lieu d'écraser la précédente. C'est délibéré, et c'est ce qui rendra
-possible la comparaison prévision contre réalisé, donc la surveillance de dérive (#44, #45), qui
-n'existe pas encore.
+insère une ligne de plus au lieu d'écraser la précédente. C'est délibéré, et c'est ce qui rend
+possible la comparaison prévision contre réalisé. La surveillance de dérive s'en sert : elle
+retient, pour chaque `(site_id, target_at)`, la ligne du run le plus récent, celle-là même que
+sert `GET /api/v1/predictions`. Voir l'[ADR 0013](adr/0013-surveillance-de-derive-dans-le-backend.md).
 
 Trois contraintes de cohérence sont portées par la base et non par le code applicatif :
 `status = 'available'` exige une `predicted_value` et interdit un `failure_reason` ;
 `insufficient_data` et `error` exigent l'inverse ; `target_metric` est bornée à
-`consumption_kwh` ou `consumption_kw`, et la forme énergie impose une `period_minutes`.
+`consumption_kwh` ou `consumption_kw`, et la forme énergie impose une `period_minutes`. Elles
+sont vérifiées depuis le code qui écrit par `ml/tests/test_score_integration.py`, sur une vraie
+base : un double ne prouverait rien d'une contrainte SQL.
+
+**`--now` borne la fenêtre des deux côtés.** `load_recent_from_database` exige un `until` autant
+qu'un `since`, et le scoring lui passe l'instant de référence. Sans cette borne haute,
+`build_scoring_frame` repartait de la dernière lecture de toute la table quelle que soit la valeur
+demandée : `target_at` valait toujours « fin du jeu + 1 h », et l'âge de la dernière lecture
+devenait négatif sans franchir le seuil de péremption. Rejouer le scoring sur des instants passés
+produit désormais des prévisions dont le réalisé existe déjà, ce dont la surveillance de dérive a
+besoin pour se démontrer sur un jeu figé.
 
 ### `model_reference` est un hachage, pas un nom de fichier
 
@@ -142,6 +153,10 @@ flowchart LR
     train -- "models/*.txt + run MLflow" --> score
     score -- "INSERT" --> prediction
     prediction -- "lecture seule" --> route
+    prediction -- "prévu" --> derive["app.monitoring.drift<br/>écart prévu / réalisé"]
+    reading -- "réalisé" --> derive
+    derive -- "INSERT" --> rapport[("drift_report")]
+    rapport -- "lecture seule" --> monitoring["GET /api/v1/monitoring/drift"]
 ```
 
 **La règle, en une phrase : FastAPI ne fait jamais tourner LightGBM.**
@@ -163,8 +178,12 @@ flowchart LR
 Le corollaire est qu'il n'y a **aucune prévision à la demande** : la fraîcheur d'une prévision est
 celle du dernier run de scoring. Ce run est ordonnancé par Airflow, DAG `ml_score` en `@hourly`
 (issue #115) ; seuls le mode `--csv` et un lancement local restent manuels, tout comme
-l'entraînement, dont le DAG `ml_train` n'a pas de planification. La dette qui subsiste est la
-surveillance de dérive, portée par les issues #44 et #45.
+l'entraînement, dont le DAG `ml_train` n'a pas de planification.
+
+La surveillance de dérive traverse cette frontière **dans le sens de la table vers le backend**,
+sans la percer : elle relit `prediction` et `reading` en SQL, ne charge aucun modèle, et n'appelle
+pas MLflow. Son calcul, son seuil et son refus de comparer à la métrique d'entraînement sont dans
+l'[ADR 0013](adr/0013-surveillance-de-derive-dans-le-backend.md).
 
 ---
 
@@ -175,3 +194,4 @@ surveillance de dérive, portée par les issues #44 et #45.
 - [ADR 0006](adr/0006-moteur-de-regles-dans-le-backend.md) : ce qui consomme les prédictions
 - [`architecture/20-backend.md`](architecture/20-backend.md) : le contrat de `GET /predictions`
 - [`architecture/40-data.md`](architecture/40-data.md) : le modèle de données
+- [ADR 0013](adr/0013-surveillance-de-derive-dans-le-backend.md) : la surveillance de dérive
