@@ -9,7 +9,7 @@ Terminaison TLS et routage de la stack déployée. Seul composant publié sur le
 - `tls/` : les deux fichiers que nginx lit, `fullchain.pem` et `privkey.pem`. Ignorés par git.
 - `acme-deploy-hook.sh` : recopie le résultat de certbot dans `tls/`.
 
-Pas de `Dockerfile` : l'image officielle `nginx:1.28-alpine` est utilisée telle quelle et la
+Pas de `Dockerfile` : l'image officielle `nginx:1.31-alpine` est utilisée telle quelle et la
 configuration est montée en volume par `docker-compose.prod.yml`.
 
 L'overlay emploie les marqueurs `!override` et `!reset`, qui demandent **Docker Compose 2.24.4
@@ -88,7 +88,7 @@ docker run --rm \
   -v "$PWD/infra/proxy/nginx.conf:/etc/nginx/nginx.conf:ro" \
   -v "$PWD/infra/proxy/conf.d:/etc/nginx/conf.d:ro" \
   -v "$PWD/infra/proxy/tls:/etc/nginx/tls:ro" \
-  nginx:1.28-alpine nginx -t
+  nginx:1.31-alpine nginx -t
 ```
 
 Monter `infra/proxy/` entier sur `/etc/nginx` échouerait : `mime.types` vient de l'image.

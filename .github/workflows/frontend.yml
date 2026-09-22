@@ -17,10 +17,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
 
@@ -33,10 +33,10 @@ jobs:
     name: Audit des dépendances
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
       # Seuil high : une vulnérabilité moderate de devDependency ne doit pas bloquer une livraison.
       - run: npm audit --audit-level=high --package-lock-only
         working-directory: apps/frontend
@@ -45,10 +45,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
       - name : Installation des dépendances (Front)
@@ -58,7 +58,7 @@ jobs:
         run: npm test --watch=false --code-coverage --coverageReporters=lcov
         working-directory: apps/frontend
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage
           path: apps/frontend/coverage/frontend/lcov.info
