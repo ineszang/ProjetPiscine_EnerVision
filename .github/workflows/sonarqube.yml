@@ -143,6 +143,9 @@ jobs:
   sonarqube:
     needs: [build-front, build-back, test-front, test-back, test-ml]
     name: SonarQube
+    # Pourquoi : GitHub ne fournit pas les secrets aux workflows lancés par dependabot[bot].
+    # Sans SONAR_TOKEN le scan échoue sans rien analyser ; build et tests restent joués.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
