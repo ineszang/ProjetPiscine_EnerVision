@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
 
@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
       # Seuil high : une vulnérabilité moderate de devDependency ne doit pas bloquer une livraison.
       - run: npm audit --audit-level=high --package-lock-only
         working-directory: apps/frontend
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
       - name : Installation des dépendances (Front)

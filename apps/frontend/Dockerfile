@@ -3,7 +3,7 @@
 # ==================
 
 # Image pour frontend
-FROM node:24-alpine3.22 AS builder
+FROM node:26-alpine3.22 AS builder
 
 WORKDIR /app
 
