@@ -21,7 +21,7 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Domaine    | Technologie                         | Emplacement         | Etat          |
 |------------|-------------------------------------|---------------------|---------------|
 | Backend    | FastAPI, Python 3.14                | `apps/backend`      | En place    |
-| Frontend   | Angular 22, Node 24 LTS             | `apps/frontend`     | En place |
+| Frontend   | Angular 22, Node 26                 | `apps/frontend`     | En place |
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | En place    |
 | ETL        | Apache Airflow                      | `etl/airflow`       | Trois DAGs    |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
