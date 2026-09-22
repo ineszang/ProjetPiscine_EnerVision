@@ -94,8 +94,9 @@ et frontend en rechargement a chaud sur le poste.
 | Mailpit | <http://localhost:8025> |
 
 Le `.env` doit porter les cles Airflow avant le premier `make dev` : `AIRFLOW_FERNET_KEY`,
-`AIRFLOW_WEBSERVER_SECRET_KEY`, `AIRFLOW_APP_SECRET_KEY` et `AIRFLOW_ADMIN_PASSWORD`. Sans elles
-`airflow-init` refuse de demarrer, et `airflow-webserver` comme `airflow-scheduler` avec lui.
+`AIRFLOW_API_SECRET_KEY`, `AIRFLOW_JWT_SECRET`, `AIRFLOW_APP_SECRET_KEY` et
+`AIRFLOW_ADMIN_PASSWORD`. Sans elles `airflow-init` refuse de demarrer, et `airflow-apiserver`,
+`airflow-scheduler` et `airflow-dag-processor` avec lui.
 
 Les cibles d'origine restent disponibles pour ne demarrer qu'une partie : `make db-up`,
 `make airflow-up`, `make dev-backend`, `make dev-frontend`.

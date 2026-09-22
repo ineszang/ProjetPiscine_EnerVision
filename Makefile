@@ -67,7 +67,7 @@ services-up: ## Démarre les services conteneurisés dont `make dev` dépend (ba
 	docker compose up -d db mailpit
 	@$(MAKE) --no-print-directory db-wait
 	@$(MAKE) --no-print-directory db-ensure-airflow
-	docker compose up -d airflow-init airflow-webserver airflow-scheduler
+	docker compose up -d airflow-init airflow-apiserver airflow-scheduler airflow-dag-processor
 
 dev-backend: ## Lance l'API seule en rechargement à chaud
 	@echo "backend  -> http://localhost:8000 (docs sur /docs)"

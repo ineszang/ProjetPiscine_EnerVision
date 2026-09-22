@@ -52,6 +52,7 @@ jobs:
           done
           echo "L'API ne répond pas après 3 minutes" >&2
           cd "/srv/enervision/${ENVIRONNEMENT}"
-          docker compose ps
-          docker compose logs --tail=50 backend proxy
+          compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+          $compose ps
+          $compose logs --tail=50 backend proxy
           exit 1
