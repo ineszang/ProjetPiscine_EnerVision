@@ -47,13 +47,15 @@ preparer() {
     fi
 
     if [[ ! -f "$dossier/.env" ]]; then
+        local brouillon="$dossier/.env.brouillon" oubliees
         sed -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(secret)|" \
             -e "s|^POSTGRES_PORT=.*|POSTGRES_PORT=$port_pg|" \
             -e "s|^APP_SECRET_KEY=.*|APP_SECRET_KEY=$(secret)|" \
             -e "s|^MAILPIT_UI_PORT=.*|MAILPIT_UI_PORT=$port_mailpit|" \
             -e "s|^AIRFLOW_PORT=.*|AIRFLOW_PORT=$port_airflow|" \
             -e "s|^AIRFLOW_FERNET_KEY=.*|AIRFLOW_FERNET_KEY=$(fernet)|" \
-            -e "s|^AIRFLOW_WEBSERVER_SECRET_KEY=.*|AIRFLOW_WEBSERVER_SECRET_KEY=$(secret)|" \
+            -e "s|^AIRFLOW_API_SECRET_KEY=.*|AIRFLOW_API_SECRET_KEY=$(secret)|" \
+            -e "s|^AIRFLOW_JWT_SECRET=.*|AIRFLOW_JWT_SECRET=$(secret)|" \
             -e "s|^AIRFLOW_ADMIN_PASSWORD=.*|AIRFLOW_ADMIN_PASSWORD=$(secret | cut -c1-20)|" \
             -e "s|^AIRFLOW_APP_SECRET_KEY=.*|AIRFLOW_APP_SECRET_KEY=$(secret)|" \
             -e "s|^PUBLIC_HOST=.*|PUBLIC_HOST=$hote|" \
@@ -61,13 +63,21 @@ preparer() {
             -e "s|^COMPOSE_PROJECT_NAME=.*|COMPOSE_PROJECT_NAME=enervision-$env|" \
             -e "s|^PROXY_HTTP_PORT=.*|PROXY_HTTP_PORT=$port_http|" \
             -e "s|^PROXY_HTTPS_PORT=.*|PROXY_HTTPS_PORT=$port_https|" \
-            "$dossier/.env.example" > "$dossier/.env"
+            "$dossier/.env.example" > "$brouillon"
         # Branche antérieure à l'ADR 0009 : ces clés manquent alors dans .env.example.
         for cle in "COMPOSE_PROJECT_NAME=enervision-$env" "PUBLIC_ORIGIN=$origine" \
                    "PROXY_HTTP_PORT=$port_http" "PROXY_HTTPS_PORT=$port_https"; do
-            grep -q "^${cle%%=*}=" "$dossier/.env" || echo "$cle" >> "$dossier/.env"
+            grep -q "^${cle%%=*}=" "$brouillon" || echo "$cle" >> "$brouillon"
         done
-        chmod 600 "$dossier/.env"
+        # Piège : une clé renommée en amont garde sa valeur d'exemple, que le `:?` du compose ne
+        # voit pas puisqu'elle n'est pas vide. Cas vécu : AIRFLOW_WEBSERVER_SECRET_KEY, Airflow 3.
+        oubliees="$(grep '=change_me$' "$brouillon" | grep -v '^APP_MOCK_API_' | cut -d= -f1 | tr '\n' ' ' || true)"
+        if [[ -n "$oubliees" ]]; then
+            rm -f "$brouillon"
+            erreur "$env : secrets non générés, .env non écrit : $oubliees"
+        fi
+        chmod 600 "$brouillon"
+        mv "$brouillon" "$dossier/.env"
         echo "$env : .env généré. Reste à renseigner APP_MOCK_API_USERNAME et APP_MOCK_API_PASSWORD."
     fi
 
