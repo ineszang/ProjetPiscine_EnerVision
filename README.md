@@ -23,7 +23,7 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Backend    | FastAPI, Python 3.14                | `apps/backend`      | En place    |
 | Frontend   | Angular 22, Node 26                 | `apps/frontend`     | En place |
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | En place    |
-| ETL        | Apache Airflow                      | `etl/airflow`       | Quatre DAGs   |
+| ETL        | Apache Airflow                      | `etl/airflow`       | Cinq DAGs     |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
 | Reverse proxy | Nginx, TLS                       | `infra/proxy`       | En place      |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | En place |

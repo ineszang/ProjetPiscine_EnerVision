@@ -663,14 +663,16 @@ mock_api_import.py
 
 La logique d'extraction, de transformation et de chargement est donc disponible pour les deux sources de données du MVP.
 
-Airflow tourne désormais réellement (`etl/airflow/`, `make airflow-up`) et orchestre le pipeline
-ML (`ml_train`/`ml_score`, issue #115), la détection d'alertes et la génération des
-recommandations (`alertes`, issue #116), ainsi que l'import historique
-(`historical_import`, issue #119).
+Airflow tourne désormais réellement (`etl/airflow/`, `make airflow-up`) et orchestre cinq DAGs :
+le pipeline ML (`ml_train` et `ml_score`, issue #115), la détection d'alertes et la génération
+des recommandations (`alertes`, issue #116), l'import historique (`historical_import`,
+issue #119) et l'import périodique de l'API Mock (`mock_api_import`, issue #15).
 
-Le DAG `historical_import` est déclenché manuellement. Il exécute
-`app.etl.historical_import` avec les fichiers montés en lecture seule depuis `data/raw` vers
-`/opt/data/raw`.
+Le DAG `mock_api_import` s'exécute chaque heure, à la minute `:45`. Il appelle
+`app.etl.mock_api_import` avec un intervalle explicite d'une heure et une limite de 1 000 lectures
+par site. Les deux pipelines normalisent leurs données vers les tables communes `site` et
+`reading`, tout en conservant leur source (`csv` ou `api_history`). La réconciliation globale
+des deux sources reste à compléter dans l'issue #15.
 
 Le DAG `mock_api_import` exécute `app.etl.mock_api_import` toutes les heures. Chaque exécution
 traite l'intervalle Airflow précédent. Les deux pipelines normalisent leurs données vers les

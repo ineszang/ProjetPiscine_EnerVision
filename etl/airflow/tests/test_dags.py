@@ -1,12 +1,13 @@
 """Tests d'integrite des DAGs : s'importent sans erreur, structure attendue. Pas d'execution
 reelle des taches (ca reclamerait le conteneur avec `uv`/`enervision_ml`), juste la definition."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 from airflow.dag_processing.dagbag import DagBag
 from airflow.sdk import BaseOperator
+from airflow.timetables.trigger import CronTriggerTimetable
 
 DAGS_FOLDER = Path(__file__).resolve().parent.parent / "dags"
 
@@ -59,8 +60,17 @@ def test_historical_import_has_no_schedule(dagbag: DagBag) -> None:
     assert dagbag.dags["historical_import"].schedule is None
 
 
-def test_mock_api_import_runs_every_hour(dagbag: DagBag) -> None:
-    assert dagbag.dags["mock_api_import"].timetable.expression == "0 * * * *"
+def test_mock_api_import_uses_an_explicit_hourly_interval(dagbag: DagBag) -> None:
+    timetable = dagbag.dags["mock_api_import"].timetable
+
+    assert isinstance(timetable, CronTriggerTimetable)
+    assert timetable.serialize()["expression"] == "45 * * * *"
+
+    manual_interval = timetable.infer_manual_data_interval(
+        run_after=datetime.fromisoformat("2026-09-22T12:30:00+00:00"),
+    )
+
+    assert manual_interval.end - manual_interval.start == timedelta(hours=1)
 
 
 def test_ml_train_task_calls_the_training_module(dagbag: DagBag) -> None:
@@ -104,9 +114,9 @@ def test_mock_api_import_calls_the_existing_backend_module(dagbag: DagBag) -> No
 def test_mock_api_import_uses_the_airflow_data_interval(dagbag: DagBag) -> None:
     commande = dagbag.dags["mock_api_import"].get_task("import_mock_api").bash_command
 
-    assert '--start-time "{{ data_interval_start.isoformat() }}"' in commande
-    assert '--end-time "{{ data_interval_end.isoformat() }}"' in commande
-    assert "--limit 60" in commande
+    assert "--start-time \"{{ data_interval_start.strftime('%Y-%m-%dT%H:%M:%S') }}\"" in commande
+    assert "--end-time \"{{ data_interval_end.strftime('%Y-%m-%dT%H:%M:%S') }}\"" in commande
+    assert "--limit 1000" in commande
 
 
 @pytest.mark.parametrize("task_id", ["detection", "recommandations"])

@@ -87,17 +87,23 @@ l'[ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md).
 | `ml_score` | `0 * * * *` | `enervision_ml.score`, dans `/opt/ml/.venv` |
 | `alertes` | `15 * * * *` | `app.detection.internal_alerts` puis `app.cli generate-recommendations`, dans `/opt/backend/.venv` |
 | `historical_import` | manuelle | `app.etl.historical_import`, dans `/opt/backend/.venv` ; les fichiers de `data/raw` sont montés en lecture seule dans `/opt/data/raw` |
-| `mock_api_import` | `0 * * * *` | `app.etl.mock_api_import`, dans `/opt/backend/.venv` ; importe l'intervalle horaire Airflow précédent depuis l'API Mock |
+| `mock_api_import` | `45 * * * *` | `app.etl.mock_api_import`, dans `/opt/backend/.venv` ; importe l'heure précédant son déclenchement depuis l'API Mock |
 
 Le DAG `historical_import` réutilise le pipeline historique existant sans dupliquer sa logique.
 Il reste manuel, car le dataset sert à initialiser l'environnement. Le montage
 `./data/raw:/opt/data/raw:ro` permet au scheduler de lire les fichiers CSV/JSON sans pouvoir les
 modifier.
 
-Le DAG `mock_api_import` exécute le pipeline API Mock toutes les heures. Il transmet
-`data_interval_start` et `data_interval_end` au script backend et charge les mesures dans les
-mêmes tables `site` et `reading` que le pipeline historique. `max_active_runs=1` empêche deux
-intervalles de s'exécuter simultanément.
+Le DAG `mock_api_import` exécute le pipeline API Mock toutes les heures, à la minute `:45`.
+Un `CronTriggerTimetable` explicite lui attribue un intervalle d'une heure, y compris lors d'un
+déclenchement manuel. Il transmet cet intervalle au script backend et charge les mesures dans
+les tables communes `site` et `reading`. Le décalage à `:45` laisse quinze minutes avant le
+scoring exécuté à l'heure pile, puis quinze minutes supplémentaires avant les alertes à `:15`.
+`max_active_runs=1` empêche deux exécutions du DAG de se chevaucher.
+
+Le DAG conserve `catchup=False` pour éviter un rattrapage massif depuis sa date de démarrage.
+Une interruption du scheduler peut donc créer un intervalle manquant, qui devra être rejoué
+explicitement par une opération de backfill.
 
 **Pourquoi `alertes` tourne à la quinzième minute.** Sa règle `anomaly` compare une lecture à la
 `prediction` du même instant, que `ml_score` écrit à l'heure pile. Le décalage laisse le scoring

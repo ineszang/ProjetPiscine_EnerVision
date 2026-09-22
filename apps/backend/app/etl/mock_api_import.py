@@ -45,15 +45,19 @@ CAPACITY_BOUNDS = (0.0, 100_000.0)
 def create_mock_api_client() -> httpx.AsyncClient:
     settings = get_settings()
 
-    if settings.mock_api_username is None or settings.mock_api_password is None:
+    username = settings.mock_api_username
+    password = (
+        settings.mock_api_password.get_secret_value()
+        if settings.mock_api_password is not None
+        else None
+    )
+
+    if not username or not username.strip() or not password or not password.strip():
         raise ValueError("Les identifiants de l'API Mock ne sont pas configurés.")
 
     return httpx.AsyncClient(
         base_url=settings.mock_api_base_url.rstrip("/"),
-        auth=(
-            settings.mock_api_username,
-            settings.mock_api_password.get_secret_value(),
-        ),
+        auth=(username, password),
         timeout=settings.mock_api_timeout_seconds,
     )
 

@@ -74,6 +74,7 @@ Le lien `airflow --> db` est maintenant en trait plein : cinq DAGs tournent, deu
 l'entraînement et le scoring du modèle ML (issue #115), un pour la détection d'alertes et la
 génération des recommandations (issue #116), `historical_import` pour le dataset historique
 (issue #119) et `mock_api_import` pour l'ingestion horaire de l'API Mock (issue #15).
+La réconciliation globale des données provenant des deux sources reste à compléter dans l'issue #15.
 
 Le lien `prom -.-> api` de même : l'API expose bien `/metrics` au format Prometheus, mais aucun
 collecteur ne vient le lire.
@@ -88,15 +89,16 @@ collecteur ne vient le lire.
 | ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`, orchestré par Airflow (`ml_train`/`ml_score`). Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../ML-START.md). Surveillance de dérive (EC06, #44/#45) pas encore construite |
 | Infra | Docker Compose, Nginx, Terraform, k3s single-node | `infra`, `docker-compose.prod.yml` | `En cours` | Reverse proxy et overlay de déploiement écrits et validés, jamais lancés sur le serveur ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)). Provisionnement de la VM par Terraform, qui installe Docker, prépare les deux environnements et enregistre le runner, jamais appliqué ([ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md)). Module d'installation k3s jamais appliqué, aucune ressource Kubernetes déclarée |
 | Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Cible` | Rien, hors le `/metrics` exposé par l'API |
-| ETL | Apache Airflow | `etl/airflow` | `En cours` | Webserver + scheduler (LocalExecutor) tournent via docker-compose, base de métadonnées Postgres dédiée. Quatre DAGs en sous-processus `uv run` : `ml_train`, `ml_score`, `alertes` et `historical_import`. Le DAG historique orchestre `app.etl.historical_import` et charge `dataset`, `site` et `reading`. L'orchestration API Mock reste à compléter dans #15 |
+| ETL | Apache Airflow | `etl/airflow` | `En cours` | Webserver et scheduler avec LocalExecutor via Docker Compose, sur une base PostgreSQL dédiée. Cinq DAGs sont présents : `ml_train`, `ml_score`, `alertes`, `historical_import` et `mock_api_import`. L'import historique reste manuel et l'import API Mock est exécuté chaque heure. La réconciliation globale des deux sources reste à compléter dans l'issue #15. |
 | CI/CD | GitHub Actions | `.github/workflows` | `En cours` | 7 workflows, 19 jobs : lint, typage, tests avec seuil de couverture bloquant, tests d'intégration sur TimescaleDB réel, audit de dépendances, SAST Bandit, quality gate SonarCloud, intégrité des DAGs Airflow, formatage et validation du Terraform. Déploiement continu vers la VM ENI écrit par `deploy.yml`, `dev` en recette et `main` en production après approbation ([ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)), mais jamais exécuté : la machine n'est pas provisionnée et le runner n'y est pas enregistré. Détail dans [50-cicd.md](50-cicd.md) |
 
 ## Flux bout en bout
 
-Statut : `En cours`. **Le chemin de lecture tourne** : base, API et frontend. **Le chemin
-d'ingestion dessiné ci-dessous n'existe pas** : les trois DAGs livrés (`ml_train`, `ml_score`,
-issue #115 ; `alertes`, issue #116) orchestrent le pipeline ML et la détection d'alertes, pas
-l'ingestion, qui reste lancée à la main par les scripts d'import (issues #15 et #16).
+Statut : `En cours`. **Le chemin de lecture tourne** entre la base, l'API et le frontend.
+**Le chemin d'ingestion est maintenant orchestré par Airflow** : `historical_import` charge
+manuellement le dataset CSV/JSON et `mock_api_import` collecte périodiquement les mesures de
+l'API Mock. La réconciliation globale des données provenant des deux sources reste à compléter
+dans l'issue #15.
 
 ```mermaid
 sequenceDiagram

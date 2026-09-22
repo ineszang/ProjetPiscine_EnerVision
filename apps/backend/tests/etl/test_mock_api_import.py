@@ -283,6 +283,41 @@ def test_create_mock_api_client_requires_credentials(
         mock_api_import.create_mock_api_client()
 
 
+@pytest.mark.parametrize(
+    ("username", "password_value"),
+    [
+        ("", "test-password"),
+        ("test-user", ""),
+        ("   ", "test-password"),
+        ("test-user", "   "),
+    ],
+)
+def test_create_mock_api_client_rejects_empty_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    username: str,
+    password_value: str,
+) -> None:
+    password = MagicMock()
+    password.get_secret_value.return_value = password_value
+
+    settings = SimpleNamespace(
+        mock_api_username=username,
+        mock_api_password=password,
+    )
+
+    monkeypatch.setattr(
+        mock_api_import,
+        "get_settings",
+        lambda: settings,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Les identifiants de l'API Mock ne sont pas configurés",
+    ):
+        mock_api_import.create_mock_api_client()
+
+
 async def test_create_mock_api_client_uses_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

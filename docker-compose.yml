@@ -42,11 +42,6 @@ x-airflow-common: &airflow-common
     # vérifient aucun jeton. Airflow permet d'exécuter du code depuis son interface (ADR 0008).
     APP_SECRET_KEY: ${AIRFLOW_APP_SECRET_KEY:-}
 
-    # Configuration utilisée par `app.etl.mock_api_import` dans le scheduler Airflow.
-    APP_MOCK_API_BASE_URL: ${APP_MOCK_API_BASE_URL:-https://api-mock.charlieandre.fr}
-    APP_MOCK_API_USERNAME: ${APP_MOCK_API_USERNAME:-}
-    APP_MOCK_API_PASSWORD: ${APP_MOCK_API_PASSWORD:-}
-    APP_MOCK_API_TIMEOUT_SECONDS: ${APP_MOCK_API_TIMEOUT_SECONDS:-10}
   volumes:
     - ./etl/airflow/dags:/opt/airflow/dags
     - ./etl/airflow/plugins:/opt/airflow/plugins
@@ -174,6 +169,14 @@ services:
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
+    environment:
+      <<: *airflow-common-env
+      # LocalExecutor exécute les tâches dans le scheduler : lui seul a besoin des
+      # identifiants de l'API Mock.
+      APP_MOCK_API_BASE_URL: ${APP_MOCK_API_BASE_URL:-https://api-mock.charlieandre.fr}
+      APP_MOCK_API_USERNAME: ${APP_MOCK_API_USERNAME:-}
+      APP_MOCK_API_PASSWORD: ${APP_MOCK_API_PASSWORD:-}
+      APP_MOCK_API_TIMEOUT_SECONDS: ${APP_MOCK_API_TIMEOUT_SECONDS:-10}
     depends_on:
       db:
         condition: service_healthy
