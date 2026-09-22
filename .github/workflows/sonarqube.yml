@@ -152,17 +152,17 @@ jobs:
         with:
           fetch-depth: 0
       - name: Téléchargement du rapport de couverture (Front)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-coverage
           path: apps/frontend/coverage/frontend
       - name: Téléchargement du rapport de couverture (Back)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: backend-coverage
           path: apps/backend
       - name: Téléchargement du rapport de couverture (ML)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ml-coverage
           path: ml
