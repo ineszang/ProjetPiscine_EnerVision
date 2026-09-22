@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installe uv
         uses: astral-sh/setup-uv@v5
@@ -67,7 +67,7 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Pourquoi : pas de cache ici. uvx n'installe pas le projet, le verrou n'alimente donc
       # aucune clé de cache ; la seule roue téléchargée est celle de Bandit.
