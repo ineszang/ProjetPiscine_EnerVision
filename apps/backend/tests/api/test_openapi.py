@@ -104,8 +104,8 @@ def test_the_rate_limit_documents_the_delay_header(schema: dict[str, Any]) -> No
 def test_the_refresh_cookie_appears_in_the_security_schemes(schema: dict[str, Any]) -> None:
     schemes = schema["components"]["securitySchemes"]
 
-    assert schemes["Cookie de rafraîchissement"]["in"] == "cookie"
-    assert schemes["Cookie de rafraîchissement"]["name"] == "ev_refresh"
+    assert schemes["CookieRafraichissement"]["in"] == "cookie"
+    assert schemes["CookieRafraichissement"]["name"] == "ev_refresh"
 
 
 def test_each_tag_used_by_a_route_is_described(schema: dict[str, Any]) -> None:

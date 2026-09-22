@@ -1,0 +1,325 @@
+name: DAST
+
+# Scan dynamique OWASP ZAP de l'API (issue #41). Il attaque une API qui tourne : le job démarre
+# la base et le backend sur le runner, sème un site et quelques relevés (sans ça le scan ne
+# frappe que des gestionnaires d'erreur), crée un compte `lecteur` jetable
+# (scripts/dast-token.sh), puis lance ZAP sur le contrat OpenAPI avec le jeton de ce compte.
+#
+# Non bloquant pour l'instant sur les alertes (`continue-on-error` sur la seule étape du scan) :
+# le volume d'un premier passage trié est inconnu. Deux étapes suivantes, elles, bloquent si le
+# scan n'a rien testé (import du contrat, absence de toute réponse de succès) : un job vert doit
+# vouloir dire qu'un scan a eu lieu.
+#
+# Piège : ce scan tape la configuration par défaut du backend (`APP_ENV=local`, pas de TLS, pas
+# de reverse proxy). Il ne dit rien des en-têtes ni du TLS posés par le proxy en production, et
+# remontera des alertes (HSTS absent...) qui n'existent pas derrière lui.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Un scan actif est long : hebdomadaire plutôt qu'à chaque PR.
+    - cron: "0 3 * * 1"
+  pull_request:
+    # Ne se lance sur une PR que si le scan lui-même change.
+    paths:
+      - ".github/workflows/dast.yml"
+      - "scripts/dast-token.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap:
+    name: Scan OWASP ZAP de l'API
+    runs-on: ubuntu-latest
+    # Généreux face aux ~2 minutes observées de bout en bout : le vrai plafond est
+    # `scanner.maxScanDurationInMins` (étape Scan ZAP), sous le TTL du jeton. Une annulation par
+    # ce timeout-ci n'exécute pas les étapes `always()` : mieux vaut ne jamais l'atteindre.
+    timeout-minutes: 30
+
+    # Même image que docker-compose.yml : la première migration refuse de s'appliquer sans
+    # l'extension TimescaleDB (cf. backend.yml).
+    services:
+      db:
+        image: timescale/timescaledb-ha:pg17
+        env:
+          POSTGRES_USER: enervision
+          POSTGRES_PASSWORD: change_me
+          POSTGRES_DB: enervision_dast
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U enervision -d enervision_dast"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 40s
+
+    env:
+      # Base jetable : ZAP y écrira et le script y crée deux comptes.
+      DATABASE_URL: postgresql+asyncpg://enervision:change_me@localhost:5433/enervision_dast
+      APP_SECRET_KEY: secret-de-scan-assez-long-pour-le-validateur
+      APP_ENV: local
+      # Le jeton du lecteur doit survivre à toute la durée du scan (15 minutes par défaut).
+      # 3600 est le plafond accepté par la configuration ; `scanner.maxScanDurationInMins`
+      # (étape Scan ZAP) reste très en dessous, marge comprise pour les étapes qui l'entourent.
+      APP_ACCESS_TOKEN_TTL_SECONDS: "3600"
+      PGPASSWORD: change_me
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installe uv
+        # Épinglé sur le commit du tag v7 (règle Sonar githubactions:S7637 : dépendance tierce,
+        # contrairement à actions/checkout ou actions/upload-artifact, premières parties).
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/backend/uv.lock
+          # `prune-cache` vaut `true` par défaut (encore sur ce commit) : l'étape de post-job
+          # « Pruning cache » est restée bloquée 5 minutes avant d'échouer (exit code 2) sur un
+          # run où les 16 étapes précédentes passaient, sans lien avec le scan. Le prune n'est
+          # qu'une optimisation de taille de cache entre deux runs, pas une garantie : le
+          # désactiver retire le blocage sans rien changer au comportement du job.
+          prune-cache: false
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        run: uv python install
+        working-directory: apps/backend
+
+      # `--no-build` : aucune dépendance n'est construite depuis ses sources, donc aucun script de
+      # build exécuté (règle Sonar S8541). Le projet lui-même n'est pas installé : il tourne depuis
+      # `apps/backend`, comme dans son Dockerfile. Les `uv run` suivants portent `--frozen
+      # --no-sync` pour ne rien résoudre ni reconstruire (règle S8544).
+      - name: Synchronise les dépendances sans dévier du verrou
+        run: uv sync --frozen --no-dev --no-install-project --no-build
+        working-directory: apps/backend
+
+      - name: Active TimescaleDB sur la base du scan
+        run: psql -h localhost -p 5433 -U enervision -d enervision_dast -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
+
+      - name: Applique les migrations
+        run: uv run --frozen --no-sync --no-build alembic upgrade head
+        working-directory: apps/backend
+
+      # Sans données, `GET /sites` rend `[]`, chaque `/{site_id}` rend 404 et le scan actif ne
+      # frappe que des gestionnaires d'erreur plutôt que la logique métier. `db/seeds/` est vide
+      # (pas encore d'outillage de jeu de données pour la CI) : un site et deux relevés à la main,
+      # juste assez pour que les routes de lecture aient quelque chose à rendre.
+      - name: Insère un site et des relevés minimaux pour le scan
+        run: |
+          psql -h localhost -p 5433 -U enervision -d enervision_dast <<'SQL'
+          INSERT INTO site (site_id, site_name, site_type, location, capacity_kw, status)
+          VALUES ('dast-site', 'Site du scan DAST', 'bureau', 'CI', 50, 'actif')
+          ON CONFLICT (site_id) DO NOTHING;
+
+          INSERT INTO reading (site_id, timestamp, source, consumption_kw, consumption_kwh, is_working_hours, data_quality, raw_data)
+          VALUES
+            ('dast-site', now() - interval '2 hours', 'api_current', 12.5, 12.5, true, 'good', '{}'),
+            ('dast-site', now() - interval '1 hour',  'api_current', 13.0, 13.0, true, 'good', '{}')
+          ON CONFLICT DO NOTHING;
+          SQL
+
+      - name: Démarre l'API
+        run: |
+          nohup uv run --frozen --no-sync --no-build uvicorn app.main:create_app --factory \
+            --host 0.0.0.0 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:8000/api/v1/health/ready >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "L'API ne répond pas sur /health/ready" >&2
+          cat "$RUNNER_TEMP/api.log" >&2
+          exit 1
+        working-directory: apps/backend
+
+      - name: Crée le compte lecteur du scan
+        id: jeton
+        run: |
+          jeton="$(../../scripts/dast-token.sh)"
+          echo "::add-mask::$jeton"
+          echo "jeton=$jeton" >> "$GITHUB_OUTPUT"
+        working-directory: apps/backend
+
+      # Étape distincte du scan lui-même, et sans `continue-on-error` : un `curl` qui échoue ici
+      # (API tombée juste après la sonde de readiness, par exemple) doit rester un échec visible,
+      # pas se travestir en « ZAP n'a importé aucune URL » à l'étape de garde suivante.
+      - name: Prépare le contrat pour ZAP
+        run: |
+          mkdir -p zap-out zap-logs
+          curl -fsS http://localhost:8000/openapi.json -o zap-out/openapi.json
+          # Le dossier passe à l'uid 1000 (utilisateur du conteneur ZAP) : le runner n'y écrit
+          # plus après ce chown, d'où `zap-logs/` (uid du runner) pour les journaux ci-dessous.
+          # Pas de `chmod 777` (règle Sonar S2612).
+          sudo chown -R 1000:1000 zap-out
+
+      # `--network host` : ZAP atteint l'API sur le localhost du runner.
+      #
+      # Piège vécu : la clé du nom d'en-tête est `matchstr`, pas `matchstring`. ZAP accepte
+      # n'importe quelle clé `-config` sans erreur ; avec la mauvaise, il ajoutait à TOUTES les
+      # requêtes un en-tête au nom vide (`: Bearer <jeton>`), qu'uvicorn refuse par un 400
+      # (« Invalid HTTP request received »), y compris sur les routes publiques.
+      #
+      # Le jeton ne passe ni par `${{ }}` dans ce script (il finirait en clair dans le fichier de
+      # commande que GitHub écrit sur le disque du runner pour toute la durée de l'étape), ni par
+      # l'argv de `docker run` (visible par `ps aux` et par `docker inspect zap` tant que le
+      # conteneur existe) : il est écrit dans un fichier de configuration ZAP séparé, monté en
+      # lecture seule hors de `/zap/wrk` pour ne jamais atterrir dans l'artefact publié.
+      #
+      # Les routes d'authentification qui changent l'état du compte du scan sont exclues : un
+      # scan actif y déclencherait la limitation de débit du login, la réinitialisation de mots de
+      # passe et la fermeture des sessions, sans rien apprendre de plus.
+      #
+      # `scanner.maxScanDurationInMins`/`maxRuleDurationInMins` bornent le scan actif, que `-T` ne
+      # couvre pas (il ne borne que le démarrage et le scan passif) : sans ça, une règle qui
+      # traîne peut dépasser le TTL du jeton (401 muets en fin de scan) ou le timeout du job (qui
+      # annule sans exécuter les étapes `always()`, rapport et journaux perdus).
+      - name: Scan ZAP
+        id: zap
+        continue-on-error: true
+        env:
+          JETON: ${{ steps.jeton.outputs.jeton }}
+        run: |
+          set -o pipefail
+          printf 'replacer.full_list(0).description=auth\nreplacer.full_list(0).enabled=true\nreplacer.full_list(0).matchtype=REQ_HEADER\nreplacer.full_list(0).matchstr=Authorization\nreplacer.full_list(0).regex=false\nreplacer.full_list(0).replacement=Bearer %s\n' "$JETON" > "$RUNNER_TEMP/zap-auth.conf"
+          # Piège vécu : `chmod 600` seul rend le fichier illisible pour le conteneur, qui lit un
+          # montage bind avec son propre uid (1000), distinct de celui du runner qui l'a écrit.
+          # ZAP échoue alors dès le lancement (« File not readable: /zap/auth.conf »), et
+          # `zap-api-scan.py` attend `-T` minutes complètes avant d'abandonner : dix minutes qui
+          # ressemblent à un scan actif, pour un daemon mort depuis le début.
+          #
+          # Piège vécu (numéro deux) : une fois le fichier passé à l'uid 1000 par `sudo chown`,
+          # l'utilisateur du runner n'en est plus propriétaire et un `chmod` sans `sudo` échoue
+          # (« Operation not permitted »). Avec le `-e` implicite de bash sur les étapes GitHub
+          # Actions, cette erreur arrêtait toute l'étape avant même `docker run` : scan « réussi »
+          # en une fraction de seconde, sans le moindre journal ni rapport produit.
+          sudo chown 1000:1000 "$RUNNER_TEMP/zap-auth.conf"
+          sudo chmod 644 "$RUNNER_TEMP/zap-auth.conf"
+          docker run --name zap --network host \
+            -v "$PWD/zap-out:/zap/wrk:rw" \
+            -v "$RUNNER_TEMP/zap-auth.conf:/zap/auth.conf:ro" \
+            ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py \
+            -t /zap/wrk/openapi.json -f openapi -O http://localhost:8000 \
+            -T 10 \
+            -r zap-report.html -J zap-report.json -w zap-report.md \
+            -z "-configfile /zap/auth.conf \
+                -config globalexcludeurl.url_list.url(0).description=auth-etat \
+                -config globalexcludeurl.url_list.url(0).enabled=true \
+                -config globalexcludeurl.url_list.url(0).regex='.*/api/v1/auth/(login|password|logout-all|forgot-password|reset-password).*' \
+                -config scanner.maxScanDurationInMins=15 \
+                -config scanner.maxRuleDurationInMins=5" \
+            2>&1 | tee "$RUNNER_TEMP/zap-stdout.log"
+
+      - name: Récupère les journaux de ZAP
+        if: always()
+        run: |
+          mkdir -p zap-logs
+          # ZAP journalise la valeur de chaque `-config`/`-configfile` chargé, y compris le jeton,
+          # à un niveau visible sans `-d` : les copies publiées en artefact sont donc caviardées,
+          # même si `::add-mask::` (posé à la création du jeton) protège déjà le journal du job.
+          masque() { sed -E 's/(Bearer )[A-Za-z0-9._-]+/\1[MASQUE]/Ig'; }
+          [ -f "$RUNNER_TEMP/zap-stdout.log" ] && masque < "$RUNNER_TEMP/zap-stdout.log" > zap-logs/zap-stdout.log
+          docker cp zap:/home/zap/.ZAP/zap.log "$RUNNER_TEMP/zap-internal.log" 2>/dev/null || true
+          [ -f "$RUNNER_TEMP/zap-internal.log" ] && masque < "$RUNNER_TEMP/zap-internal.log" > zap-logs/zap.log
+          [ -f "$RUNNER_TEMP/api.log" ] && masque < "$RUNNER_TEMP/api.log" > zap-logs/api.log
+          rm -f "$RUNNER_TEMP/zap-auth.conf"
+          docker rm -f zap >/dev/null 2>&1 || true
+
+      # `continue-on-error` sur le scan ne doit pas faire passer pour vert un scan qui n'a rien
+      # testé. Constaté une première fois : 2 URL importées sur 26 opérations, ZAP n'avait envoyé
+      # que des requêtes vouées au 404. Le seuil est dérivé du contrat plutôt que d'un nombre fixe
+      # : un contrat qui grossit ne doit pas rendre la garde plus permissive qu'elle ne l'était.
+      - name: Vérifie que le contrat a bien été importé
+        run: |
+          attendu="$(python3 -c "
+          import json
+          d = json.load(open('zap-out/openapi.json'))
+          methodes = ('get', 'post', 'put', 'patch', 'delete', 'head', 'options')
+          print(sum(1 for chemin in d['paths'].values() for m in chemin if m in methodes))
+          ")"
+          minimum=$((attendu * 80 / 100))
+          importees="$(sed -n 's/.*Number of Imported URLs: \([0-9]*\).*/\1/p' "$RUNNER_TEMP/zap-stdout.log" | tail -1)"
+          echo "URL importées depuis le contrat OpenAPI : ${importees:-aucune} (contrat : $attendu opérations, minimum accepté : $minimum)"
+          if [ "${importees:-0}" -lt "$minimum" ]; then
+            echo "::error::ZAP n'a importé que ${importees:-0} URL sur $attendu opérations du contrat OpenAPI (minimum attendu : $minimum, soit 80%). Le scan n'a pas testé l'API, voir zap-logs/zap.log dans l'artefact zap-report."
+            exit 1
+          fi
+
+      # Deuxième garde-fou : le contrat peut être importé et ZAP n'obtenir que des erreurs
+      # (constaté : base sans données, toutes les routes de site répondaient 404).
+      #
+      # Piège de conception, trouvé en répétant ce job en local avant de l'écrire ici : borner le
+      # pourcentage de 4xx ne marche pas. Un scan actif fuzze délibérément un grand nombre
+      # d'entrées invalides (identifiants inventés, méthodes non supportées...), donc même un scan
+      # sain, contre l'API seedée juste au-dessus, reste à 98% de 4xx avec seulement 1% de 2xx :
+      # c'est la forme normale d'un scan actif, pas un signe d'échec. Le signal qui distingue
+      # vraiment un scan cassé (0% de 2xx, `insight.code.2xx` absent du rapport dans le premier
+      # incident) d'un scan sain (2xx non nul, aussi faible soit-il) est donc l'absence de succès,
+      # pas la part d'échecs. Dérivé de `zap-report.json` (champ structuré `insights[]`) plutôt
+      # que du texte libre du rapport Markdown, qui aurait le même défaut de conception en plus
+      # d'être fragile au format.
+      - name: Vérifie que le scan a obtenu au moins une réponse de succès
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+
+          try:
+              rapport = json.load(open("zap-out/zap-report.json"))
+          except FileNotFoundError:
+              print("::error::Aucun rapport ZAP produit : le scan n'a rien testé.")
+              sys.exit(1)
+
+          pourcentage_2xx = 0.0
+          for insight in rapport.get("insights", []):
+              if insight.get("key") == "insight.code.2xx":
+                  pourcentage_2xx = float(insight.get("statistic", 0))
+                  break
+
+          print(f"Pourcentage de réponses 2xx : {pourcentage_2xx}%")
+          if pourcentage_2xx <= 0:
+              print(
+                  "::error::Aucune réponse 2xx (succès) reçue : le scan n'a atteint aucune route "
+                  "réelle de l'API. Voir zap-logs/api.log et zap-logs/zap.log dans l'artefact "
+                  "zap-report."
+              )
+              sys.exit(1)
+          PY
+
+      # Uniquement la synthèse (jusqu'à « Alert Detail » exclu) : `$GITHUB_STEP_SUMMARY` est
+      # limité à 1 Mio, et cette étape tourne sous `always()` - son échec ferait échouer le job
+      # après le passage des deux garde-fous, pour une simple raison de mise en forme. Le rapport
+      # complet reste dans l'artefact `zap-report`.
+      - name: Publie le résumé
+        if: always()
+        run: |
+          if [ -f zap-out/zap-report.md ]; then
+            awk '/^## Alert Detail/{exit} {print}' zap-out/zap-report.md >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Rapport complet (HTML/JSON/Markdown) dans l'artefact \`zap-report\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Aucun rapport ZAP produit, voir le journal du job." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Publie les rapports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zap-report
+          path: |
+            zap-out/
+            zap-logs/
+          if-no-files-found: warn
+
+      # Diagnostic de dernier recours : les journaux de l'API sont déjà dans l'artefact
+      # (zap-logs/api.log) via l'étape « Récupère les journaux de ZAP » (always()), mais les
+      # afficher directement dans le journal du job évite d'avoir à le télécharger pour un échec
+      # évident (l'API n'a jamais démarré, par exemple).
+      - name: Journal de l'API en cas d'échec
+        if: failure() || steps.zap.outcome == 'failure'
+        run: cat "$RUNNER_TEMP/api.log" || true

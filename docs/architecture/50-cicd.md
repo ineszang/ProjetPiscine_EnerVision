@@ -68,22 +68,35 @@ flowchart TB
   push --> mv & ms
   push --> av & ab
   push --> it
-  push --> sb1 & sb2 --> sscan
+  push --> sb1 & sb2 & sb3 --> sscan
 
   subgraph cd["Déploiement · deploy.yml"]
     dep["deploy<br/>runner eni-g3, environnement rec ou prod"]
   end
 
   push -->|"push sur dev ou main"| dep
+
+  planifie["chaque lundi 3h UTC,<br/>ou à la main"]
+  subgraph dastw["DAST · dast.yml"]
+    zscan["zap<br/>seed + scan actif OWASP ZAP"]
+  end
+
+  planifie --> zscan
+  push -->|"PR sur dast.yml<br/>ou dast-token.sh"| zscan
 ```
 
 ## Déclenchement
 
-Les six workflows hébergés par GitHub se déclenchent sur `push` **et** sur `pull_request`,
-filtrés par **chemin** : `backend.yml` sur `apps/backend/**`, `frontend.yml` sur
+Les six workflows hébergés par GitHub qui vérifient le code se déclenchent sur `push` **et** sur
+`pull_request`, filtrés par **chemin** : `backend.yml` sur `apps/backend/**`, `frontend.yml` sur
 `apps/frontend/**`, `ml.yml` sur `ml/**`, `infra.yml` sur `infra/terraform/**`, `airflow.yml` sur
 `etl/airflow/**` **plus des chemins de `ml/` et de `apps/backend/`**, chacun incluant son propre
 fichier de workflow dans le filtre pour qu'une modification du pipeline déclenche le pipeline.
+
+`dast.yml` s'en écarte volontairement (détail dans sa propre section plus bas) : aucun
+déclenchement sur `push`, seulement `workflow_dispatch`, une planification hebdomadaire, et
+`pull_request` restreint à ses deux seuls fichiers. Un scan actif est trop long pour tourner à
+chaque commit.
 
 Le filtre d'`airflow.yml` mérite un mot : il inclut `ml/pyproject.toml`, `ml/uv.lock`,
 `ml/enervision_ml/**`, `apps/backend/pyproject.toml`, `apps/backend/uv.lock` et
@@ -108,7 +121,8 @@ environnement.
 
 ## Déploiement
 
-`deploy.yml` est le septième workflow, et le seul qui ne tourne pas chez GitHub : il s'exécute sur
+`deploy.yml` est le huitième workflow (`backend`, `frontend`, `ml`, `infra`, `airflow`,
+`sonarqube`, `dast`, plus lui-même), et le seul qui ne tourne pas chez GitHub : il s'exécute sur
 un runner auto-hébergé installé sur la VM ENI, label `eni-g3`, parce que les runners hébergés ne
 joignent pas une adresse privée d'école. Le runner se connecte en sortie vers GitHub, aucun port
 entrant n'est ouvert.
@@ -254,12 +268,112 @@ Ils ne transitent ni par git ni par GitHub, et le runner, qui travaille dans ce 
 à recevoir. Le revers : ils ne sont sauvegardés nulle part ailleurs. Un `.env` perdu se
 régénère, ce qui invalide les sessions et les connexions chiffrées par Airflow.
 
+## Scan DAST (OWASP ZAP)
+
+Statut : `En cours`. Le workflow `dast.yml` attaque l'API **en fonctionnement**, ce que ni Bandit,
+ni `pip-audit`, ni Sonar ne font. Il se lance à la main (`workflow_dispatch`), chaque lundi à 3h
+UTC, et sur une PR qui modifie le scan lui-même. Pas à chaque PR : un scan actif dure plusieurs
+minutes.
+
+Le job démarre sur le runner la base (même image TimescaleDB que `docker-compose.yml`, base
+jetable), applique les migrations, y sème un site et deux relevés (`db/seeds/` est vide, pas
+encore d'outillage de jeu de données pour la CI ; sans données, `GET /sites` rend `[]`, chaque
+`/{site_id}` rend 404, et le scan actif ne frappe que des gestionnaires d'erreur), démarre le
+backend, puis `scripts/dast-token.sh` crée un compte **`lecteur`** et rend son jeton.
+
+ZAP charge le contrat `/openapi.json` depuis un fichier (`zap-api-scan.py -f openapi -t
+/zap/wrk/openapi.json`) et en importe les 26 opérations **quel que soit le jeton** : c'est le
+contrat qui décide de ce qui est exploré, pas l'authentification. Le jeton ne change que les
+réponses obtenues sur les routes gardées : sans lui, elles répondraient toutes `401` plutôt que
+de dérouler leur logique. Huit routes n'exigent aucun jeton porteur (les deux sondes, `login`,
+`refresh`, `logout`, `forgot-password`, `reset-password` et `reset-password/validate`) et
+répondent donc pareil avec ou sans lui.
+
+Décisions à savoir défendre :
+
+- **Le compte du scan est `lecteur`, jamais `admin`.** Un scan actif avec un jeton admin frapperait
+  `POST /users` et la réinitialisation de mots de passe pour de bon. Le script passe par un admin
+  jetable pour créer le lecteur (l'API n'a pas d'inscription publique) puis ne s'en sert plus.
+- **Un compte neuf est en `must_change_password`**, et toute route gardée le refuse tant que le
+  mot de passe n'est pas changé. Le script fait ce changement et vérifie `GET /sites` = 200 avant
+  de rendre le jeton ; sans cela, tout le scan authentifié ne testerait que des `403`.
+  `POST /auth/password` rend déjà un nouveau jeton valide (l'`iat` tronqué documenté dans
+  `app/api/deps.py` ne le rejette pas comme antérieur à la session) : le script s'en sert
+  directement plutôt que de se reconnecter, deux hachages Argon2id (19456 Kio chacun) et deux
+  allers-retours de refresh-token de moins sur le chemin critique de la CI.
+- **`APP_ACCESS_TOKEN_TTL_SECONDS=3600`** (plafond de la configuration) : le jeton par défaut
+  dure 15 minutes. `scanner.maxScanDurationInMins=15` (ci-dessous) borne le scan actif très en
+  dessous, marge comprise pour les étapes qui l'entourent.
+- **Le jeton ne transite ni par `${{ }}` dans le script de l'étape, ni par l'argv de `docker
+  run`.** Le premier finirait en clair dans le fichier de commande que GitHub écrit sur le disque
+  du runner pour toute la durée de l'étape ; le second serait visible par `ps aux` et par
+  `docker inspect zap` tant que le conteneur existe. Il est écrit dans un fichier de
+  configuration ZAP séparé (`-configfile`), monté en lecture seule hors de `/zap/wrk` pour ne
+  jamais atterrir dans l'artefact publié. ZAP journalise malgré tout la valeur de chaque
+  `-config`/`-configfile` chargé à un niveau visible sans `-d` : les copies de `zap.log` et
+  `zap-stdout.log` publiées en artefact sont donc caviardées avant publication.
+
+**Deux pièges d'autorisation** sur ce fichier de configuration (`zap-auth.conf`), tous les deux
+propres au montage bind Docker : le conteneur y lit avec son propre uid (1000), distinct de celui
+du runner qui l'a écrit, sans remappage automatique.
+
+- Un `chmod 600` seul rend le fichier illisible pour le conteneur (« File not readable :
+  /zap/auth.conf »). ZAP échoue dès le lancement, mais `zap-api-scan.py` attend les `-T` minutes
+  complètes avant d'abandonner : dix minutes qui ressemblent à un scan actif, pour un daemon mort
+  depuis le début. Corrigé par `sudo chown 1000:1000` du fichier avant de le passer à `644`.
+- Ce `chown` déplace la propriété du fichier hors de l'utilisateur du runner : un `chmod` qui
+  suit sans `sudo` échoue alors (« Operation not permitted »), et le `-e` implicite des étapes
+  bash de GitHub Actions arrête toute l'étape avant même `docker run` — un scan « réussi » en une
+  fraction de seconde, sans le moindre journal ni rapport produit. Les deux commandes doivent
+  passer par `sudo`.
+
+Les routes d'authentification qui changent l'état du compte (`login`, `password`, `logout-all`,
+`forgot-password`, `reset-password`) sont exclues du scan actif : elles y déclencheraient la
+limitation de débit et fermeraient les sessions sans rien apprendre de plus.
+
+**Un scan vert n'est pas un scan qui a testé quelque chose.** Deux garde-fous, eux, **bloquent** :
+
+- **Moins de 80% des opérations du contrat importées.** Constaté une première fois : 2 URL sur 26
+  opérations importées, ZAP n'avait envoyé que des requêtes vouées au 404 (l'analyseur de ZAP
+  refusait alors le nom accentué d'un des deux schémas de sécurité du contrat, corrigé depuis en
+  ASCII côté backend). Le seuil est dérivé du contrat (`zap-out/openapi.json`, présent à cette
+  étape) plutôt que d'un nombre fixe : un contrat qui grossit ne doit pas rendre la garde plus
+  permissive qu'elle ne l'était.
+- **Aucune réponse 2xx.** Constaté une deuxième fois, cause différente : la clé de configuration
+  du nom d'en-tête pour la règle Replacer est `matchstr`, pas `matchstring` (celui-ci n'existe que
+  pour le job d'automatisation ZAP, pas pour `-config`) ; ZAP acceptait la mauvaise clé sans
+  erreur et laissait le nom d'en-tête vide, qu'uvicorn refusait par un `400` sur **toute** requête,
+  y compris les routes publiques. Piège de conception rencontré en corrigeant cette garde : borner
+  le *pourcentage* de 4xx ne marche pas, un scan actif fuzze délibérément un grand nombre
+  d'entrées invalides, si bien qu'un scan sain contre l'API seedée reste à 98% de 4xx avec
+  seulement 1% de 2xx. C'est la forme normale d'un scan actif. Le signal qui distingue vraiment un
+  scan cassé (2xx nul, absent du rapport dans les deux incidents) d'un scan sain (2xx non nul,
+  aussi faible soit-il) est l'absence de succès, pas la part d'échecs. Les deux gardes lisent
+  `zap-out/zap-report.json` (champs structurés `insights[]`), pas le texte libre du rapport
+  Markdown.
+
+Le journal interne de ZAP (`zap.log`) et sa sortie complète (`zap-stdout.log`) sont publiés dans
+l'artefact `zap-report` (dossier `zap-logs/`, propriété du runner : `zap-out/` bascule sous l'uid
+1000 du conteneur ZAP dès que le contrat y est copié, le runner n'y écrit plus ensuite) pour
+diagnostiquer un futur import raté.
+
+**Non bloquant pour l'instant** (`continue-on-error`, sur la seule étape du scan) pour ce qui est
+des alertes elles-mêmes. Le volume d'un premier passage trié est inconnu ; le rapport
+HTML/JSON/Markdown est publié en artefact `zap-report`, et sa synthèse (jusqu'aux tableaux
+d'alertes, sans le détail par alerte) dans le résumé du job. Fixer un seuil viendra une fois les
+alertes triées.
+
+**Limite à ne pas oublier :** le scan tape la configuration par défaut du backend (`APP_ENV=local`,
+pas de TLS, pas de reverse proxy). Il remontera des alertes qui n'existent pas derrière le proxy
+(HSTS absent...) et ne dit **rien** des en-têtes ni du TLS que le proxy pose en production. Un
+second passage sur la stack complète reste à faire.
+
 ## Ce qui manque, et pourquoi
 
 | Manque | Issue | Conséquence assumée |
 |---|---|---|
 | Images publiées et promues par digest (GHCR) | aucune | Chaque environnement reconstruit ses images : la production n'exécute pas l'artefact validé en recette, mais un second build du même commit |
-| DAST (OWASP ZAP) | #41 | Aucune vérification sur l'application en fonctionnement, seulement sur le code et les dépendances |
+| DAST bloquant | #41 | Le scan ZAP existe mais ne bloque rien : aucun seuil n'est fixé tant que les alertes du premier passage ne sont pas triées |
 | Tests end to end | #46 | Les parcours utilisateur ne sont pas vérifiés en CI |
 | Tests de charge | #47 | Aucun garde-fou de performance |
 | Scan d'image de conteneur | aucune | Les `Dockerfile` sont construits en local, pas analysés |

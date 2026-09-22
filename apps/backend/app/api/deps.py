@@ -48,7 +48,9 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 CODE_CHANGEMENT_REQUIS = "password_change_required"
 
-_porteur = HTTPBearer(auto_error=False, scheme_name="Jeton d'accès")
+# Nom ASCII : un outillage tiers (ZAP, cf. .github/workflows/dast.yml) peut mal analyser un nom
+# de schéma accentué dans le contrat OpenAPI. Piège vécu, pas anticipé.
+_porteur = HTTPBearer(auto_error=False, scheme_name="JetonAcces")
 CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_porteur)]
 
 
