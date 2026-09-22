@@ -187,7 +187,13 @@ jobs:
         run: |
           set -o pipefail
           printf 'replacer.full_list(0).description=auth\nreplacer.full_list(0).enabled=true\nreplacer.full_list(0).matchtype=REQ_HEADER\nreplacer.full_list(0).matchstr=Authorization\nreplacer.full_list(0).regex=false\nreplacer.full_list(0).replacement=Bearer %s\n' "$JETON" > "$RUNNER_TEMP/zap-auth.conf"
-          chmod 600 "$RUNNER_TEMP/zap-auth.conf"
+          # Piège vécu : `chmod 600` seul rend le fichier illisible pour le conteneur, qui lit un
+          # montage bind avec son propre uid (1000), distinct de celui du runner qui l'a écrit.
+          # ZAP échoue alors dès le lancement (« File not readable: /zap/auth.conf »), et
+          # `zap-api-scan.py` attend `-T` minutes complètes avant d'abandonner : dix minutes qui
+          # ressemblent à un scan actif, pour un daemon mort depuis le début.
+          sudo chown 1000:1000 "$RUNNER_TEMP/zap-auth.conf"
+          chmod 644 "$RUNNER_TEMP/zap-auth.conf"
           docker run --name zap --network host \
             -v "$PWD/zap-out:/zap/wrk:rw" \
             -v "$RUNNER_TEMP/zap-auth.conf:/zap/auth.conf:ro" \
