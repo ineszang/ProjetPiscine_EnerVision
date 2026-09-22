@@ -23,7 +23,7 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Backend    | FastAPI, Python 3.14                | `apps/backend`      | En place    |
 | Frontend   | Angular 22, Node 26                 | `apps/frontend`     | En place |
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | En place    |
-| ETL        | Apache Airflow                      | `etl/airflow`       | Quatre DAGs   |
+| ETL        | Apache Airflow                      | `etl/airflow`       | Cinq DAGs     |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
 | Reverse proxy | Nginx, TLS                       | `infra/proxy`       | En place      |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | En place |
@@ -50,7 +50,7 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   ├── migrations/     Migrations SQL versionnees
 │   └── seeds/          Jeux de donnees de reference
 ├── etl/airflow/
-│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes, import historique)
+│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes, imports historique et API Mock)
 │   ├── plugins/        Operateurs et hooks maison
 │   ├── include/        Requetes SQL et ressources des DAGs
 │   └── tests/          Tests d'integrite des DAGs

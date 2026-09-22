@@ -1,22 +1,30 @@
 """Tests d'integrite des DAGs : s'importent sans erreur, structure attendue. Pas d'execution
 reelle des taches (ca reclamerait le conteneur avec `uv`/`enervision_ml`), juste la definition."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 from airflow.dag_processing.dagbag import DagBag
 from airflow.sdk import BaseOperator
+from airflow.timetables.trigger import CronTriggerTimetable
 
 DAGS_FOLDER = Path(__file__).resolve().parent.parent / "dags"
 
-DAG_IDS = ["ml_train", "ml_score", "alertes", "historical_import"]
+DAG_IDS = [
+    "ml_train",
+    "ml_score",
+    "alertes",
+    "historical_import",
+    "mock_api_import",
+]
 TACHES = [
     ("ml_train", "train"),
     ("ml_score", "score"),
     ("alertes", "detection"),
     ("alertes", "recommandations"),
     ("historical_import", "import_historical"),
+    ("mock_api_import", "import_mock_api"),
 ]
 
 
@@ -52,6 +60,19 @@ def test_historical_import_has_no_schedule(dagbag: DagBag) -> None:
     assert dagbag.dags["historical_import"].schedule is None
 
 
+def test_mock_api_import_uses_an_explicit_hourly_interval(dagbag: DagBag) -> None:
+    timetable = dagbag.dags["mock_api_import"].timetable
+
+    assert isinstance(timetable, CronTriggerTimetable)
+    assert timetable.serialize()["expression"] == "45 * * * *"
+
+    manual_interval = timetable.infer_manual_data_interval(
+        run_after=datetime.fromisoformat("2026-09-22T12:30:00+00:00"),
+    )
+
+    assert manual_interval.end - manual_interval.start == timedelta(hours=1)
+
+
 def test_ml_train_task_calls_the_training_module(dagbag: DagBag) -> None:
     tache = dagbag.dags["ml_train"].get_task("train")
     assert "enervision_ml.train" in tache.bash_command
@@ -84,6 +105,20 @@ def test_historical_import_uses_the_expected_source_files(dagbag: DagBag) -> Non
     assert "--metadata /opt/data/raw/dataset_metadata.json" in commande
 
 
+def test_mock_api_import_calls_the_existing_backend_module(dagbag: DagBag) -> None:
+    commande = dagbag.dags["mock_api_import"].get_task("import_mock_api").bash_command
+
+    assert "app.etl.mock_api_import" in commande
+
+
+def test_mock_api_import_uses_the_airflow_data_interval(dagbag: DagBag) -> None:
+    commande = dagbag.dags["mock_api_import"].get_task("import_mock_api").bash_command
+
+    assert "--start-time \"{{ data_interval_start.strftime('%Y-%m-%dT%H:%M:%S') }}\"" in commande
+    assert "--end-time \"{{ data_interval_end.strftime('%Y-%m-%dT%H:%M:%S') }}\"" in commande
+    assert "--limit 1000" in commande
+
+
 @pytest.mark.parametrize("task_id", ["detection", "recommandations"])
 def test_alertes_tasks_run_in_the_backend_environment(dagbag: DagBag, task_id: str) -> None:
     # Le backend a son propre venv dans l'image, distinct de celui de ml/ (ADR 0008).
@@ -92,6 +127,12 @@ def test_alertes_tasks_run_in_the_backend_environment(dagbag: DagBag, task_id: s
 
 def test_historical_import_runs_in_the_backend_environment(dagbag: DagBag) -> None:
     commande = dagbag.dags["historical_import"].get_task("import_historical").bash_command
+    assert "/opt/backend" in commande
+
+
+def test_mock_api_import_runs_in_the_backend_environment(dagbag: DagBag) -> None:
+    commande = dagbag.dags["mock_api_import"].get_task("import_mock_api").bash_command
+
     assert "/opt/backend" in commande
 
 
@@ -136,6 +177,14 @@ def duree_au_pire(tache: BaseOperator) -> timedelta:
     return (tache.retries + 1) * tache.execution_timeout + tache.retries * tache.retry_delay
 
 
+def test_mock_api_import_worst_case_stays_below_its_hourly_step(
+    dagbag: DagBag,
+) -> None:
+    tache = dagbag.dags["mock_api_import"].get_task("import_mock_api")
+
+    assert duree_au_pire(tache) < timedelta(hours=1)
+
+
 def test_alertes_worst_case_stays_below_its_hourly_step(dagbag: DagBag) -> None:
     # Les deux taches s'enchainent : c'est leur somme, reprises comprises, qui doit tenir dans le
     # pas horaire, sinon `max_active_runs=1` fait attendre l'execution suivante.
@@ -157,6 +206,10 @@ def test_alertes_retries_after_a_transient_failure(dagbag: DagBag, task_id: str)
 
 def test_historical_import_retries_after_a_transient_failure(dagbag: DagBag) -> None:
     assert dagbag.dags["historical_import"].get_task("import_historical").retries >= 1
+
+
+def test_mock_api_import_retries_after_a_transient_failure(dagbag: DagBag) -> None:
+    assert dagbag.dags["mock_api_import"].get_task("import_mock_api").retries >= 1
 
 
 @pytest.mark.parametrize(("dag_id", "task_id"), TACHES)
