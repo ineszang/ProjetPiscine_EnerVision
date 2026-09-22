@@ -90,14 +90,23 @@ consommation prévue de **l'heure suivant sa dernière lecture connue**, et écr
 ### Ce que le run écrit, et ce qu'il n'écrase pas
 
 La table `prediction` **n'a pas de contrainte d'unicité sur `(site_id, target_at)`** : chaque run
-insère une ligne de plus au lieu d'écraser la précédente. C'est délibéré, et c'est ce qui rendra
-possible la comparaison prévision contre réalisé, donc la surveillance de dérive (#44, #45), qui
-n'existe pas encore.
+insère une ligne de plus au lieu d'écraser la précédente. C'est délibéré, et c'est ce qui rend
+possible la comparaison prévision contre réalisé. La surveillance de dérive s'en sert : elle
+retient, pour chaque `(site_id, target_at)`, la ligne du run le plus récent, celle-là même que
+sert `GET /api/v1/predictions`. Voir l'[ADR 0011](adr/0011-surveillance-de-derive-dans-le-backend.md).
 
 Trois contraintes de cohérence sont portées par la base et non par le code applicatif :
 `status = 'available'` exige une `predicted_value` et interdit un `failure_reason` ;
 `insufficient_data` et `error` exigent l'inverse ; `target_metric` est bornée à
-`consumption_kwh` ou `consumption_kw`, et la forme énergie impose une `period_minutes`.
+`consumption_kwh` ou `consumption_kw`, et la forme énergie impose une `period_minutes`. Elles
+sont vérifiées depuis le code qui écrit par `ml/tests/test_score_integration.py`, sur une vraie
+base : un double ne prouverait rien d'une contrainte SQL.
+
+**Limite connue de `--now`.** L'option décale l'instant de référence, pas la fenêtre de lecture :
+`load_recent_from_database` n'a pas de borne haute et `build_scoring_frame` part toujours de la
+dernière lecture connue. `target_at` vaut donc « dernière lecture du jeu + 1 h » quelle que soit
+la valeur passée, et aucune boucle de rattrapage ne peut fabriquer de paires prévu/réalisé sur un
+jeu figé.
 
 ### `model_reference` est un hachage, pas un nom de fichier
 
@@ -142,6 +151,10 @@ flowchart LR
     train -- "models/*.txt + run MLflow" --> score
     score -- "INSERT" --> prediction
     prediction -- "lecture seule" --> route
+    prediction -- "prévu" --> derive["app.monitoring.drift<br/>écart prévu / réalisé"]
+    reading -- "réalisé" --> derive
+    derive -- "INSERT" --> rapport[("drift_report")]
+    rapport -- "lecture seule" --> monitoring["GET /api/v1/monitoring/drift"]
 ```
 
 **La règle, en une phrase : FastAPI ne fait jamais tourner LightGBM.**
@@ -163,8 +176,12 @@ flowchart LR
 Le corollaire est qu'il n'y a **aucune prévision à la demande** : la fraîcheur d'une prévision est
 celle du dernier run de scoring. Ce run est ordonnancé par Airflow, DAG `ml_score` en `@hourly`
 (issue #115) ; seuls le mode `--csv` et un lancement local restent manuels, tout comme
-l'entraînement, dont le DAG `ml_train` n'a pas de planification. La dette qui subsiste est la
-surveillance de dérive, portée par les issues #44 et #45.
+l'entraînement, dont le DAG `ml_train` n'a pas de planification.
+
+La surveillance de dérive traverse cette frontière **dans le sens de la table vers le backend**,
+sans la percer : elle relit `prediction` et `reading` en SQL, ne charge aucun modèle, et n'appelle
+pas MLflow. Son calcul, son seuil et son refus de comparer à la métrique d'entraînement sont dans
+l'[ADR 0011](adr/0011-surveillance-de-derive-dans-le-backend.md).
 
 ---
 
@@ -175,3 +192,4 @@ surveillance de dérive, portée par les issues #44 et #45.
 - [ADR 0006](adr/0006-moteur-de-regles-dans-le-backend.md) : ce qui consomme les prédictions
 - [`architecture/20-backend.md`](architecture/20-backend.md) : le contrat de `GET /predictions`
 - [`architecture/40-data.md`](architecture/40-data.md) : le modèle de données
+- [ADR 0011](adr/0011-surveillance-de-derive-dans-le-backend.md) : la surveillance de dérive

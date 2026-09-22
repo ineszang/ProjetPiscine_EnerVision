@@ -10,13 +10,14 @@ from airflow.sdk import BaseOperator
 
 DAGS_FOLDER = Path(__file__).resolve().parent.parent / "dags"
 
-DAG_IDS = ["ml_train", "ml_score", "alertes", "historical_import"]
+DAG_IDS = ["ml_train", "ml_score", "alertes", "historical_import", "derive"]
 TACHES = [
     ("ml_train", "train"),
     ("ml_score", "score"),
     ("alertes", "detection"),
     ("alertes", "recommandations"),
     ("historical_import", "import_historical"),
+    ("derive", "derive"),
 ]
 
 
@@ -157,6 +158,19 @@ def test_alertes_retries_after_a_transient_failure(dagbag: DagBag, task_id: str)
 
 def test_historical_import_retries_after_a_transient_failure(dagbag: DagBag) -> None:
     assert dagbag.dags["historical_import"].get_task("import_historical").retries >= 1
+
+
+def test_derive_runs_once_a_day(dagbag: DagBag) -> None:
+    assert dagbag.dags["derive"].timetable.expression == "30 5 * * *"
+
+
+def test_derive_calls_the_backend_drift_module(dagbag: DagBag) -> None:
+    assert "app.monitoring.drift" in dagbag.dags["derive"].get_task("derive").bash_command
+
+
+def test_derive_never_retries_a_detected_drift(dagbag: DagBag) -> None:
+    # Une derive n'est pas une panne passagere : la rejouer la redeclarerait a l'identique.
+    assert dagbag.dags["derive"].get_task("derive").retries == 0
 
 
 @pytest.mark.parametrize(("dag_id", "task_id"), TACHES)

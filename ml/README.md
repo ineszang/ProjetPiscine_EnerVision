@@ -111,12 +111,23 @@ Depuis la racine du monorepo, via le `Makefile` : `make install-ml`, `make ml-li
 
 ## Ou ecrire les tests
 
-Aucun test ne touche PostgreSQL ni un serveur MLflow distant : `enervision_ml.data.load_from_csv`
-et le chargement CSV de test suffisent a exercer `build_features` sur des donnees reelles ou
-synthetiques, et `enervision_ml.train.train()` accepte un `tracking_uri` SQLite isole (`tmp_path`
-pytest) pour un test de bout en bout sans effet de bord. `enervision_ml.data.load_from_database`
-n'est pas encore couvert : il n'existe aucune base PostgreSQL a interroger en CI ni dans cet
-environnement de developpement pour le moment.
+Deux regimes, separes par le marqueur `integration` que `pytest` ecarte par defaut.
+
+**Sans base** : `enervision_ml.data.load_from_csv` et le chargement CSV de test suffisent a
+exercer `build_features` sur des donnees reelles ou synthetiques, et `enervision_ml.train.train()`
+accepte un `tracking_uri` SQLite isole (`tmp_path` pytest) pour un test de bout en bout sans effet
+de bord.
+
+**Avec base**, sous `integration` : `test_data_integration.py` confronte les neuf colonnes du
+contrat au schema Alembic reel, et `test_score_integration.py` verifie les contraintes de
+`prediction` depuis le code qui ecrit. Les fixtures sont dans `tests/conftest.py`, qui refuse de
+demarrer si `ML_DATABASE_URL` ne vise pas `enervision_test`.
+
+    make db-up migrate-test ml-test-integration
+
+Regle a tenir : **toute requete SQL nouvelle porte un test `integration`**. Le schema vit dans
+`apps/backend/alembic`, pas ici : sans ce garde-fou, une migration qui renomme une colonne casse
+le pipeline en production sans qu'aucun test ne rougisse.
 
 ## Piege a connaitre
 
