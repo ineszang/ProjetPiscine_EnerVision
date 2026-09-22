@@ -108,12 +108,12 @@ airflow-test: ## Verifie que les DAGs s'importent sans erreur et ont la structur
 
 airflow-check: airflow-lint airflow-test ## Chaîne de vérification complète des DAGs Airflow
 
-airflow-up: ## Démarre Airflow (webserver + scheduler, LocalExecutor). db-up requis avant.
-	docker compose up -d airflow-init airflow-webserver airflow-scheduler
+airflow-up: ## Démarre Airflow (api-server + scheduler + dag-processor, LocalExecutor). db-up requis avant.
+	docker compose up -d airflow-init airflow-apiserver airflow-scheduler airflow-dag-processor
 	@echo "airflow  -> http://localhost:$${AIRFLOW_PORT:-8080}"
 
-airflow-down: ## Arrête le webserver et le scheduler Airflow
-	docker compose stop airflow-webserver airflow-scheduler
+airflow-down: ## Arrête l'api-server, le scheduler et le dag-processor Airflow
+	docker compose stop airflow-apiserver airflow-scheduler airflow-dag-processor
 
 airflow-logs: ## Suit les journaux du scheduler Airflow (où tournent les tâches, LocalExecutor)
 	docker compose logs -f airflow-scheduler
