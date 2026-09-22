@@ -1,0 +1,50 @@
+name: Infra
+
+# Pourquoi : le Terraform du dépôt est resté cassé sans que rien ne le dise, faute de job qui le
+# joue. Ce workflow n'applique rien : il vérifie le formatage et la validité de chaque racine.
+# Piège : la boucle parcourt `environments/*`, pour qu'une racine ajoutée soit couverte sans
+# toucher à ce fichier.
+
+on:
+  push:
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/infra.yml"
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/infra.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    name: Formatage et validation Terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installe Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.3
+          terraform_wrapper: false
+
+      - name: Vérifie le formatage
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: Valide chaque racine
+        run: |
+          for racine in infra/terraform/environments/*/; do
+            echo "::group::${racine}"
+            terraform -chdir="${racine}" init -backend=false -input=false
+            terraform -chdir="${racine}" validate
+            echo "::endgroup::"
+          done

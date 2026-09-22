@@ -1,13 +1,14 @@
 # Infrastructure
 
-Trois topologies coexistent et ne servent pas la même chose. Ce document dit laquelle vaut dans
-quel contexte, quelles décisions sont arrêtées, et ce qui manque encore entre elles.
+Plusieurs topologies coexistent et ne servent pas la même chose. Ce document dit laquelle vaut
+dans quel contexte, quelles décisions sont arrêtées, et ce qui manque encore entre elles.
 
 | Topologie | Sert à | Statut |
 |---|---|---|
 | Docker Compose | Développer et recetter sur le poste | `Fait` |
 | Docker Compose plus reverse proxy | Déployer sur la machine on-premise | `Fait` |
 | Deux projets Compose sur la VM ENI, recette et production | Déploiement continu depuis GitHub | `En cours` |
+| Provisionnement Terraform de la VM | Préparer la machine et enregistrer le runner | `En cours` |
 | k3s single-node | Cible à terme | `En cours` |
 
 ## Poste de développement
@@ -209,10 +210,38 @@ Nginx renvoie vers `https://$host` sans port, c'est-à-dire vers la production.
 Le déploiement est décrit dans [50-cicd.md](50-cicd.md) : un runner GitHub Actions installé sur
 la VM aligne le dossier sur la branche poussée et lance `make stack-up`.
 
+### Provisionnement de la machine
+
+Statut : `En cours`. Décision et frontière dans
+l'[ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md) : **Terraform
+provisionne la machine, GitHub Actions déploie l'application**. La racine
+`infra/terraform/environments/vm-eni/` fait trois choses, et rien d'autre.
+
+```mermaid
+sequenceDiagram
+  participant TF as terraform apply
+  participant VM as VM eadl-2025-nantes-g3
+  participant GH as GitHub
+
+  TF->>VM: SSH, get.docker.com puis docker compose version
+  TF->>VM: copie et exécute scripts/provision-host.sh
+  VM->>VM: deux clones, deux .env, deux certificats
+  TF->>VM: installe actions-runner, config.sh, svc.sh
+  VM->>GH: le runner s'enregistre avec le label eni-g3
+```
+
+Aucune image n'y est construite, aucun conteneur lancé : un `apply` n'interrompt pas la stack qui
+tourne. Le premier démarrage reste manuel, `make stack-up` dans chaque dossier ; les suivants
+sont joués par le runner à chaque push. Terraform ne sait rien de l'état de la stack, c'est la
+sonde de `deploy.yml` qui le dit.
+
+Le jeton d'enregistrement du runner est valable une heure et ne vaut que pour une inscription :
+l'`apply` n'est pas rejouable sans qu'un administrateur du dépôt en crée un nouveau.
+
 ## Cible à terme, k3s
 
-Statut : `En cours`. Le module `infra/terraform/modules/k3s/` installe le cluster. Il n'a jamais
-été appliqué.
+Statut : `En cours`. Le module `infra/terraform/modules/k3s/` installe le cluster, depuis la
+racine `infra/terraform/environments/k3s-cible/`. Il n'a jamais été appliqué.
 
 ```mermaid
 flowchart LR
@@ -260,11 +289,13 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | `k3s_version` obligatoire, valeur vide refusée | Sans épinglage, `get.k3s.io` installe la dernière version à chaque exécution : le déploiement cesse d'être reproductible | `validation` dans `modules/k3s/variables.tf` |
 | Traefik désactivé | Le choix d'ingress reste ouvert, on ne veut pas en subir un par défaut | `k3s_disable_components`, défaut `["traefik"]` |
 | Kubeconfig laissé en `600/root`, lu par `sudo` | `--write-kubeconfig-mode 644` exposerait `cluster-admin` à tout utilisateur local de la machine | Commentaire et `fetch_kubeconfig` dans `modules/k3s/main.tf` |
-| State Terraform en backend `local` | Un seul opérateur, pas d'exécution concurrente, pas de dépendance à un stockage distant | `environments/dev/versions.tf` |
+| State Terraform en backend `local` | Un seul opérateur, pas d'exécution concurrente, pas de dépendance à un stockage distant | `versions.tf` de chaque racine |
 | `.terraform.lock.hcl` versionné | Fige les versions de provider entre contributeurs et future CI | Commentaire dans `.gitignore` |
 | `*.tfvars` ignoré, `*.tfvars.example` versionné | Les tfvars portent l'adresse du serveur et le chemin de la clé | `.gitignore` |
 | Désinstallation gérée au `destroy` | `k3s-uninstall.sh` en `on_failure = continue` : un serveur injoignable ne bloque pas le `destroy` | `modules/k3s/main.tf` |
-| Deux racines, `dev` et `prod` | Séparation des états et des variables par environnement | `environments/` |
+| Une racine Terraform par machine provisionnée, nommée d'après elle | `environments/dev` laissait croire à un environnement applicatif, alors que `rec` et `prod` vivent sur la même machine et ne sont pas provisionnés par Terraform | `environments/vm-eni`, `environments/k3s-cible` |
+| Terraform provisionne, GitHub Actions déploie | Deux chemins pour le même acte de livraison, c'est ce que la revue de #141 relève sur la VM | [ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md) |
+| Connexion SSH par clé, jamais par mot de passe | Une variable de mot de passe finit en clair dans le state, ou dans les `triggers` qui y sont persistés | `environments/vm-eni/variables.tf`, `modules/k3s/main.tf` |
 | Terminaison TLS par un reverse proxy Nginx en Compose | L'ingress k3s supposait un registre et des manifestes qui n'existent pas, à quatre jours du rendu | `docker-compose.prod.yml`, [ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md) |
 | Certificat auto-signé par défaut, chemin ACME câblé | Aucun domaine public ne résout vers la machine : le défi HTTP-01 ne peut pas aboutir | `scripts/tls-selfsigned.sh`, `infra/proxy/acme-deploy-hook.sh` |
 | Un projet Compose par environnement, sur la même machine | Une seule VM, et l'isolation par nom de projet ne demande ni cluster ni registre | `.env` de chaque dossier, [ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md) |
@@ -304,4 +335,3 @@ question à trancher, avant toute ressource Kubernetes.
 - **Quel stockage persistant** côté Kubernetes pour PostgreSQL, et si la base tourne dans le
   cluster ou à côté.
 - **Quelle stratégie de sauvegarde et de restauration** des données de mesure.
-- **Que devient `environments/prod/`**, aujourd'hui réduit à un `.gitkeep`.
