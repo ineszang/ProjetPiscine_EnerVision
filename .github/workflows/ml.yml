@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: ml/uv.lock
@@ -72,7 +72,7 @@ jobs:
       # Pourquoi : pas de cache ici. uvx n'installe pas le projet, le verrou n'alimente donc
       # aucune clé de cache ; la seule roue téléchargée est celle de Bandit.
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
 
       - name: Analyse le code livré (bloquant à partir de MEDIUM)
         run: uvx bandit==1.9.4 --recursive enervision_ml --severity-level medium --confidence-level medium
