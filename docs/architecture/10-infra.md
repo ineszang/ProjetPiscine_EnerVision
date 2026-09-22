@@ -48,19 +48,27 @@ Trois pièges sont documentés en tête du `docker-compose.yml`, ils ne se devin
 - `db/init` est monté **fichier par fichier**. Monter le dossier masquerait les scripts d'init de
   l'image, dont `timescaledb-tune`. Ajouter un fichier dans `db/init/` impose donc une ligne dans
   le compose. Voir [`db/README.md`](../../db/README.md).
-- `LocalExecutor` exécute les tâches comme sous-processus du **scheduler**, jamais du webserver :
+- `LocalExecutor` exécute les tâches comme sous-processus du **scheduler**, jamais de l'api-server :
   c'est le scheduler qui a besoin du volume `airflow_ml_state` (modèle, magasin MLflow).
 
 ### Airflow (issues #115 et #116)
 
-Trois services, `docker compose profiles` non utilisés (démarrage explicite via `make
+Quatre services (Airflow 3.3), `docker compose profiles` non utilisés (démarrage explicite via `make
 airflow-up`, pas dans `make dev`) :
 
 | Service | Rôle | Points notables |
 |---|---|---|
-| `airflow-init` | Migre la base de métadonnées, crée le compte admin | Conteneur jetable (`restart: "no"`), ne redémarre jamais. `webserver`/`scheduler` attendent qu'il se termine avec succès |
-| `airflow-webserver` | UI, port `8080` | `LocalExecutor` : n'exécute aucune tâche lui-même |
+| `airflow-init` | Migre la base de métadonnées, crée le compte admin | Conteneur jetable (`restart: "no"`), ne redémarre jamais. `api-server`, `dag-processor` et `scheduler` attendent qu'il se termine avec succès |
+| `airflow-apiserver` | UI et API REST (`/api/v2`), port `8080` | `LocalExecutor` : n'exécute aucune tâche lui-même. Sert aussi l'Execution API que les tâches appellent, d'où le secret JWT partagé |
+| `airflow-dag-processor` | Parse `dags/` et publie les DAGs sérialisés | Composant à part entière depuis Airflow 3 : le scheduler ne lit plus les fichiers de DAG |
 | `airflow-scheduler` | Planifie et **exécute** les tâches (`LocalExecutor`) | Les DAGs y tournent en sous-processus (`uv run --no-sync python -m ...`), c'est lui qui a besoin du volume `airflow_ml_state` |
+
+Airflow 3 impose deux choses que le compose reflète : les tâches ne touchent plus la base de
+métadonnées et passent par l'Execution API de l'`api-server`, avec un jeton signé par
+`AIRFLOW_JWT_SECRET` (secret partagé entre conteneurs, jamais celui généré au démarrage) ; et
+l'authentification par défaut (`SimpleAuthManager`) ne sait pas créer de compte, d'où le
+`FabAuthManager` qui garde le compte admin posé par `airflow-init`. Pas de `triggerer` : aucun
+opérateur déférable dans les DAGs.
 
 Construits depuis `etl/airflow/Dockerfile`, contexte `.` (racine du repo, pas `etl/airflow/`) :
 l'image doit pouvoir `COPY` les sources de `ml/` **et** de `apps/backend/` pour se synchroniser
@@ -95,14 +103,14 @@ rend contraignant.
 `airflow-init` s'appuie sur l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`,
 `_AIRFLOW_WWW_USER_*`) plutôt que sur un script maison : l'entrypoint porte le code de sortie, une
 migration ratée (typiquement la base `airflow` absente, cf. ci-dessous) fait échouer le service et
-`webserver`/`scheduler` ne démarrent pas sur une base non migrée. Le mot de passe du compte admin
+`api-server`, `dag-processor` et `scheduler` ne démarrent pas sur une base non migrée. Le mot de passe du compte admin
 passe par l'environnement, jamais par `argv` (ni `ps`, ni `docker compose config`).
 
 Les variables `AIRFLOW_*` ne sont volontairement pas en `${VAR:?}` : Compose interpole le fichier
 entier avant de filtrer les services, une variable requise manquante casserait `make db-up`,
 `make dev`... pour tout poste dont le `.env` est antérieur. Elles valent `${VAR:-}` et c'est
-`airflow-init` qui refuse de démarrer (clé Fernet, clé Flask, mot de passe ou
-`AIRFLOW_APP_SECRET_KEY` vides).
+`airflow-init` qui refuse de démarrer (clé Fernet, clé de session de l'API, secret JWT, mot de
+passe ou `AIRFLOW_APP_SECRET_KEY` vides).
 
 Le conteneur reçoit deux variables du backend en plus de `ML_DATABASE_URL` : `DATABASE_URL`, en
 dialecte asyncpg, et `APP_SECRET_KEY`, alimentée par `AIRFLOW_APP_SECRET_KEY`. Cette dernière est
@@ -242,7 +250,7 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | Base applicative | `enervision` | Variable `POSTGRES_DB` |
 | Base de test | `enervision_test` | Créée par `db/init/110-test-database.sql`, nom attendu en dur par `apps/backend/tests/conftest.py` |
 | Base de métadonnées Airflow | `airflow` | Créée par `db/init/120-airflow-database.sql`, même conteneur `db` |
-| Webserver Airflow | `8080` | `make airflow-up`. Scheduler et webserver ne publient que ce port ; les tâches (`LocalExecutor`) tournent côté scheduler, sans port propre |
+| API server Airflow | `8080` | `make airflow-up`. Api-server, scheduler et dag-processor ne publient que ce port ; les tâches (`LocalExecutor`) tournent côté scheduler, sans port propre |
 
 ## Le trou vers k3s
 
