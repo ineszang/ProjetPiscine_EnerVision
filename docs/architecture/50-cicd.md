@@ -16,6 +16,12 @@ basculer sur `Fait` au premier déploiement vert. Sa limite, nommée ici plutôt
 soutenance : les images sont construites sur la machine à chaque déploiement, aucun artefact
 n'est publié puis promu d'un environnement à l'autre.
 
+Ce que ce workflow ne fait pas, et ne fera pas : préparer la machine. Installation de Docker,
+clones, `.env`, certificats et enregistrement du runner sont provisionnés par
+`infra/terraform/environments/vm-eni`
+([ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md)). Terraform provisionne,
+GitHub Actions déploie ; aucun des deux ne fait le travail de l'autre.
+
 ## Vue d'ensemble
 
 ```mermaid
@@ -45,6 +51,10 @@ flowchart TB
     ab["image<br/>construction de l'image"]
   end
 
+  subgraph infw["Infra · infra.yml"]
+    it["terraform<br/>fmt -check, init et validate par racine"]
+  end
+
   subgraph sq["SonarQube · sonarqube.yml"]
     sb1["build-front / test-front"]
     sb2["build-back / test-back"]
@@ -57,6 +67,7 @@ flowchart TB
   push --> fd
   push --> mv & ms
   push --> av & ab
+  push --> it
   push --> sb1 & sb2 --> sscan
 
   subgraph cd["Déploiement · deploy.yml"]
@@ -68,11 +79,11 @@ flowchart TB
 
 ## Déclenchement
 
-Les cinq workflows se déclenchent sur `push` **et** sur `pull_request`, filtrés par **chemin** :
-`backend.yml` sur `apps/backend/**`, `frontend.yml` sur `apps/frontend/**`, `ml.yml` sur `ml/**`,
-`airflow.yml` sur `etl/airflow/**` **plus des chemins de `ml/` et de `apps/backend/`**, chacun
-incluant son propre fichier de workflow dans le filtre pour qu'une modification du pipeline
-déclenche le pipeline.
+Les six workflows hébergés par GitHub se déclenchent sur `push` **et** sur `pull_request`,
+filtrés par **chemin** : `backend.yml` sur `apps/backend/**`, `frontend.yml` sur
+`apps/frontend/**`, `ml.yml` sur `ml/**`, `infra.yml` sur `infra/terraform/**`, `airflow.yml` sur
+`etl/airflow/**` **plus des chemins de `ml/` et de `apps/backend/`**, chacun incluant son propre
+fichier de workflow dans le filtre pour qu'une modification du pipeline déclenche le pipeline.
 
 Le filtre d'`airflow.yml` mérite un mot : il inclut `ml/pyproject.toml`, `ml/uv.lock`,
 `ml/enervision_ml/**`, `apps/backend/pyproject.toml`, `apps/backend/uv.lock` et
@@ -97,7 +108,7 @@ environnement.
 
 ## Déploiement
 
-`deploy.yml` est le sixième workflow, et le seul qui ne tourne pas chez GitHub : il s'exécute sur
+`deploy.yml` est le septième workflow, et le seul qui ne tourne pas chez GitHub : il s'exécute sur
 un runner auto-hébergé installé sur la VM ENI, label `eni-g3`, parce que les runners hébergés ne
 joignent pas une adresse privée d'école. Le runner se connecte en sortie vers GitHub, aucun port
 entrant n'est ouvert.
@@ -151,6 +162,7 @@ dans [10-infra.md](10-infra.md).
 | Build `npm run build` | frontend | compilation | Bloque |
 | Intégrité des DAGs | airflow | chargement des DAGs sans erreur d'import | Bloque |
 | Construction de l'image Airflow | airflow | `docker build` de `etl/airflow/Dockerfile` | Bloque |
+| Formatage et validité Terraform | infra | `fmt -check -recursive`, puis `init` et `validate` par racine | Bloque |
 
 Deux seuils portent une décision qu'il faut savoir défendre :
 

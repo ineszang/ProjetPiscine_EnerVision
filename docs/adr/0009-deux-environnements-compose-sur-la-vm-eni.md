@@ -76,6 +76,7 @@ secret.
   à chaque push : plusieurs minutes par déploiement, acceptable pour la cadence du projet.
 - `environments/prod` de Terraform reste vide. Le provisionnement de la machine est porté par
   `scripts/provision-host.sh`, que Terraform pourra appeler par `remote-exec` le jour où une
-  racine visant la VM existera.
+  racine visant la VM existera. Cette racine existe depuis l'[ADR 0010](0010-terraform-provisionne-github-actions-deploie.md),
+  sous le nom `environments/vm-eni`, et `environments/prod` a disparu avec elle.
 - L'image frontend quitte `dhi.io/nginx`, registre authentifié dont personne n'a l'accès, pour
   `nginx:1.28-alpine`, la même image que le proxy. Elle n'avait jamais été construite.
