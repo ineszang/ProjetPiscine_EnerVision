@@ -94,7 +94,9 @@ TAGS: Final[list[dict[str, Any]]] = [
 
 cookie_de_rafraichissement = APIKeyCookie(
     name=REFRESH_COOKIE_DEFAUT,
-    scheme_name="Cookie de rafraîchissement",
+    # Nom ASCII : un outillage tiers (ZAP, cf. .github/workflows/dast.yml) peut mal analyser un
+    # nom de schéma accentué dans le contrat OpenAPI. Piège vécu, pas anticipé.
+    scheme_name="CookieRafraichissement",
     description=(
         "Cookie `HttpOnly` posé par `/auth/login` et tourné par `/auth/refresh`. Il prend le "
         "préfixe `__Secure-` dès que l'API tourne derrière TLS, et n'est émis que vers "

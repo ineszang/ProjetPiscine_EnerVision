@@ -34,34 +34,41 @@ connexion() {
         | jq -r '.access_token'
 }
 
+# Rend le nouveau jeton d'accès : `/auth/password` en émet un (avec l'`iat` de la session en
+# cours, cf. le piège documenté dans `app/api/deps.py`), pas seulement une confirmation. S'y fier
+# évite une reconnexion, donc un second hachage Argon2id (19456 Kio) et un aller-retour de
+# refresh-token superflus sur le chemin critique de la CI.
 changer_mot_de_passe() {
     local jeton="$1" ancien="$2" nouveau="$3"
-    curl -fsS -o /dev/null -X POST "$API/auth/password" \
+    curl -fsS -X POST "$API/auth/password" \
         -H "Authorization: Bearer $jeton" -H 'Content-Type: application/json' \
-        -d "$(jq -n --arg a "$ancien" --arg n "$nouveau" '{current_password:$a, new_password:$n}')"
+        -d "$(jq -n --arg a "$ancien" --arg n "$nouveau" '{current_password:$a, new_password:$n}')" \
+        | jq -r '.access_token'
 }
 
 journal "création de l'administrateur $EMAIL_ADMIN"
-SORTIE="$(uv run --frozen --no-sync --no-build python -m app.cli create-admin --email "$EMAIL_ADMIN" --generate)"
+if ! SORTIE="$(uv run --frozen --no-sync --no-build python -m app.cli create-admin --email "$EMAIL_ADMIN" --generate)"; then
+    journal "la création de l'administrateur a échoué :"
+    journal "$SORTIE"
+    exit 1
+fi
 MDP_ADMIN="$(sed -n 's/^Mot de passe généré, il ne sera plus affiché : //p' <<<"$SORTIE")"
-[[ -n "$MDP_ADMIN" ]] || { journal "mot de passe administrateur introuvable dans la sortie"; exit 1; }
+[[ -n "$MDP_ADMIN" ]] || { journal "mot de passe administrateur introuvable dans la sortie :"; journal "$SORTIE"; exit 1; }
 
 JETON="$(connexion "$EMAIL_ADMIN" "$MDP_ADMIN")"
 NOUVEAU_ADMIN="$(nouveau_mot_de_passe)"
-changer_mot_de_passe "$JETON" "$MDP_ADMIN" "$NOUVEAU_ADMIN"
-# Le changement de mot de passe ferme les sessions : le jeton précédent ne vaut plus rien.
-JETON="$(connexion "$EMAIL_ADMIN" "$NOUVEAU_ADMIN")"
+JETON="$(changer_mot_de_passe "$JETON" "$MDP_ADMIN" "$NOUVEAU_ADMIN")"
 
 journal "création du lecteur $EMAIL_LECTEUR"
 REPONSE="$(curl -fsS -X POST "$API/users" -H "Authorization: Bearer $JETON" \
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg e "$EMAIL_LECTEUR" '{email:$e, role:"lecteur"}')")"
-MDP_TEMPORAIRE="$(jq -r '.temporary_password' <<<"$REPONSE")"
+MDP_TEMPORAIRE="$(jq -r '.temporary_password // empty' <<<"$REPONSE")"
+[[ -n "$MDP_TEMPORAIRE" ]] || { journal "mot de passe temporaire introuvable dans la réponse de POST /users :"; journal "$REPONSE"; exit 1; }
 
 JETON="$(connexion "$EMAIL_LECTEUR" "$MDP_TEMPORAIRE")"
 NOUVEAU_LECTEUR="$(nouveau_mot_de_passe)"
-changer_mot_de_passe "$JETON" "$MDP_TEMPORAIRE" "$NOUVEAU_LECTEUR"
-JETON="$(connexion "$EMAIL_LECTEUR" "$NOUVEAU_LECTEUR")"
+JETON="$(changer_mot_de_passe "$JETON" "$MDP_TEMPORAIRE" "$NOUVEAU_LECTEUR")"
 
 # Vérifie que le jeton ouvre bien une route gardée avant de le rendre.
 CODE="$(curl -sS -o /dev/null -w '%{http_code}' "$API/sites" -H "Authorization: Bearer $JETON")"
