@@ -117,9 +117,9 @@ services:
   # Conteneur unique, jamais redemarre. La migration et la creation du premier compte sont
   # portees par l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`, `_AIRFLOW_WWW_USER_*`), qui porte
   # aussi leur code de sortie : une migration ratee (ex. base `airflow` absente sur un volume
-  # `pgdata` deja peuple) fait echouer ce service, et api-server, dag-processor et scheduler, qui attendent son
-  # succes, ne demarrent pas sur une base non migree. Le mot de passe passe par l'environnement,
-  # jamais par `argv` (ni `ps`, ni `docker compose config`).
+  # `pgdata` deja peuple) fait echouer ce service, et api-server, dag-processor et scheduler,
+  # qui attendent son succes, ne demarrent pas sur une base non migree. Le mot de passe passe
+  # par l'environnement, jamais par `argv` (ni `ps`, ni `docker compose config`).
   # Sans mot de passe, l'entrypoint refuse lui-meme de creer le compte ; la commande ci-dessous
   # refuse en plus les cles et secrets vides.
   airflow-init:
