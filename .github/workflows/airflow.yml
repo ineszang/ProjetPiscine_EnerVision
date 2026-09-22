@@ -1,8 +1,9 @@
 name: Airflow
 
 # Piège : la version de Python vient de etl/airflow/.python-version. C'est 3.12 et non 3.14
-# (contrairement à backend.yml et ml.yml) : apache-airflow 2.10 ne supporte pas 3.14. Le 3.14 de
-# ml/ ne vit que dans l'image Docker, dans son propre environnement (cf. etl/airflow/Dockerfile).
+# (contrairement à backend.yml et ml.yml) : celui de l'image apache/airflow retenue, et les tests
+# doivent tourner sur le même interpréteur qu'elle. Le 3.14 de ml/ ne vit que dans l'image
+# Docker, dans son propre environnement (cf. etl/airflow/Dockerfile).
 #
 # Piège : l'image COPY les fichiers de dépendances et le code de ml/ et de apps/backend/. Une
 # modification de l'un ou de l'autre peut donc casser sa construction, d'où ces chemins dans

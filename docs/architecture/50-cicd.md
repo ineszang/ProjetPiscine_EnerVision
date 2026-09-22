@@ -90,9 +90,10 @@ rien changer), mais ce serait à borner sur un dépôt à forte fréquence de pu
 `backend.yml`, `ml.yml` et `airflow.yml` déclarent en plus un groupe de concurrence par référence
 git avec `cancel-in-progress`, ce qui annule un run devenu obsolète par un push plus récent.
 
-**Piège de version** : `etl/airflow` tourne en **Python 3.12** et non 3.14, parce qu'Airflow 2.10
-ne supporte pas encore 3.14. Le 3.14 du module ML ne vit, dans ce contexte, que dans l'image
-Docker et son propre environnement.
+**Piège de version** : `etl/airflow` tourne en **Python 3.12** et non 3.14 : c'est l'interpréteur
+de l'image `apache/airflow:3.3.2-python3.12` retenue, et les tests d'intégrité doivent tourner sur
+le même. Le 3.14 du module ML ne vit, dans ce contexte, que dans l'image Docker et son propre
+environnement.
 
 ## Déploiement
 
