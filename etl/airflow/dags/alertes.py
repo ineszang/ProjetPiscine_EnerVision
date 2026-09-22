@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from airflow.models.dag import DAG
-from airflow.operators.bash import BashOperator
+from airflow.providers.standard.operators.bash import BashOperator
+from airflow.sdk import DAG
 
 # Le backend a son propre environnement uv dans l'image (ADR 0008). `--no-sync` et
 # `env -u VIRTUAL_ENV` : cf. `ml_train.py`, même raisonnement.

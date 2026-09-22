@@ -1,0 +1,57 @@
+# Pourquoi : le runner tourne sur la VM ENI, adresse privée que les runners hébergés par GitHub
+# ne joignent pas, et travaille dans un dossier stable par environnement plutôt que dans son
+# espace de travail : `.env`, certificats et volumes y survivent d'un déploiement à l'autre.
+# Piège : jamais de déclencheur `pull_request` ici. Sur un dépôt public, une PR de fork
+# exécuterait son code sur la machine de production (ADR 0009) - job deploy.
+
+name: Déploiement
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, eni-g3]
+    timeout-minutes: 30
+    environment:
+      name: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
+      url: ${{ github.ref_name == 'main' && 'https://enervision.local' || 'https://rec.enervision.local:8443' }}
+    env:
+      ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
+      PORT_HTTPS: ${{ github.ref_name == 'main' && '443' || '8443' }}
+    steps:
+      - name: Aligner le dossier de l'environnement sur la branche poussée
+        run: |
+          cd "/srv/enervision/${ENVIRONNEMENT}"
+          git fetch --quiet origin "${GITHUB_REF_NAME}"
+          git checkout --quiet "${GITHUB_REF_NAME}"
+          git reset --quiet --hard "origin/${GITHUB_REF_NAME}"
+          git log -1 --format='%h %s'
+
+      - name: Reconstruire et redémarrer la stack
+        run: |
+          cd "/srv/enervision/${ENVIRONNEMENT}"
+          make stack-up
+
+      - name: Attendre que l'API réponde derrière le proxy
+        run: |
+          for tentative in $(seq 1 36); do
+            if curl --fail --silent --insecure "https://localhost:${PORT_HTTPS}/api/v1/health/ready"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "L'API ne répond pas après 3 minutes" >&2
+          cd "/srv/enervision/${ENVIRONNEMENT}"
+          docker compose ps
+          docker compose logs --tail=50 backend proxy
+          exit 1

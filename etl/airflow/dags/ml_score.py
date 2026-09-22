@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from airflow.models.dag import DAG
-from airflow.operators.bash import BashOperator
+from airflow.providers.standard.operators.bash import BashOperator
+from airflow.sdk import DAG
 
 MODEL_PATH = "/opt/ml/state/models/lightgbm-consumption.txt"
 

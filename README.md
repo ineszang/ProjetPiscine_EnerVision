@@ -9,8 +9,10 @@ series temporelles energetiques, deployee sur une machine on-premise.
 |-------|----------------------------------------------------------|
 | J1    | Valider la préparation de l'environnement et du repo     |
 | J2    | Valider le périmètre retenu et les choix technologiques  |
-| J3    | Valider l'architecture et la gestion de la sécurité      |
-| J4    | Valider la robustesse et assurer les livrables           |
+| J3    | Ingestion & backend                                      |
+| J4    | Architecture, sécurité & frontend                        |
+| J5    | Valider la robustesse et assurer les livrables           |
+| J6    | Amélioration possible                                    |
 
 Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.md](docs/architecture/00-vue-ensemble.md).
 
@@ -18,15 +20,15 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 
 | Domaine    | Technologie                         | Emplacement         | Etat          |
 |------------|-------------------------------------|---------------------|---------------|
-| Backend    | FastAPI, Python 3.14                | `apps/backend`      | Initialise    |
-| Frontend   | Angular 22, Node 24 LTS             | `apps/frontend`     | Tableau de bord |
-| Base       | PostgreSQL 17 + TimescaleDB         | `db`                | Initialise    |
-| ETL        | Apache Airflow                      | `etl/airflow`       | Trois DAGs    |
+| Backend    | FastAPI, Python 3.14                | `apps/backend`      | En place    |
+| Frontend   | Angular 22, Node 26                 | `apps/frontend`     | En place |
+| Base       | PostgreSQL 17 + TimescaleDB         | `db`                | En place    |
+| ETL        | Apache Airflow                      | `etl/airflow`       | Quatre DAGs   |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
 | Reverse proxy | Nginx, TLS                       | `infra/proxy`       | En place      |
-| CI/CD      | GitHub Actions                      | `.github/workflows` | Backend en place |
+| CI/CD      | GitHub Actions                      | `.github/workflows` | En place |
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
-| ML         | LightGBM, MLflow                    | `ml`                | Entrainement initialise |
+| ML         | LightGBM, MLflow                    | `ml`                | En place |
 
 Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Le frontend
 sert un tableau de bord sur `/dashboard`, dont les données proviennent de fixtures : les endpoints
@@ -48,7 +50,7 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   ├── migrations/     Migrations SQL versionnees
 │   └── seeds/          Jeux de donnees de reference
 ├── etl/airflow/
-│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes)
+│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes, import historique)
 │   ├── plugins/        Operateurs et hooks maison
 │   ├── include/        Requetes SQL et ressources des DAGs
 │   └── tests/          Tests d'integrite des DAGs
@@ -142,6 +144,12 @@ Le navigateur avertit d'un émetteur inconnu : Let's Encrypt reste hors d'attein
 nom de domaine public ne résout vers la machine. Routage, mode ACME et renouvellement dans
 [`infra/proxy/README.md`](infra/proxy/README.md) ; la décision et ses motifs dans
 [l'ADR 0007](docs/adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
+
+Sur la VM ENI, deux environnements cohabitent, recette sur `dev` et production sur `main`,
+chacun dans son dossier et son projet Compose : `scripts/provision-host.sh` les prépare, le
+workflow `deploy.yml` les redéploie à chaque push par un runner auto-hébergé. Ports, noms
+d'hôte et garde-fous dans [`docs/architecture/10-infra.md`](docs/architecture/10-infra.md) et
+[l'ADR 0009](docs/adr/0009-deux-environnements-compose-sur-la-vm-eni.md).
 
 ## Conventions
 

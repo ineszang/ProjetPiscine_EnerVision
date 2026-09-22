@@ -1,9 +1,9 @@
 # Image Airflow EnerVision : ajoute ml/ et apps/backend/ dans leurs propres environnements Python
-# 3.14, distincts du Python 3.12 qui fait tourner Airflow lui-meme (apache-airflow 2.10 ne supporte
-# pas 3.14), pour que les DAGs puissent lancer `uv run python -m enervision_ml.train`/`.score`,
+# 3.14, distincts du Python 3.12 de l'image de base qui fait tourner Airflow lui-meme, pour que
+# les DAGs puissent lancer `uv run python -m enervision_ml.train`/`.score`,
 # `app.detection.internal_alerts` et `app.cli` en sous-processus. Airflow ne devient jamais un
 # consommateur direct de LightGBM, de MLflow ou du SQLAlchemy du backend. Cf. ADR 0008.
-FROM apache/airflow:2.10.4-python3.12
+FROM apache/airflow:3.3.2-python3.12
 
 # LightGBM est compile contre libgomp (OpenMP), absent de l'image de base (minimale, sans
 # toolchain de compilation). Sans lui : `OSError: libgomp.so.1: cannot open shared object file`
@@ -21,9 +21,8 @@ RUN apt-get update \
 RUN mkdir -p /opt/ml/state /opt/backend && chown -R airflow:root /opt/ml /opt/backend
 USER airflow
 
-# L'image de base embarque deja un `uv`, mais trop ancien (0.4.29) pour le format de verrou de
-# `ml/uv.lock`. On le remplace par la version deja pinnee ailleurs dans le depot
-# (apps/backend/Dockerfile).
+# L'image de base embarque deja un `uv`, mais pas celui que le depot epingle par ailleurs
+# (apps/backend/Dockerfile) : on aligne, pour que le format de verrou lu soit le meme partout.
 COPY --from=ghcr.io/astral-sh/uv:0.11.26 /uv /home/airflow/.local/bin/uv
 
 # Piege : pas de `UV_PROJECT_ENVIRONMENT` global. Il vaudrait pour les deux projets, et `uv run`
