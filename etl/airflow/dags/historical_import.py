@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from airflow.models.dag import DAG
-from airflow.operators.bash import BashOperator
+from airflow.providers.standard.operators.bash import BashOperator
+from airflow.sdk import DAG
 
 COMMANDE_BACKEND = "cd /opt/backend && env -u VIRTUAL_ENV uv run --no-sync python -m"
 

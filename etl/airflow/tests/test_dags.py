@@ -49,7 +49,7 @@ def test_alertes_runs_after_the_hourly_scoring(dagbag: DagBag) -> None:
 
 
 def test_historical_import_has_no_schedule(dagbag: DagBag) -> None:
-    assert dagbag.dags["historical_import"].timetable.summary == "None"
+    assert dagbag.dags["historical_import"].schedule is None
 
 
 def test_ml_train_task_calls_the_training_module(dagbag: DagBag) -> None:
