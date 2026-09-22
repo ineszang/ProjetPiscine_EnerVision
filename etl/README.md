@@ -670,9 +670,13 @@ recommandations (`alertes`, issue #116), ainsi que l'import historique
 
 Le DAG `historical_import` est déclenché manuellement. Il exécute
 `app.etl.historical_import` avec les fichiers montés en lecture seule depuis `data/raw` vers
-`/opt/data/raw`. L'orchestration de l'import API Mock et la réconciliation globale des deux
-sources restent couvertes par l'issue #15.
+`/opt/data/raw`.
 
-Airflow permet de planifier les traitements, gérer leur ordre d'exécution, suivre leur état et remonter les erreurs. Il ne remplace pas la logique ETL Python existante : les scripts actuels restent responsables de l'extraction, de la validation, de la transformation et du chargement. `etl/airflow/dags/ml_train.py`, `ml_score.py` et `alertes.py` et `historical_import.py` montrent le patron retenu (des `BashOperator` qui invoquent le script tel quel, dans l'environnement `uv` que l'image embarque pour lui).
+Le DAG `mock_api_import` exécute `app.etl.mock_api_import` toutes les heures. Chaque exécution
+traite l'intervalle Airflow précédent. Les deux pipelines normalisent leurs données vers les
+tables communes `site` et `reading`, tout en conservant leur source (`csv` ou `api_history`).
+
+Airflow permet de planifier les traitements, gérer leur ordre d'exécution, suivre leur état et remonter les erreurs. Il ne remplace pas la logique ETL Python existante : les scripts actuels restent responsables de l'extraction, de la validation, de la transformation et du chargement. `etl/airflow/dags/ml_train.py`, `ml_score.py`, `alertes.py`, `historical_import.py` et
+`mock_api_import.py` montrent le patron retenu (des `BashOperator` qui invoquent le script tel quel, dans l'environnement `uv` que l'image embarque pour lui).
 
 Le pipeline Data servira ensuite à préparer les données nécessaires au modèle de Machine Learning.

@@ -50,7 +50,7 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   ├── migrations/     Migrations SQL versionnees
 │   └── seeds/          Jeux de donnees de reference
 ├── etl/airflow/
-│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes, import historique)
+│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes, imports historique et API Mock)
 │   ├── plugins/        Operateurs et hooks maison
 │   ├── include/        Requetes SQL et ressources des DAGs
 │   └── tests/          Tests d'integrite des DAGs

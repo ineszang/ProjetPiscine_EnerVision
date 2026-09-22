@@ -34,12 +34,19 @@ x-airflow-common: &airflow-common
     # memes identifiants que le backend en attendant.
     ML_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     MLFLOW_TRACKING_URI: sqlite:////opt/ml/state/mlflow.db
-    # Le DAG `alertes` lance le backend en sous-processus : il lit `DATABASE_URL`, en
-    # dialecte asyncpg, là où le pipeline ML lit `ML_DATABASE_URL`.
+    # Les DAGs backend lisent `DATABASE_URL` en dialecte asyncpg, là où le pipeline ML
+    # utilise `ML_DATABASE_URL`.
     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-    # Clé distincte de celle de l'API : la détection ne signe ni ne vérifie aucun jeton, et
-    # Airflow permet d'exécuter du code depuis son interface (cf. ADR 0008).
+
+    # Clé distincte de celle de l'API : les traitements lancés par Airflow ne signent ni ne
+    # vérifient aucun jeton. Airflow permet d'exécuter du code depuis son interface (ADR 0008).
     APP_SECRET_KEY: ${AIRFLOW_APP_SECRET_KEY:-}
+
+    # Configuration utilisée par `app.etl.mock_api_import` dans le scheduler Airflow.
+    APP_MOCK_API_BASE_URL: ${APP_MOCK_API_BASE_URL:-https://api-mock.charlieandre.fr}
+    APP_MOCK_API_USERNAME: ${APP_MOCK_API_USERNAME:-}
+    APP_MOCK_API_PASSWORD: ${APP_MOCK_API_PASSWORD:-}
+    APP_MOCK_API_TIMEOUT_SECONDS: ${APP_MOCK_API_TIMEOUT_SECONDS:-10}
   volumes:
     - ./etl/airflow/dags:/opt/airflow/dags
     - ./etl/airflow/plugins:/opt/airflow/plugins

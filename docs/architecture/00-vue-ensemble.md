@@ -70,11 +70,10 @@ Le lien `front -.-> api` reste en pointillé : le frontend appelle bien une API,
 intercepteur répond à sa place tant que les endpoints n'existent pas. Voir
 [30-frontend.md](30-frontend.md).
 
-Le lien `airflow --> db` est maintenant en trait plein : quatre DAGs tournent, deux pour
+Le lien `airflow --> db` est maintenant en trait plein : cinq DAGs tournent, deux pour
 l'entraînement et le scoring du modèle ML (issue #115), un pour la détection d'alertes et la
-génération des recommandations (issue #116), et `historical_import` pour l'ingestion du dataset
-historique (issue #119). L'orchestration de l'import API Mock et la réconciliation globale des
-deux sources restent à compléter dans l'issue #15.
+génération des recommandations (issue #116), `historical_import` pour le dataset historique
+(issue #119) et `mock_api_import` pour l'ingestion horaire de l'API Mock (issue #15).
 
 Le lien `prom -.-> api` de même : l'API expose bien `/metrics` au format Prometheus, mais aucun
 collecteur ne vient le lire.
