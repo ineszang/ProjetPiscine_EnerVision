@@ -6,11 +6,15 @@ vérifié, ce qui bloque, et ce qui ne l'est pas.
 | Étage | Sert à | Statut |
 |---|---|---|
 | Intégration continue | Interdire le merge d'un code qui casse la qualité, les tests ou la sécurité | `Fait` |
-| Livraison continue | Porter un artefact vérifié jusqu'à la machine de déploiement | `Cible` |
+| Livraison continue | Déployer chaque branche d'intégration sur son environnement de la VM ENI | `En cours` |
 
-Le **D** de CI/CD n'existe pas encore : aucun job de déploiement, aucune construction d'image
-publiée, aucun environnement GitHub. L'issue #21 le porte. C'est la limite principale de cet
-étage, et elle est nommée ici plutôt que découverte en soutenance.
+Le **D** de CI/CD est écrit depuis le 21/09 : `deploy.yml` déploie `dev` en recette et `main` en
+production sur la VM de l'école, par un runner auto-hébergé (issue #21,
+[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)). Il n'a encore rien
+déployé : la machine n'est pas provisionnée et le runner n'y est pas enregistré. Statut à
+basculer sur `Fait` au premier déploiement vert. Sa limite, nommée ici plutôt que découverte en
+soutenance : les images sont construites sur la machine à chaque déploiement, aucun artefact
+n'est publié puis promu d'un environnement à l'autre.
 
 ## Vue d'ensemble
 
@@ -54,7 +58,12 @@ flowchart TB
   push --> mv & ms
   push --> av & ab
   push --> sb1 & sb2 --> sscan
-  sscan -.-> cd["deploy<br/>issue #21"]
+
+  subgraph cd["Déploiement · deploy.yml"]
+    dep["deploy<br/>runner eni-g3, environnement rec ou prod"]
+  end
+
+  push -->|"push sur dev ou main"| dep
 ```
 
 ## Déclenchement
@@ -81,9 +90,50 @@ rien changer), mais ce serait à borner sur un dépôt à forte fréquence de pu
 `backend.yml`, `ml.yml` et `airflow.yml` déclarent en plus un groupe de concurrence par référence
 git avec `cancel-in-progress`, ce qui annule un run devenu obsolète par un push plus récent.
 
-**Piège de version** : `etl/airflow` tourne en **Python 3.12** et non 3.14, parce qu'Airflow 2.10
-ne supporte pas encore 3.14. Le 3.14 du module ML ne vit, dans ce contexte, que dans l'image
-Docker et son propre environnement.
+**Piège de version** : `etl/airflow` tourne en **Python 3.12** et non 3.14 : c'est l'interpréteur
+de l'image `apache/airflow:3.3.2-python3.12` retenue, et les tests d'intégrité doivent tourner sur
+le même. Le 3.14 du module ML ne vit, dans ce contexte, que dans l'image Docker et son propre
+environnement.
+
+## Déploiement
+
+`deploy.yml` est le sixième workflow, et le seul qui ne tourne pas chez GitHub : il s'exécute sur
+un runner auto-hébergé installé sur la VM ENI, label `eni-g3`, parce que les runners hébergés ne
+joignent pas une adresse privée d'école. Le runner se connecte en sortie vers GitHub, aucun port
+entrant n'est ouvert.
+
+| Événement | Environnement GitHub | Dossier sur la VM | Garde |
+|---|---|---|---|
+| `push` sur `dev` | `rec` | `/srv/enervision/rec` | aucune : la recette suit `dev` |
+| `push` sur `main` | `prod` | `/srv/enervision/prod` | approbation d'un relecteur dans l'environnement `prod`, branche `main` seule autorisée |
+
+Le job aligne le clone sur la branche (`fetch`, `checkout`, `reset --hard`), lance
+`make stack-up`, qui reconstruit les images, redémarre les conteneurs puis applique les
+migrations Alembic dans le conteneur backend, et attend jusqu'à trois minutes que
+`/api/v1/health/ready` réponde derrière le proxy. Cette sonde ne vérifie que la connexion à la
+base et la présence de TimescaleDB : sans la migration, le déploiement serait vert sur une base
+sans schéma, et c'est pourquoi `make stack-up` la porte. Un groupe de concurrence par branche,
+sans annulation, empêche deux déploiements simultanés du même environnement.
+
+Le job ne fait pas de `actions/checkout` dans son espace de travail, et c'est voulu : le dossier
+de l'environnement est stable, hors du runner, parce que `.env`, certificats et volumes doivent
+survivre d'un déploiement à l'autre.
+
+**Piège à connaître.** Un runner auto-hébergé sur un dépôt public exécute ce qu'un workflow lui
+envoie, et une PR de fork peut réécrire un workflow. Trois parades, et les trois sont
+nécessaires : `deploy.yml` ne se déclenche jamais sur `pull_request` ; le runner tourne sous un
+utilisateur dédié membre du groupe `docker`, jamais root ; le dépôt doit exiger une approbation
+pour les workflows des PR externes (Settings, Actions, « Require approval for all outside
+collaborators »), ce qui reste à activer. Les workflows de CI restent sur `ubuntu-latest`.
+
+Cet utilisateur dédié doit posséder `/srv/enervision` : sinon git refuse les deux clones pour
+propriété douteuse et le `.env` en `600` lui échappe. `PROPRIETAIRE=<utilisateur du runner>`
+passé à `scripts/provision-host.sh` fixe ce propriétaire.
+
+La machine se prépare avec `scripts/provision-host.sh`, qui vérifie Docker et Compose 2.24.4 ou
+plus, clone les deux branches, génère les secrets de chaque `.env` et les certificats
+auto-signés, et ne démarre rien. Le détail des deux environnements, ports et noms d'hôte, est
+dans [10-infra.md](10-infra.md).
 
 ## Ce qui bloque un merge
 
@@ -180,18 +230,23 @@ les tests ne se merge pas.
 
 ## Secrets
 
-Un seul secret est consommé par la CI : **`SONAR_TOKEN`**, porté par les dépôts GitHub Actions.
+Un seul secret est consommé côté GitHub : **`SONAR_TOKEN`**, porté par les secrets du dépôt.
 Les identifiants de la base du job d'intégration sont des valeurs de test en clair dans le
 workflow, ce qui est volontaire : elles ne protègent rien, la base est créée et détruite avec le
-run. Aucune clé de déploiement n'existe encore, puisqu'il n'y a pas de déploiement : le job de
-déploiement est porté par l'issue #21, les secrets qu'il consommera et leur injection par
-l'issue #22.
+run.
+
+Le déploiement ne consomme **aucun secret GitHub** (issue #22). Les secrets de chaque
+environnement, mots de passe PostgreSQL et Airflow, clés de signature, clé Fernet, vivent dans le
+`.env` de son dossier sur la VM, en `600`, générés sur la machine par `scripts/provision-host.sh`.
+Ils ne transitent ni par git ni par GitHub, et le runner, qui travaille dans ce dossier, n'a rien
+à recevoir. Le revers : ils ne sont sauvegardés nulle part ailleurs. Un `.env` perdu se
+régénère, ce qui invalide les sessions et les connexions chiffrées par Airflow.
 
 ## Ce qui manque, et pourquoi
 
 | Manque | Issue | Conséquence assumée |
 |---|---|---|
-| Job de déploiement (CD) | #21 | La chaîne s'arrête au merge. Rien ne part vers une machine |
+| Images publiées et promues par digest (GHCR) | aucune | Chaque environnement reconstruit ses images : la production n'exécute pas l'artefact validé en recette, mais un second build du même commit |
 | DAST (OWASP ZAP) | #41 | Aucune vérification sur l'application en fonctionnement, seulement sur le code et les dépendances |
 | Tests end to end | #46 | Les parcours utilisateur ne sont pas vérifiés en CI |
 | Tests de charge | #47 | Aucun garde-fou de performance |

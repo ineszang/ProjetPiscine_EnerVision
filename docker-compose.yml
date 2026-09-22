@@ -5,9 +5,9 @@
 
 name: enervision
 
-# Piege : LocalExecutor fait tourner les taches comme sous-processus du scheduler, jamais du
-# webserver. `airflow_ml_state` (modele entraine, magasin MLflow) n'a donc besoin d'etre monte
-# que sur `airflow-scheduler` en pratique, mais reste partage avec le webserver pour que ce
+# Piege : LocalExecutor fait tourner les taches comme sous-processus du scheduler, jamais de
+# l'api-server. `airflow_ml_state` (modele entraine, magasin MLflow) n'a donc besoin d'etre monte
+# que sur `airflow-scheduler` en pratique, mais reste partage avec l'api-server pour que ce
 # dernier puisse au besoin l'inspecter sans en devenir dependant.
 x-airflow-common: &airflow-common
   build:
@@ -19,9 +19,16 @@ x-airflow-common: &airflow-common
     # Piege : pas de `:?` sur les secrets Airflow. Compose interpole le fichier entier avant de
     # filtrer les services : une variable requise manquante casserait aussi `make db-up`,
     # `make dev`... pour quiconque n'a pas encore complete son `.env`. Le refus est porte par
-    # `airflow-init` (ci-dessous), dont `webserver` et `scheduler` dependent.
+    # `airflow-init` (ci-dessous), dont `api-server`, `dag-processor` et `scheduler` dependent.
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
-    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:-}
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET_KEY:-}
+    # Signe les jetons entre scheduler, tâches et api-server. Conteneurs distincts : un secret
+    # généré au démarrage ne serait pas partagé, il doit venir du .env.
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-}
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    # FabAuthManager plutôt que le SimpleAuthManager par défaut d'Airflow 3 : seul le provider
+    # FAB sait créer le compte admin que `airflow-init` pose via `_AIRFLOW_WWW_USER_*`.
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/airflow
     # Role `enervision_ml` dedie pas encore provisionne (dette assumee, cf. ADR 0003) :
     # memes identifiants que le backend en attendant.
@@ -36,6 +43,7 @@ x-airflow-common: &airflow-common
   volumes:
     - ./etl/airflow/dags:/opt/airflow/dags
     - ./etl/airflow/plugins:/opt/airflow/plugins
+    - ./data/raw:/opt/data/raw:ro
     - airflow_logs:/opt/airflow/logs
     - airflow_ml_state:/opt/ml/state
   restart: unless-stopped
@@ -110,11 +118,11 @@ services:
   # Conteneur unique, jamais redemarre. La migration et la creation du premier compte sont
   # portees par l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`, `_AIRFLOW_WWW_USER_*`), qui porte
   # aussi leur code de sortie : une migration ratee (ex. base `airflow` absente sur un volume
-  # `pgdata` deja peuple) fait echouer ce service, et `webserver`/`scheduler`, qui attendent son
-  # succes, ne demarrent pas sur une base non migree. Le mot de passe passe par l'environnement,
-  # jamais par `argv` (ni `ps`, ni `docker compose config`).
+  # `pgdata` deja peuple) fait echouer ce service, et api-server, dag-processor et scheduler,
+  # qui attendent son succes, ne demarrent pas sur une base non migree. Le mot de passe passe
+  # par l'environnement, jamais par `argv` (ni `ps`, ni `docker compose config`).
   # Sans mot de passe, l'entrypoint refuse lui-meme de creer le compte ; la commande ci-dessous
-  # refuse en plus les deux cles de chiffrement vides.
+  # refuse en plus les cles et secrets vides.
   airflow-init:
     <<: *airflow-common
     restart: "no"
@@ -134,13 +142,14 @@ services:
       - |
         set -euo pipefail
         : "$${AIRFLOW__CORE__FERNET_KEY:?AIRFLOW_FERNET_KEY manquant dans .env}"
-        : "$${AIRFLOW__WEBSERVER__SECRET_KEY:?AIRFLOW_WEBSERVER_SECRET_KEY manquant dans .env}"
+        : "$${AIRFLOW__API__SECRET_KEY:?AIRFLOW_API_SECRET_KEY manquant dans .env}"
+        : "$${AIRFLOW__API_AUTH__JWT_SECRET:?AIRFLOW_JWT_SECRET manquant dans .env}"
         : "$${APP_SECRET_KEY:?AIRFLOW_APP_SECRET_KEY manquant dans .env}"
         exec airflow version
 
-  airflow-webserver:
+  airflow-apiserver:
     <<: *airflow-common
-    command: webserver
+    command: api-server
     ports:
       - "${AIRFLOW_PORT:-8080}:8080"
     depends_on:
@@ -149,7 +158,7 @@ services:
       airflow-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -158,6 +167,16 @@ services:
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Obligatoire depuis Airflow 3 : le scheduler ne parse plus les fichiers de dags/ lui-même.
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
     depends_on:
       db:
         condition: service_healthy

@@ -5,6 +5,8 @@
 # moyen de dépublier 8000 et 3000 : sans lui, l'API resterait joignable en clair à côté du proxy.
 # Piège : pas de `:?` sur `PUBLIC_HOST`. Compose interpole tout le fichier, y compris pour
 # `stop` et `logs` : la garde vit dans `make stack-up`, qui la compare au certificat servi.
+# Pourquoi : ports du proxy et origine publique en variables, pour que deux environnements
+# cohabitent sur la même machine, chacun dans son projet Compose (ADR 0009).
 
 name: enervision
 
@@ -12,14 +14,19 @@ services:
   db:
     ports: !override
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    environment:
+      TS_TUNE_MEMORY: ${TS_TUNE_MEMORY:-2GB}
+      TS_TUNE_NUM_CPUS: ${TS_TUNE_NUM_CPUS:-2}
 
   mailpit:
     ports: !override
       - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
 
-  airflow-webserver:
+  airflow-apiserver:
     ports: !override
       - "127.0.0.1:${AIRFLOW_PORT:-8080}:8080"
+    environment:
+      AIRFLOW__WEBSERVER__WORKERS: ${AIRFLOW_WEBSERVER_WORKERS:-2}
 
   backend:
     ports: !reset null
@@ -37,22 +44,22 @@ services:
       APP_ENV: prod
       APP_DEBUG: "false"
       APP_TRUST_PROXY_HEADERS: "true"
-      APP_CORS_ORIGINS: https://${PUBLIC_HOST:-enervision.local}
-      APP_FRONTEND_RESET_PASSWORD_URL: https://${PUBLIC_HOST:-enervision.local}/reset-password
+      APP_CORS_ORIGINS: ${PUBLIC_ORIGIN:-https://${PUBLIC_HOST:-enervision.local}}
+      APP_FRONTEND_RESET_PASSWORD_URL: ${PUBLIC_ORIGIN:-https://${PUBLIC_HOST:-enervision.local}}/reset-password
 
   frontend:
     ports: !reset null
 
   proxy:
-    image: nginx:1.28-alpine
+    image: nginx:1.31-alpine
     depends_on:
       backend:
         condition: service_healthy
       frontend:
         condition: service_started
     ports:
-      - "80:80"
-      - "443:443"
+      - "${PROXY_HTTP_PORT:-80}:80"
+      - "${PROXY_HTTPS_PORT:-443}:443"
     volumes:
       - ./infra/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./infra/proxy/conf.d:/etc/nginx/conf.d:ro

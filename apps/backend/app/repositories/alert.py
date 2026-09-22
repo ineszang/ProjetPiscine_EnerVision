@@ -6,6 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.energy import Alert
 
+# Douze colonnes par alerte, contre quatre pour une recommandation : le plafond asyncpg de
+# 32 767 parametres tombe a 2 730 lignes, d'ou un lot plus petit que `recommendation.py`.
+TAILLE_DE_LOT = 1000
+
 
 class AlertRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -44,12 +48,17 @@ class AlertRepository:
             }
             for alerte in alerts
         ]
-        requete = (
-            insert(Alert)
-            .values(valeurs)
-            .on_conflict_do_nothing(constraint="uq_alert_source_reference")
-            .returning(Alert)
-        )
-        resultat = await self._session.execute(requete)
+        creees: list[Alert] = []
+        # Piège : asyncpg plafonne une requête à 32 767 paramètres. Une détection sur une fenêtre
+        # chargée dépasse ce seuil, et l'`INSERT` d'un seul tenant échouerait.
+        for debut in range(0, len(valeurs), TAILLE_DE_LOT):
+            requete = (
+                insert(Alert)
+                .values(valeurs[debut : debut + TAILLE_DE_LOT])
+                .on_conflict_do_nothing(constraint="uq_alert_source_reference")
+                .returning(Alert)
+            )
+            resultat = await self._session.execute(requete)
+            creees.extend(resultat.scalars().all())
         await self._session.flush()
-        return resultat.scalars().all()
+        return creees

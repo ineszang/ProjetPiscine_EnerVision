@@ -1,0 +1,95 @@
+<section class="alert-feed">
+  <header class="alert-feed__header">
+    <div>
+      <h2 class="alert-feed__title">Alertes actives</h2>
+      @if (!loading() || alerts().length > 0) {
+        <p class="alert-feed__count">
+          {{ alerts().length }} {{ alerts().length > 1 ? 'alertes' : 'alerte' }}
+        </p>
+      }
+    </div>
+    <div class="alert-feed__filters">
+      @if (!siteId()) {
+        <label class="alert-feed__filter">
+          <span class="form-label">Site</span>
+          <select class="form-select" data-testid="site-filter" (change)="onSiteChange($event)">
+            <option value="">Tous les sites</option>
+            @for (site of sites(); track site.site_id) {
+              <option [value]="site.site_id">{{ site.site_name }}</option>
+            }
+          </select>
+        </label>
+      }
+      <label class="alert-feed__filter">
+        <span class="form-label">Sévérité</span>
+        <select
+          class="form-select"
+          data-testid="severity-filter"
+          (change)="onSeverityChange($event)"
+        >
+          <option value="">Toutes</option>
+          @for (severite of severites; track severite) {
+            <option [value]="severite">{{ severityLabel(severite) }}</option>
+          }
+        </select>
+      </label>
+    </div>
+  </header>
+
+  @if (error(); as message) {
+    <ev-alert severity="danger" class="alert-feed__banner">{{ message }}</ev-alert>
+  }
+
+  @if (loading() && alerts().length === 0 && !error()) {
+    <p class="alert-feed__state" aria-live="polite">Chargement des alertes…</p>
+  } @else if (alerts().length === 0 && !error()) {
+    <ev-alert severity="success" class="alert-feed__banner"
+      >Aucune alerte pour ces critères.</ev-alert
+    >
+  }
+
+  <ul class="alert-feed__list" [attr.aria-busy]="loading()">
+    @for (alert of visibleAlerts(); track alert.alert_id) {
+      <li class="alert-feed__item" [class]="'alert-feed__item--' + alert.severity">
+        <span class="alert-feed__icon">
+          <ev-icon [name]="alert.type" [label]="typeLabel(alert.type)" />
+        </span>
+        <div class="alert-feed__body">
+          <div class="alert-feed__meta">
+            <ev-badge [tone]="toneFor(alert.severity)">{{
+              severityLabel(alert.severity)
+            }}</ev-badge>
+            <span class="alert-feed__type">{{ typeLabel(alert.type) }}</span>
+            <span class="alert-feed__site">{{ siteName(alert.site_id) }}</span>
+            <time class="alert-feed__time" [attr.datetime]="alert.timestamp">
+              {{ alert.timestamp | date: 'dd/MM/yyyy HH:mm' }}
+            </time>
+          </div>
+          <p class="alert-feed__message">{{ alert.message }}</p>
+          @if (alert.value !== null) {
+            <p class="alert-feed__values">
+              <strong>{{ alert.value | number: '1.0-1' }} {{ unitFor(alert.metric) }}</strong>
+              @if (alert.threshold !== null) {
+                <span
+                  >seuil {{ alert.threshold | number: '1.0-1' }} {{ unitFor(alert.metric) }}</span
+                >
+              }
+            </p>
+          }
+        </div>
+      </li>
+    }
+  </ul>
+
+  @if (hiddenCount() > 0) {
+    <ev-button
+      variant="secondary"
+      [fullWidth]="false"
+      class="alert-feed__more"
+      data-testid="show-more"
+      (click)="showMore()"
+    >
+      Afficher plus ({{ hiddenCount() }} restantes)
+    </ev-button>
+  }
+</section>

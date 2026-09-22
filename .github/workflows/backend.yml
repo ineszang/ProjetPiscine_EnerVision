@@ -30,10 +30,10 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
@@ -90,10 +90,10 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
@@ -126,10 +126,10 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
@@ -150,12 +150,12 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Pourquoi : pas de cache ici. uvx n'installe pas le projet, le verrou n'alimente donc
       # aucune clé de cache ; la seule roue téléchargée est celle de Bandit.
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
 
       # Pourquoi : le périmètre est `app`, le code livré. Les tests emploient légitimement des
       # secrets factices et des `assert` que Bandit signalerait sans qu'aucun n'atteigne la prod.
