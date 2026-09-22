@@ -356,8 +356,10 @@ pas prise :
 | `license_info` | Aucune licence n'est choisie |
 | `contact` | Aucun canal de support n'existe |
 
-Deux schémas de sécurité sont déclarés : `Jeton d'accès` pour le porteur JWT, et
-`Cookie de rafraîchissement` pour `/auth/refresh` et `/auth/logout`. **Le second est purement
+Deux schémas de sécurité sont déclarés : `JetonAcces` pour le porteur JWT, et
+`CookieRafraichissement` pour `/auth/refresh` et `/auth/logout`, des noms ASCII délibérés (issue
+#41 : un outillage tiers comme ZAP peut mal analyser un nom de schéma accentué dans le contrat).
+**Le second est purement
 documentaire** : son `auto_error=False` garantit qu'il ne décide d'aucun refus. Le passer à vrai
 ferait répondre 403 avant d'atteindre `lit_le_cookie()`, et `/auth/refresh` cesserait de rendre le
 401 sur lequel le frontend déclenche sa déconnexion.

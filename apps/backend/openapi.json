@@ -213,7 +213,7 @@
         },
         "security": [
           {
-            "Cookie de rafraîchissement": []
+            "CookieRafraichissement": []
           }
         ]
       }
@@ -252,7 +252,7 @@
         },
         "security": [
           {
-            "Cookie de rafraîchissement": []
+            "CookieRafraichissement": []
           }
         ]
       }
@@ -301,7 +301,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       }
@@ -347,7 +347,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       }
@@ -423,7 +423,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       }
@@ -673,7 +673,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       },
@@ -757,7 +757,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       }
@@ -771,7 +771,7 @@
         "operationId": "update_user_api_v1_users__user_id__patch",
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ],
         "parameters": [
@@ -889,7 +889,7 @@
         "operationId": "reset_password_api_v1_users__user_id__password_reset_post",
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ],
         "parameters": [
@@ -1023,7 +1023,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       }
@@ -1037,7 +1037,7 @@
         "operationId": "get_site_api_v1_sites__site_id__get",
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ],
         "parameters": [
@@ -1124,7 +1124,7 @@
         "operationId": "get_current_api_v1_sites__site_id__current_get",
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ],
         "parameters": [
@@ -1211,7 +1211,7 @@
         "operationId": "list_alerts_api_v1_alerts_get",
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ],
         "parameters": [
@@ -1361,7 +1361,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       }
@@ -1375,7 +1375,7 @@
         "operationId": "get_recommendation_api_v1_recommendations__recommendation_id__get",
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ],
         "parameters": [
@@ -1462,7 +1462,7 @@
         "operationId": "generate_recommendations_api_v1_recommendations_generate_post",
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ],
         "parameters": [
@@ -1588,7 +1588,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       }
@@ -1602,7 +1602,7 @@
         "operationId": "list_readings_api_v1_readings_get",
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ],
         "parameters": [
@@ -1799,7 +1799,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       }
@@ -1855,7 +1855,7 @@
         },
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ]
       }
@@ -1869,7 +1869,7 @@
         "operationId": "get_drift_api_v1_monitoring_drift_get",
         "security": [
           {
-            "Jeton d'accès": []
+            "JetonAcces": []
           }
         ],
         "parameters": [
@@ -3487,13 +3487,13 @@
       }
     },
     "securitySchemes": {
-      "Cookie de rafraîchissement": {
+      "CookieRafraichissement": {
         "type": "apiKey",
         "description": "Cookie `HttpOnly` posé par `/auth/login` et tourné par `/auth/refresh`. Il prend le préfixe `__Secure-` dès que l'API tourne derrière TLS, et n'est émis que vers `/api/v1/auth`.",
         "in": "cookie",
         "name": "ev_refresh"
       },
-      "Jeton d'accès": {
+      "JetonAcces": {
         "type": "http",
         "scheme": "bearer"
       }
