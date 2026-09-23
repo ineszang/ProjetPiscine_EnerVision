@@ -118,7 +118,8 @@ def test_mock_api_import_asks_for_the_on_the_hour_reading(dagbag: DagBag) -> Non
 
     assert "--start-time \"{{ data_interval_end.strftime('%Y-%m-%dT%H:00:00') }}\"" in commande
     assert "--end-time \"{{ data_interval_end.strftime('%Y-%m-%dT%H:%M:%S') }}\"" in commande
-    assert commande.endswith("--limit 1")
+    # Pas de --limit : app.etl.mock_api_import.limit_for_window() le dérive de la fenêtre.
+    assert "--limit" not in commande
 
 
 @pytest.mark.parametrize("task_id", ["detection", "recommandations"])

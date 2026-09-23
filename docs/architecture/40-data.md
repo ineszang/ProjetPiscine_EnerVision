@@ -437,9 +437,28 @@ Les paramètres de ligne de commande disponibles pour l'import sont :
 ```text
 --start-time
 --end-time
---limit
 --dry-run
 ```
+
+**Piège sur `limit`, corrigé dans le code plutôt que documenté** : l'API ne renvoie pas un flux à
+un rythme naturel, elle répartit exactement `limit` lectures, espacées uniformément, sur toute la
+fenêtre `[start_time, end_time)` demandée, la première au tout début de la fenêtre (vérifié
+empiriquement en interrogeant directement l'API). Une fenêtre d'une heure avec `limit=1000`, le
+réglage d'origine, renvoyait donc 1000 lectures espacées de 3,6 secondes à l'intérieur de cette
+heure, pas une lecture horaire, incompatible avec les lags positionnels de `build_features`.
+Plutôt que documenter la règle « `limit` = nombre d'heures de la fenêtre » et compter sur chaque
+appelant pour la respecter, `limit_for_window()` la porte : `import_mock_api_history()` calcule
+`limit` depuis la fenêtre reçue, refuse une fenêtre dont `start_time` ne tombe pas pile sur
+l'heure (c'est elle qui ancre l'alignement), et refuse un intervalle de plus de 1000 heures (le
+plafond `limit` de l'API). `--limit` n'existe donc plus côté CLI. Deux formes de fenêtre sont
+gérées : un multiple entier d'heures (`limit` = ce nombre d'heures, une lecture par heure
+espacée d'1h pile, chemin du backfill manuel) ou une fenêtre plus courte qu'une heure, ou qui
+n'en est pas un multiple entier (`limit=1`, seule valeur qui reste alignée quand l'espacement
+`durée / limit` ne peut valoir 1h pile). Le DAG `mock_api_import` est dans ce second cas : il
+demande la fenêtre `[heure pile précédant le déclenchement, instant du déclenchement)`, plus
+courte qu'une heure, plutôt que l'intervalle Airflow `[data_interval_start, data_interval_end)`
+tel quel (`[:45, :45)`) qui aurait placé l'unique lecture à :45, hors de la grille horaire du
+reste du schéma.
 
 ### Flux d'ingestion API Mock
 
@@ -492,7 +511,7 @@ réponse est donc traitée comme une entrée hostile, conformément à API10 dan
 [la traçabilité OWASP](owasp-traceabilite.md). Le risque premier n'est pas la fausse alerte,
 c'est l'empoisonnement du jeu d'entraînement du modèle de prédiction.
 
-Quatre garde-fous, tous dans `mock_api_import.py` :
+Cinq garde-fous, tous dans `mock_api_import.py` :
 
 | Garde-fou | Mise en œuvre |
 |---|---|
@@ -500,6 +519,7 @@ Quatre garde-fous, tous dans `mock_api_import.py` :
 | Taille de tableau plafonnée | `MAX_SITES` sites, et au plus `--limit` mesures par site |
 | Bornes physiques | `PHYSICAL_BOUNDS`, une plage par grandeur |
 | Frontière d'anti-corruption | `build_site_row()` et `build_reading_row()`, qui ne recopient que les champs attendus |
+| Refus de recouvrir l'historique | `refuse_if_overlaps_historical_dataset()`, voir ci-dessous |
 
 Une valeur hors bornes, d'un type inattendu, `NaN` ou infinie devient `NULL`. Elle laisse sa
 trace dans `null_reasons` sous la forme `out_of_physical_bounds:<colonne>`, et `data_quality`
@@ -509,6 +529,51 @@ d'origine intacte : rien n'est perdu, seule son exploitation est bornée.
 
 Le plafond de taille s'applique après désérialisation de la réponse. Borner le corps HTTP
 lui-même demanderait une lecture en flux, et reste à faire.
+
+### Réconciliation entre les deux sources (issue #15)
+
+`historical_import` (source `csv`) et `mock_api_import` (source `api_history`) écrivent toutes
+deux dans `reading`. Trois décisions ferment cette réconciliation :
+
+- **Le trou temporel est accepté.** Le dataset historique s'arrête au 31/12/2024, et
+  `mock_api_import` n'importe que l'heure précédant chaque déclenchement : rien ne comble
+  automatiquement la période intermédiaire, et rien ne le pourra jamais, aucune mesure réelle
+  n'existe pour ces instants. Conséquence pour le ML, pas nouvelle mais que ce trou rend
+  définitive : `build_features()` calcule ses lags par `shift(n)` positionnel, et `train.py`
+  n'écarte que les lignes où `lag_168h` est `NaN`. Pour un site présent dans les deux sources, les
+  168 premières lectures `api_history` qui suivent le trou héritent donc de lags et de moyennes
+  glissantes calculés sur décembre 2024 (et tant que l'ingestion a moins de 7 jours, c'est le cas
+  de toutes les lectures). Même effet, plus ponctuel, pour chaque heure que le DAG manque
+  (`mock_api_import` en échec, Airflow arrêté). Aucun garde-fou ne détecte aujourd'hui un lag
+  calculé sur un écart réel différent de celui attendu ; issue de suivi à ouvrir.
+- **Le recouvrement est refusé à l'ingestion.** `uq_reading_source` autorise deux lignes au même
+  `(site_id, timestamp)` dès que `source` diffère : rien dans le schéma n'empêche donc un import
+  Mock API manuel avec une fenêtre passée (le script accepte `--start-time`/`--end-time`
+  arbitraires) de dupliquer un point déjà couvert par le CSV. `import_mock_api_history()` appelle
+  `refuse_if_overlaps_historical_dataset()` avant toute écriture, y compris en `--dry-run` (le
+  contrôle est en lecture seule) et avant le moindre appel à l'API Mock : si la fenêtre demandée
+  recouvre au moins une lecture `source='csv'`, l'import est refusé (`ValueError`) plutôt que
+  d'écrire un doublon inter-source silencieux. Le contrôle ne porte que sur la fenêtre demandée,
+  pas sur les lectures reçues : `fetch_readings()` écarte donc toute lecture dont le `timestamp`
+  déborde de `[start_time, end_time)`, pour qu'une réponse hors fenêtre (bug du mock, ou hostile)
+  ne puisse pas le contourner. Ce contrôle compare des instants, pas des chaînes : `parse_datetime()`
+  pose `tzinfo=UTC` sur une entrée sans fuseau (même pattern que `_vers_utc()` dans
+  `app/services/reading.py`), sans quoi l'encodeur `timestamptz` d'asyncpg lirait un datetime naïf
+  dans le fuseau local du **processus**, correct dans le conteneur Airflow (UTC) mais décalé pour
+  un import manuel lancé depuis un poste en Europe/Paris.
+- **Le pipeline ML déduplique en défense.** Le garde-fou ci-dessus protège l'ingestion, pas
+  la lecture : si un recouvrement se produisait malgré tout (import direct en base, contournement
+  du script), `ml/enervision_ml/data.py` ne doit pas casser silencieusement l'hypothèse de
+  `build_features` (« une ligne par `(site_id, timestamp)` »). `load_from_database()` et
+  `load_recent_from_database()` utilisent donc `SELECT DISTINCT ON (site_id, timestamp)`, `source
+  = 'csv'` gagnant sur `'api_history'` en cas d'égalité, l'historique étant une source vérifiée,
+  l'API Mock une entrée hostile (cf. ci-dessus). **Cette préférence est spécifique au chargeur
+  ML.** `GET /readings` renvoie les deux lignes sans les fusionner, et `DriftRepository` /
+  `ReadingRepository.latest_by_site()` / `.latest_for_site()` départagent par `reading_id` le plus
+  grand (en pratique la ligne insérée en dernier, pas forcément `csv`) : en cas de recouvrement, la
+  dérive comparerait alors une prévision à une valeur différente de celle sur laquelle le modèle a
+  appris. Pas d'incohérence aujourd'hui tant que le recouvrement reste refusé à l'ingestion ; à
+  aligner si ce garde-fou devait un jour être contourné.
 
 ### Qualité des données de l'API Mock
 

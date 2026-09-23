@@ -16,7 +16,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import lightgbm as lgb
@@ -44,17 +44,27 @@ _INSERT_SITE = text(
     """
 )
 
-# `source = 'api_history'` impose `dataset_id IS NULL` (ck_reading_dataset_source), ce qui evite
-# de creer une ligne `dataset`. `raw_data` est NOT NULL, d'ou le litteral jsonb.
+# `source = 'api_history'` impose `dataset_id IS NULL` (ck_reading_dataset_source) : le defaut
+# `dataset_id=None` evite de creer une ligne `dataset` pour la plupart des tests. `source='csv'`
+# impose l'inverse, d'ou `insere_dataset()` quand un test a besoin de cette source precise.
+# `raw_data` est NOT NULL, d'ou le litteral jsonb.
 _INSERT_READING = text(
     """
     INSERT INTO reading (
-        site_id, timestamp, source, consumption_kwh, temperature_celsius,
+        site_id, timestamp, source, dataset_id, consumption_kwh, temperature_celsius,
         humidity_percent, solar_irradiance_wm2, is_working_hours, raw_data
     ) VALUES (
-        :site_id, :timestamp, :source, :consumption_kwh, :temperature_celsius,
+        :site_id, :timestamp, :source, :dataset_id, :consumption_kwh, :temperature_celsius,
         :humidity_percent, :solar_irradiance_wm2, :is_working_hours, '{}'::jsonb
     )
+    """
+)
+
+_INSERT_DATASET = text(
+    """
+    INSERT INTO dataset (dataset_name, archive_sha256, storage_uri, source_timezone, metadata)
+    VALUES (:dataset_name, :archive_sha256, :storage_uri, 'UTC', '{}'::jsonb)
+    RETURNING dataset_id
     """
 )
 
@@ -111,6 +121,25 @@ def insere_site(
     return site_id
 
 
+def insere_dataset(connexion: Connection) -> int:
+    """Ligne `dataset` minimale, requise pour inserer une lecture `source='csv'`
+
+    (`ck_reading_dataset_source` impose `dataset_id IS NOT NULL` pour cette seule source).
+    """
+    marque = uuid4().hex
+    return cast(
+        int,
+        connexion.execute(
+            _INSERT_DATASET,
+            {
+                "dataset_name": f"jeu de test {marque}",
+                "archive_sha256": marque.rjust(64, "0"),
+                "storage_uri": f"file:///test/{marque}.csv",
+            },
+        ).scalar_one(),
+    )
+
+
 def insere_lectures(
     connexion: Connection,
     site_id: str,
@@ -119,6 +148,7 @@ def insere_lectures(
     fin: datetime,
     valeur: float = 50.0,
     source: str = "api_history",
+    dataset_id: int | None = None,
     is_working_hours: bool | None = True,
 ) -> list[datetime]:
     """Grille horaire contigue finissant a `fin`, incluse.
@@ -134,6 +164,7 @@ def insere_lectures(
                 "site_id": site_id,
                 "timestamp": instant,
                 "source": source,
+                "dataset_id": dataset_id,
                 "consumption_kwh": valeur + math.sin(rang / 12.0) * 10.0,
                 "temperature_celsius": 15.0,
                 "humidity_percent": 50.0,
@@ -153,6 +184,7 @@ def insere_lecture(
     instant: datetime,
     consumption_kwh: float | None = 50.0,
     source: str = "api_history",
+    dataset_id: int | None = None,
     is_working_hours: bool | None = True,
 ) -> None:
     """Une lecture isolee, quand le test pilote sa valeur plutot que sa forme."""
@@ -162,6 +194,7 @@ def insere_lecture(
             "site_id": site_id,
             "timestamp": instant,
             "source": source,
+            "dataset_id": dataset_id,
             "consumption_kwh": consumption_kwh,
             "temperature_celsius": 15.0,
             "humidity_percent": 50.0,
