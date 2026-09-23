@@ -237,7 +237,8 @@ Deux conséquences se propagent jusqu'à l'application, et elles ne se devinent 
 
 Statut : `En cours`. Décision et motifs dans
 l'[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md), étendue à un troisième
-environnement par l'[ADR 0017](../adr/0017-environnement-dev-a-la-demande.md).
+environnement par l'[ADR 0017](../adr/0017-environnement-dev-a-la-demande.md) ; noms,
+certificats et frontal sans port dans l'[ADR 0018](../adr/0018-noms-publics-certificats-dns01-et-frontal-sni.md).
 La VM `eadl-2025-nantes-g3` porte le développement, la recette et la production, chacun dans son
 clone du dépôt, son `.env` et son projet Compose. Le nom de projet préfixe volumes, réseau et
 conteneurs : rien n'est partagé. `scripts/provision-host.sh` prépare les trois dossiers, génère
@@ -247,16 +248,21 @@ les secrets et les certificats, et ne démarre rien.
 |---|---|---|---|
 | Branche, environnement GitHub | toute branche lancée à la main, `dev` | `dev`, `rec` | `main`, `prod` |
 | Dossier, projet Compose | `/srv/enervision/dev`, `enervision-dev` | `/srv/enervision/rec`, `enervision-rec` | `/srv/enervision/prod`, `enervision-prod` |
-| URL | `https://dev.enervision.local:9443` | `https://rec.enervision.local:8443` | `https://enervision.local` |
-| Proxy HTTP, HTTPS | `127.0.0.1:8083`, `9443` | `127.0.0.1:8081`, `8443` | `80`, `443` |
+| URL | `https://dev.enervision-g3.dynv6.net` | `https://rec.enervision-g3.dynv6.net` | `https://enervision-g3.dynv6.net` |
+| Proxy HTTP, HTTPS, PROXY protocol, sur `127.0.0.1` | `8083`, `9443`, `9444` | `8081`, `8443`, `8444` | `10080`, `10443`, `10444` |
 | PostgreSQL, Mailpit, Airflow, sur `127.0.0.1` | `5435`, `8027`, `8084` | `5434`, `8026`, `8082` | `5433`, `8025`, `8080` |
 | Supervision (profil `monitoring`) | à la demande, `make monitoring-up` | à la demande, `make monitoring-up` | active, `COMPOSE_PROFILES=monitoring` |
 | Grafana, Prometheus, Alertmanager, sur `127.0.0.1` | `3003`, `9092`, `9095` | `3002`, `9091`, `9094` | `3001`, `9090`, `9093` |
 
-Les trois noms d'hôte visent la même IP, à déclarer dans le `/etc/hosts` des postes. Deux noms
-distincts sont nécessaires : le cookie `__Secure-ev_refresh` est posé par hôte, pas par port.
-La redirection HTTP de la recette et du développement est ramenée sur la boucle locale parce que la configuration
-Nginx renvoie vers `https://$host` sans port, c'est-à-dire vers la production.
+Les trois noms sont publics chez dynv6 et visent l'IP privée de la VM : rien à déclarer sur
+les postes du réseau de l'école, et rien n'est joignable hors de ce réseau. Trois noms distincts
+sont nécessaires : le cookie `__Secure-ev_refresh` est posé par hôte, pas par port.
+
+Aucune stack ne publie hors de la boucle locale. Le frontal `infra/front`, sur le réseau de
+l'hôte, écoute 80 et 443 : il redirige le premier, et aiguille le second d'après le nom demandé
+(SNI) vers l'écouteur PROXY protocol de la stack visée, sans déchiffrer le TLS. Chaque stack
+garde son certificat Let's Encrypt, obtenu par défi DNS-01 (`make tls-dns01`) et renouvelé à
+chaque déploiement ainsi que chaque nuit par `/etc/cron.d/enervision-tls`.
 
 Le déploiement est décrit dans [50-cicd.md](50-cicd.md) : un runner GitHub Actions installé sur
 la VM aligne le dossier sur la branche poussée et lance `make stack-up`.
@@ -362,7 +368,8 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | API | `8000` | Identique en conteneur et hors conteneur |
 | Frontend, `ng serve` | `4200` | Boucle de développement. Valeur par défaut d'`APP_CORS_ORIGINS` |
 | Frontend en conteneur | `3000` | Ce qu'écoute le nginx de l'image, en conteneur comme côté hôte |
-| Reverse proxy | `80` et `443` | Les seuls ports publiés par `docker-compose.prod.yml`, via `PROXY_HTTP_PORT` et `PROXY_HTTPS_PORT`. 80 ne sert que la redirection et le défi ACME. La recette publie `8443` et `127.0.0.1:8081` |
+| Reverse proxy | `80` et `443`, plus `4443` | Les seuls ports publiés par `docker-compose.prod.yml`, via `PROXY_HTTP_PORT`, `PROXY_HTTPS_PORT` et `PROXY_FRONT_PORT`. 80 ne sert que la redirection et le défi ACME ; 4443 n'accepte que le PROXY protocol du frontal. Sur la VM, tous sur `127.0.0.1` |
+| Frontal SNI de la VM | `80` et `443` de l'hôte | `infra/front`, seul composant exposé sur le réseau de l'école (ADR 0018) |
 | SSH du serveur | `22` par défaut | `ssh_port`, redéfinissable |
 | Base applicative | `enervision` | Variable `POSTGRES_DB` |
 | Base de test | `enervision_test` | Créée par `db/init/110-test-database.sql`, nom attendu en dur par `apps/backend/tests/conftest.py` |

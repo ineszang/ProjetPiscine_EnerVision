@@ -76,8 +76,28 @@ Renouvellement, à passer en tâche planifiée sur la machine :
 17 3 * * * cd /srv/enervision && make tls-renew >> /var/log/enervision-tls.log 2>&1
 ```
 
-Pour un domaine sans port 80 entrant, le défi DNS-01 est l'alternative : elle demande un
-greffon certbot propre au fournisseur DNS et un jeton d'API, hors périmètre à ce jour.
+### Let's Encrypt par DNS-01, le mode de la VM
+
+La VM n'a qu'une IP privée : le défi HTTP-01 y est impossible. Ses trois noms sont chez dynv6,
+dont l'API pose l'enregistrement TXT du défi DNS-01, et acme.sh le fait sans rien ouvrir
+([ADR 0018](../../docs/adr/0018-noms-publics-certificats-dns01-et-frontal-sni.md)).
+
+```bash
+make tls-dns01          # PUBLIC_HOST lu dans .env, jeton dans ../dns.token (600)
+```
+
+Autre fournisseur : `DNS01_API` et `DNS01_JETON_VAR` nomment le greffon acme.sh et sa variable
+(`dns_cf` et `CF_Token` pour Cloudflare, par exemple). La cible est rejouable : acme.sh ne renouvelle qu'à trente jours de l'échéance, installe le
+résultat dans `tls/` et recharge le proxy s'il tourne. Son état vit dans `acme/`, ignoré par git.
+`deploy.yml` la rejoue avant chaque `make stack-up`, et `/etc/cron.d/enervision-tls` chaque nuit.
+
+## Écouteur PROXY protocol
+
+Sur la VM, le frontal `infra/front` relaie les connexions TLS sans les déchiffrer. Reçues sur
+443, elles porteraient son adresse, et `limit_req` comme `get_client_ip()` compteraient tous les
+postes comme un seul. Le port 4443 ne les accepte qu'avec l'en-tête PROXY protocol, d'où
+`real_ip_header proxy_protocol` tire l'IP du client ; seules les adresses des réseaux Docker ont
+le droit de l'annoncer, et le port n'est publié que sur `127.0.0.1` (`PROXY_FRONT_PORT`).
 
 ## Vérifier la configuration sans démarrer la stack
 
