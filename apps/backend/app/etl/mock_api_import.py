@@ -184,9 +184,7 @@ async def upsert_sites(
     )
 
 
-def _timestamp_in_window(
-    reading: dict[str, Any], start_time: datetime, end_time: datetime
-) -> bool:
+def _timestamp_in_window(reading: dict[str, Any], start_time: datetime, end_time: datetime) -> bool:
     valeur = reading.get("timestamp")
     if not isinstance(valeur, str):
         return False
