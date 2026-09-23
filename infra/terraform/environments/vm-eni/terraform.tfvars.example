@@ -1,0 +1,22 @@
+ssh_host             = "10.101.200.37"
+ssh_port             = 22
+ssh_user             = "root"
+ssh_private_key_path = "~/.ssh/id_ed25519"
+
+# Utilisateur qui possede la racine et fait tourner le runner. Il doit deja exister sur la
+# machine : git refuse les depots appartenant a un autre utilisateur, et un .env en 600 lui
+# echapperait.
+proprietaire = "enervision"
+
+# Epingler une version reelle : https://github.com/actions/runner/releases
+runner_version = "2.330.0"
+
+# Jeton d'enregistrement du runner, valable une heure et pour une seule inscription :
+# Parametres du depot > Actions > Runners > New self-hosted runner. Seul un administrateur du
+# depot peut le creer. terraform.tfvars est ignore par git, mais le jeton ne doit pas y rester
+# apres l'apply.
+runner_token = "A_RENSEIGNER"
+
+# Nom du runner cote GitHub. Vide par defaut : le nom d'hote de la machine. A renseigner
+# seulement si deux runners doivent tourner sur la meme machine, leurs noms devant differer.
+# runner_nom = "eni-g3-bis"

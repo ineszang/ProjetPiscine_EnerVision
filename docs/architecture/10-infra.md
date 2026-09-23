@@ -1,13 +1,16 @@
 # Infrastructure
 
-Trois topologies coexistent et ne servent pas la même chose. Ce document dit laquelle vaut dans
-quel contexte, quelles décisions sont arrêtées, et ce qui manque encore entre elles.
+Plusieurs topologies coexistent et ne servent pas la même chose. Ce document dit laquelle vaut
+dans quel contexte, quelles décisions sont arrêtées, et ce qui manque encore entre elles.
 
 | Topologie | Sert à | Statut |
 |---|---|---|
 | Docker Compose | Développer et recetter sur le poste | `Fait` |
 | Docker Compose plus reverse proxy | Déployer sur la machine on-premise | `Fait` |
+| Deux projets Compose sur la VM ENI, recette et production | Déploiement continu depuis GitHub | `En cours` |
+| Provisionnement Terraform de la VM | Préparer la machine et enregistrer le runner | `En cours` |
 | k3s single-node | Cible à terme | `En cours` |
+| MLflow (`ml/`) | Tracker les expériences et le registre de modèles en local | `Fait`, non relié aux autres topologies |
 
 ## Poste de développement
 
@@ -48,19 +51,27 @@ Trois pièges sont documentés en tête du `docker-compose.yml`, ils ne se devin
 - `db/init` est monté **fichier par fichier**. Monter le dossier masquerait les scripts d'init de
   l'image, dont `timescaledb-tune`. Ajouter un fichier dans `db/init/` impose donc une ligne dans
   le compose. Voir [`db/README.md`](../../db/README.md).
-- `LocalExecutor` exécute les tâches comme sous-processus du **scheduler**, jamais du webserver :
+- `LocalExecutor` exécute les tâches comme sous-processus du **scheduler**, jamais de l'api-server :
   c'est le scheduler qui a besoin du volume `airflow_ml_state` (modèle, magasin MLflow).
 
-### Airflow (issues #115 et #116)
+### Airflow (issues #15, #115, #116 et #119)
 
-Trois services, `docker compose profiles` non utilisés (démarrage explicite via `make
+Quatre services (Airflow 3.3), `docker compose profiles` non utilisés (démarrage explicite via `make
 airflow-up`, pas dans `make dev`) :
 
 | Service | Rôle | Points notables |
 |---|---|---|
-| `airflow-init` | Migre la base de métadonnées, crée le compte admin | Conteneur jetable (`restart: "no"`), ne redémarre jamais. `webserver`/`scheduler` attendent qu'il se termine avec succès |
-| `airflow-webserver` | UI, port `8080` | `LocalExecutor` : n'exécute aucune tâche lui-même |
+| `airflow-init` | Migre la base de métadonnées, crée le compte admin | Conteneur jetable (`restart: "no"`), ne redémarre jamais. `api-server`, `dag-processor` et `scheduler` attendent qu'il se termine avec succès |
+| `airflow-apiserver` | UI et API REST (`/api/v2`), port `8080` | `LocalExecutor` : n'exécute aucune tâche lui-même. Sert aussi l'Execution API que les tâches appellent, d'où le secret JWT partagé |
+| `airflow-dag-processor` | Parse `dags/` et publie les DAGs sérialisés | Composant à part entière depuis Airflow 3 : le scheduler ne lit plus les fichiers de DAG |
 | `airflow-scheduler` | Planifie et **exécute** les tâches (`LocalExecutor`) | Les DAGs y tournent en sous-processus (`uv run --no-sync python -m ...`), c'est lui qui a besoin du volume `airflow_ml_state` |
+
+Airflow 3 impose deux choses que le compose reflète : les tâches ne touchent plus la base de
+métadonnées et passent par l'Execution API de l'`api-server`, avec un jeton signé par
+`AIRFLOW_JWT_SECRET` (secret partagé entre conteneurs, jamais celui généré au démarrage) ; et
+l'authentification par défaut (`SimpleAuthManager`) ne sait pas créer de compte, d'où le
+`FabAuthManager` qui garde le compte admin posé par `airflow-init`. Pas de `triggerer` : aucun
+opérateur déférable dans les DAGs.
 
 Construits depuis `etl/airflow/Dockerfile`, contexte `.` (racine du repo, pas `etl/airflow/`) :
 l'image doit pouvoir `COPY` les sources de `ml/` **et** de `apps/backend/` pour se synchroniser
@@ -75,6 +86,25 @@ l'[ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md).
 | `ml_train` | manuelle | `enervision_ml.train`, dans `/opt/ml/.venv` |
 | `ml_score` | `0 * * * *` | `enervision_ml.score`, dans `/opt/ml/.venv` |
 | `alertes` | `15 * * * *` | `app.detection.internal_alerts` puis `app.cli generate-recommendations`, dans `/opt/backend/.venv` |
+| `historical_import` | manuelle | `app.etl.historical_import`, dans `/opt/backend/.venv` ; les fichiers de `data/raw` sont montés en lecture seule dans `/opt/data/raw` |
+| `mock_api_import` | `45 * * * *` | `app.etl.mock_api_import`, dans `/opt/backend/.venv` ; importe l'heure précédant son déclenchement depuis l'API Mock |
+| `derive` | `30 5 * * *` | `app.monitoring.drift`, dans `/opt/backend/.venv` ; quotidien parce que sa fenêtre couvre 168 h, et sans reprise parce qu'une dérive n'est pas une panne passagère |
+
+Le DAG `historical_import` réutilise le pipeline historique existant sans dupliquer sa logique.
+Il reste manuel, car le dataset sert à initialiser l'environnement. Le montage
+`./data/raw:/opt/data/raw:ro` permet au scheduler de lire les fichiers CSV/JSON sans pouvoir les
+modifier.
+
+Le DAG `mock_api_import` exécute le pipeline API Mock toutes les heures, à la minute `:45`.
+Un `CronTriggerTimetable` explicite lui attribue un intervalle d'une heure, y compris lors d'un
+déclenchement manuel. Il transmet cet intervalle au script backend et charge les mesures dans
+les tables communes `site` et `reading`. Le décalage à `:45` laisse quinze minutes avant le
+scoring exécuté à l'heure pile, puis quinze minutes supplémentaires avant les alertes à `:15`.
+`max_active_runs=1` empêche deux exécutions du DAG de se chevaucher.
+
+Le DAG conserve `catchup=False` pour éviter un rattrapage massif depuis sa date de démarrage.
+Une interruption du scheduler peut donc créer un intervalle manquant, qui devra être rejoué
+explicitement par une opération de backfill.
 
 **Pourquoi `alertes` tourne à la quinzième minute.** Sa règle `anomaly` compare une lecture à la
 `prediction` du même instant, que `ml_score` écrit à l'heure pile. Le décalage laisse le scoring
@@ -95,14 +125,14 @@ rend contraignant.
 `airflow-init` s'appuie sur l'entrypoint de l'image (`_AIRFLOW_DB_MIGRATE`,
 `_AIRFLOW_WWW_USER_*`) plutôt que sur un script maison : l'entrypoint porte le code de sortie, une
 migration ratée (typiquement la base `airflow` absente, cf. ci-dessous) fait échouer le service et
-`webserver`/`scheduler` ne démarrent pas sur une base non migrée. Le mot de passe du compte admin
+`api-server`, `dag-processor` et `scheduler` ne démarrent pas sur une base non migrée. Le mot de passe du compte admin
 passe par l'environnement, jamais par `argv` (ni `ps`, ni `docker compose config`).
 
 Les variables `AIRFLOW_*` ne sont volontairement pas en `${VAR:?}` : Compose interpole le fichier
 entier avant de filtrer les services, une variable requise manquante casserait `make db-up`,
 `make dev`... pour tout poste dont le `.env` est antérieur. Elles valent `${VAR:-}` et c'est
-`airflow-init` qui refuse de démarrer (clé Fernet, clé Flask, mot de passe ou
-`AIRFLOW_APP_SECRET_KEY` vides).
+`airflow-init` qui refuse de démarrer (clé Fernet, clé de session de l'API, secret JWT, mot de
+passe ou `AIRFLOW_APP_SECRET_KEY` vides).
 
 Le conteneur reçoit deux variables du backend en plus de `ML_DATABASE_URL` : `DATABASE_URL`, en
 dialecte asyncpg, et `APP_SECRET_KEY`, alimentée par `AIRFLOW_APP_SECRET_KEY`. Cette dernière est
@@ -132,6 +162,34 @@ est minimale et n'embarque pas la runtime OpenMP dont LightGBM a besoin, sans qu
 (`OSError: libgomp.so.1`) n'apparaît qu'à la première tâche réellement exécutée, pas à la
 construction de l'image.
 
+### MLflow (`ml/`)
+
+Statut : `Fait`, en local uniquement. Défini par `ml/docker-compose.mlflow.yml`, indépendant
+du `docker-compose.yml` principal (réseau, volumes et démarrage séparés).
+
+| Service | Image | Points notables |
+|---|---|---|
+| `mlflow-db` | `postgres:17` | Stocke le tracking store MLflow. Mot de passe obligatoire via `MLFLOW_DB_PASSWORD` |
+| `mlflow` | Construite depuis `ml/` | Expose l'UI et l'API MLflow sur `127.0.0.1:5000`. Artefacts sur volume `mlflow-artifacts`, tracking store sur `mlflow-db` |
+
+Portée actuelle : environnement de tracking et de registre de modèles pour le développement
+local uniquement. Ce compose n'est relié ni à `docker-compose.prod.yml`, ni aux deux
+environnements Compose de la VM ENI, ni à la cible k3s. Le magasin utilisé par Airflow pour
+`ml_train`/`ml_score` (SQLite, volume `airflow_ml_state`) en est distinct — les deux MLflow ne
+se voient pas tant que `MLFLOW_TRACKING_URI` n'est pas posé côté Airflow.
+
+Limite connue : le DAG Airflow `ml_train` enregistre lui aussi une version a chaque execution
+via `registered_model_name` (magasin SQLite du volume `airflow_ml_state`, distinct de ce
+serveur). Versions et artefacts s'y accumulent sans politique de nettoyage -- fonctionne en
+l'etat, mais a surveiller si les entrainements deviennent frequents.
+
+Pour relier les runs Airflow (`ml_train`, magasin SQLite local) a ce serveur MLflow, positionner
+`MLFLOW_TRACKING_URI=http://mlflow:5000` dans l'environnement du service `airflow-scheduler` (ou
+`http://host.docker.internal:5000` si le serveur MLflow tourne hors du reseau Compose principal),
+et s'assurer que le conteneur Airflow peut joindre le service `mlflow` -- ce qui suppose de les
+rapprocher sur le meme reseau Docker ou d'exposer MLflow autrement qu'en `127.0.0.1` uniquement
+(cf. point 1 sur l'exposition du port). Non fait a ce jour : aucun besoin de centraliser les runs
+d'entrainement Airflow et locaux n'a encore ete identifie.
 ## Machine cible, exécution Docker
 
 Statut : `Fait`. Défini par l'overlay `docker-compose.prod.yml`, appliqué par-dessus le
@@ -169,10 +227,63 @@ Deux conséquences se propagent jusqu'à l'application, et elles ne se devinent 
 - `APP_TRUST_PROXY_HEADERS` passe à vrai en même temps, sinon la limitation de débit par IP
   compte sur l'IP du proxy et devient globale.
 
+### Deux environnements sur la même machine
+
+Statut : `En cours`, la machine n'étant pas encore provisionnée. Décision et motifs dans
+l'[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md).
+La VM `eadl-2025-nantes-g3` portera la recette et la production, chacune dans son clone du dépôt,
+son `.env` et son projet Compose. Le nom de projet préfixe volumes, réseau et conteneurs : rien
+n'est partagé. `scripts/provision-host.sh` prépare les deux dossiers, génère les secrets et les
+certificats, et ne démarre rien.
+
+| | Recette | Production |
+|---|---|---|
+| Branche, environnement GitHub | `dev`, `rec` | `main`, `prod` |
+| Dossier, projet Compose | `/srv/enervision/rec`, `enervision-rec` | `/srv/enervision/prod`, `enervision-prod` |
+| URL | `https://rec.enervision.local:8443` | `https://enervision.local` |
+| Proxy HTTP, HTTPS | `127.0.0.1:8081`, `8443` | `80`, `443` |
+| PostgreSQL, Mailpit, Airflow, sur `127.0.0.1` | `5434`, `8026`, `8082` | `5433`, `8025`, `8080` |
+
+Les deux noms d'hôte visent la même IP, à déclarer dans le `/etc/hosts` des postes. Deux noms
+distincts sont nécessaires : le cookie `__Secure-ev_refresh` est posé par hôte, pas par port.
+La redirection HTTP de la recette est ramenée sur la boucle locale parce que la configuration
+Nginx renvoie vers `https://$host` sans port, c'est-à-dire vers la production.
+
+Le déploiement est décrit dans [50-cicd.md](50-cicd.md) : un runner GitHub Actions installé sur
+la VM aligne le dossier sur la branche poussée et lance `make stack-up`.
+
+### Provisionnement de la machine
+
+Statut : `En cours`. Décision et frontière dans
+l'[ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md) : **Terraform
+provisionne la machine, GitHub Actions déploie l'application**. La racine
+`infra/terraform/environments/vm-eni/` fait trois choses, et rien d'autre.
+
+```mermaid
+sequenceDiagram
+  participant TF as terraform apply
+  participant VM as VM eadl-2025-nantes-g3
+  participant GH as GitHub
+
+  TF->>VM: SSH, get.docker.com puis docker compose version
+  TF->>VM: copie et exécute scripts/provision-host.sh
+  VM->>VM: deux clones, deux .env, deux certificats
+  TF->>VM: installe actions-runner, config.sh, svc.sh
+  VM->>GH: le runner s'enregistre avec le label eni-g3
+```
+
+Aucune image n'y est construite, aucun conteneur lancé : un `apply` n'interrompt pas la stack qui
+tourne. Le premier démarrage reste manuel, `make stack-up` dans chaque dossier ; les suivants
+sont joués par le runner à chaque push. Terraform ne sait rien de l'état de la stack, c'est la
+sonde de `deploy.yml` qui le dit.
+
+Le jeton d'enregistrement du runner est valable une heure et ne vaut que pour une inscription :
+l'`apply` n'est pas rejouable sans qu'un administrateur du dépôt en crée un nouveau.
+
 ## Cible à terme, k3s
 
-Statut : `En cours`. Le module `infra/terraform/modules/k3s/` installe le cluster. Il n'a jamais
-été appliqué.
+Statut : `En cours`. Le module `infra/terraform/modules/k3s/` installe le cluster, depuis la
+racine `infra/terraform/environments/k3s-cible/`. Il n'a jamais été appliqué.
 
 ```mermaid
 flowchart LR
@@ -220,13 +331,18 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | `k3s_version` obligatoire, valeur vide refusée | Sans épinglage, `get.k3s.io` installe la dernière version à chaque exécution : le déploiement cesse d'être reproductible | `validation` dans `modules/k3s/variables.tf` |
 | Traefik désactivé | Le choix d'ingress reste ouvert, on ne veut pas en subir un par défaut | `k3s_disable_components`, défaut `["traefik"]` |
 | Kubeconfig laissé en `600/root`, lu par `sudo` | `--write-kubeconfig-mode 644` exposerait `cluster-admin` à tout utilisateur local de la machine | Commentaire et `fetch_kubeconfig` dans `modules/k3s/main.tf` |
-| State Terraform en backend `local` | Un seul opérateur, pas d'exécution concurrente, pas de dépendance à un stockage distant | `environments/dev/versions.tf` |
+| State Terraform en backend `local` | Un seul opérateur, pas d'exécution concurrente, pas de dépendance à un stockage distant | `versions.tf` de chaque racine |
 | `.terraform.lock.hcl` versionné | Fige les versions de provider entre contributeurs et future CI | Commentaire dans `.gitignore` |
 | `*.tfvars` ignoré, `*.tfvars.example` versionné | Les tfvars portent l'adresse du serveur et le chemin de la clé | `.gitignore` |
 | Désinstallation gérée au `destroy` | `k3s-uninstall.sh` en `on_failure = continue` : un serveur injoignable ne bloque pas le `destroy` | `modules/k3s/main.tf` |
-| Deux racines, `dev` et `prod` | Séparation des états et des variables par environnement | `environments/` |
+| Une racine Terraform par machine provisionnée, nommée d'après elle | `environments/dev` laissait croire à un environnement applicatif, alors que `rec` et `prod` vivent sur la même machine et ne sont pas provisionnés par Terraform | `environments/vm-eni`, `environments/k3s-cible` |
+| Terraform provisionne, GitHub Actions déploie | Deux chemins pour le même acte de livraison, c'est ce que la revue de #141 relève sur la VM | [ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md) |
+| Connexion SSH par clé, jamais par mot de passe | Une variable de mot de passe finit en clair dans le state, ou dans les `triggers` qui y sont persistés | `environments/vm-eni/variables.tf`, `modules/k3s/main.tf` |
 | Terminaison TLS par un reverse proxy Nginx en Compose | L'ingress k3s supposait un registre et des manifestes qui n'existent pas, à quatre jours du rendu | `docker-compose.prod.yml`, [ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md) |
 | Certificat auto-signé par défaut, chemin ACME câblé | Aucun domaine public ne résout vers la machine : le défi HTTP-01 ne peut pas aboutir | `scripts/tls-selfsigned.sh`, `infra/proxy/acme-deploy-hook.sh` |
+| Un projet Compose par environnement, sur la même machine | Une seule VM, et l'isolation par nom de projet ne demande ni cluster ni registre | `.env` de chaque dossier, [ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md) |
+| Runner GitHub Actions auto-hébergé sur la VM | Les runners hébergés par GitHub ne joignent pas une adresse privée d'école | `.github/workflows/deploy.yml` |
+| Secrets dans le `.env` de chaque environnement, sur la machine | Ni dans git, ni dans GitHub : le runner n'a rien à recevoir | `scripts/provision-host.sh` |
 
 ## Ports et noms
 
@@ -237,12 +353,12 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | API | `8000` | Identique en conteneur et hors conteneur |
 | Frontend, `ng serve` | `4200` | Boucle de développement. Valeur par défaut d'`APP_CORS_ORIGINS` |
 | Frontend en conteneur | `3000` | Ce qu'écoute le nginx de l'image, en conteneur comme côté hôte |
-| Reverse proxy | `80` et `443` | Les seuls ports publiés par `docker-compose.prod.yml`. 80 ne sert que la redirection et le défi ACME |
+| Reverse proxy | `80` et `443` | Les seuls ports publiés par `docker-compose.prod.yml`, via `PROXY_HTTP_PORT` et `PROXY_HTTPS_PORT`. 80 ne sert que la redirection et le défi ACME. La recette publie `8443` et `127.0.0.1:8081` |
 | SSH du serveur | `22` par défaut | `ssh_port`, redéfinissable |
 | Base applicative | `enervision` | Variable `POSTGRES_DB` |
 | Base de test | `enervision_test` | Créée par `db/init/110-test-database.sql`, nom attendu en dur par `apps/backend/tests/conftest.py` |
 | Base de métadonnées Airflow | `airflow` | Créée par `db/init/120-airflow-database.sql`, même conteneur `db` |
-| Webserver Airflow | `8080` | `make airflow-up`. Scheduler et webserver ne publient que ce port ; les tâches (`LocalExecutor`) tournent côté scheduler, sans port propre |
+| API server Airflow | `8080` | `make airflow-up`. Api-server, scheduler et dag-processor ne publient que ce port ; les tâches (`LocalExecutor`) tournent côté scheduler, sans port propre |
 
 ## Le trou vers k3s
 
@@ -261,4 +377,3 @@ question à trancher, avant toute ressource Kubernetes.
 - **Quel stockage persistant** côté Kubernetes pour PostgreSQL, et si la base tourne dans le
   cluster ou à côté.
 - **Quelle stratégie de sauvegarde et de restauration** des données de mesure.
-- **Que devient `environments/prod/`**, aujourd'hui réduit à un `.gitkeep`.

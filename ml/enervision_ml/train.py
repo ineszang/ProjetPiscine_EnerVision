@@ -181,7 +181,11 @@ def _log_to_mlflow(
         )
         mlflow.log_metrics({f"model_{cle}": valeur for cle, valeur in model_metrics.items()})
         mlflow.log_metrics({f"baseline_{cle}": valeur for cle, valeur in baseline_metrics.items()})
-        mlflow.lightgbm.log_model(booster, name="model")
+        mlflow.lightgbm.log_model(
+            booster,
+            name="model",
+            registered_model_name="consumption-forecast-lightgbm",
+        )
         mlflow.log_artifact(str(model_output))
 
 

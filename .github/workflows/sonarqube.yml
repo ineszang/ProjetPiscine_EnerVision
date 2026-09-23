@@ -5,11 +5,15 @@ on:
     paths:
       - "apps/frontend/**"
       - "apps/backend/**"
+      - "ml/**"
+      - "etl/airflow/**"
       - ".github/workflows/sonarqube.yml"
   pull_request:
     paths:
       - "apps/frontend/**"
       - "apps/backend/**"
+      - "ml/**"
+      - "etl/airflow/**"
       - ".github/workflows/sonarqube.yml"
 
 
@@ -20,10 +24,10 @@ jobs:
   build-front:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
       
@@ -36,10 +40,10 @@ jobs:
     needs: build-front
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
 
@@ -52,7 +56,7 @@ jobs:
         working-directory: apps/frontend
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage
           path: apps/frontend/coverage/frontend/lcov.info
@@ -60,9 +64,9 @@ jobs:
   build-back:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
@@ -91,9 +95,9 @@ jobs:
     needs: build-back
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
@@ -103,29 +107,65 @@ jobs:
         working-directory: apps/backend
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-coverage
           path: apps/backend/coverage.xml
 
-  sonarqube:
-    needs: [build-front, build-back, test-front, test-back]
-    name: SonarQube
+  test-ml:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+      - name: Installe uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: ml/uv.lock
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        run: uv python install
+        working-directory: ml
+
+      - name: Synchronise les dépendances sans dévier du verrou
+        run: uv sync --all-groups --frozen
+        working-directory: ml
+
+      - name: Lancement des tests et génération du rapport de couverture (ML)
+        run: uv run pytest --cov-report=xml
+        working-directory: ml
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: ml-coverage
+          path: ml/coverage.xml
+
+  sonarqube:
+    needs: [build-front, build-back, test-front, test-back, test-ml]
+    name: SonarQube
+    # Pourquoi : GitHub ne fournit pas les secrets aux workflows lancés par dependabot[bot].
+    # Sans SONAR_TOKEN le scan échoue sans rien analyser ; build et tests restent joués.
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Téléchargement du rapport de couverture (Front)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-coverage
           path: apps/frontend/coverage/frontend
       - name: Téléchargement du rapport de couverture (Back)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: backend-coverage
           path: apps/backend
+      - name: Téléchargement du rapport de couverture (ML)
+        uses: actions/download-artifact@v8
+        with:
+          name: ml-coverage
+          path: ml
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v8
         env:

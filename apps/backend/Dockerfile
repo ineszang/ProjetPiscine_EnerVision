@@ -16,6 +16,10 @@ WORKDIR /app
 COPY uv.lock pyproject.toml /app/
 RUN uv sync --locked --no-install-project --no-dev
 
+# Le projet lui-meme n'est pas installe (pas de second `uv sync`) : il tourne depuis /app, le
+# repertoire de travail, et rien ne lit ses metadonnees. L'installer imposerait de le construire
+# (backend hatchling), donc de retirer `--no-build` de l'etape ci-dessus, qui garantit que
+# l'installation des dependances n'execute aucun script de build (regle Sonar docker:S8541).
 COPY . /app
 
 RUN uv sync --locked --no-dev

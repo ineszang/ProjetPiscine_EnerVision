@@ -9,11 +9,17 @@ Terminaison TLS et routage de la stack déployée. Seul composant publié sur le
 - `tls/` : les deux fichiers que nginx lit, `fullchain.pem` et `privkey.pem`. Ignorés par git.
 - `acme-deploy-hook.sh` : recopie le résultat de certbot dans `tls/`.
 
-Pas de `Dockerfile` : l'image officielle `nginx:1.28-alpine` est utilisée telle quelle et la
+Pas de `Dockerfile` : l'image officielle `nginx:1.31-alpine` est utilisée telle quelle et la
 configuration est montée en volume par `docker-compose.prod.yml`.
 
 L'overlay emploie les marqueurs `!override` et `!reset`, qui demandent **Docker Compose 2.24.4
 ou plus récent**. Sur une version antérieure, la fusion échoue au lieu de dépublier les ports.
+
+Les ports publiés sont `PROXY_HTTP_PORT` et `PROXY_HTTPS_PORT`, 80 et 443 par défaut. Quand deux
+environnements partagent la machine ([ADR 0009](../../docs/adr/0009-deux-environnements-compose-sur-la-vm-eni.md)),
+la recette publie `8443` et ramène son port 80 sur `127.0.0.1:8081` : la redirection ci-dessous
+renvoie vers `https://$host` sans port, donc vers la production. `PUBLIC_ORIGIN` porte alors
+l'origine avec son port pour le CORS et le lien de réinitialisation.
 
 ## Routage
 
@@ -82,7 +88,7 @@ docker run --rm \
   -v "$PWD/infra/proxy/nginx.conf:/etc/nginx/nginx.conf:ro" \
   -v "$PWD/infra/proxy/conf.d:/etc/nginx/conf.d:ro" \
   -v "$PWD/infra/proxy/tls:/etc/nginx/tls:ro" \
-  nginx:1.28-alpine nginx -t
+  nginx:1.31-alpine nginx -t
 ```
 
 Monter `infra/proxy/` entier sur `/etc/nginx` échouerait : `mime.types` vient de l'image.

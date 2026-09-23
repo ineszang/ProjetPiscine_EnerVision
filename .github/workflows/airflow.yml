@@ -1,8 +1,9 @@
 name: Airflow
 
 # Piège : la version de Python vient de etl/airflow/.python-version. C'est 3.12 et non 3.14
-# (contrairement à backend.yml et ml.yml) : apache-airflow 2.10 ne supporte pas 3.14. Le 3.14 de
-# ml/ ne vit que dans l'image Docker, dans son propre environnement (cf. etl/airflow/Dockerfile).
+# (contrairement à backend.yml et ml.yml) : celui de l'image apache/airflow retenue, et les tests
+# doivent tourner sur le même interpréteur qu'elle. Le 3.14 de ml/ ne vit que dans l'image
+# Docker, dans son propre environnement (cf. etl/airflow/Dockerfile).
 #
 # Piège : l'image COPY les fichiers de dépendances et le code de ml/ et de apps/backend/. Une
 # modification de l'un ou de l'autre peut donc casser sa construction, d'où ces chemins dans
@@ -47,10 +48,10 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: etl/airflow/uv.lock
@@ -78,7 +79,7 @@ jobs:
 
     steps:
       - name: Récupère le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Construit l'image (contexte à la racine, elle COPY ml/ et apps/backend/)
         run: docker build -f etl/airflow/Dockerfile -t enervision-airflow:ci .
@@ -91,11 +92,13 @@ jobs:
           bash -c "cd /opt/ml && env -u VIRTUAL_ENV uv run --no-sync python -m enervision_ml.train --help"
 
       # `--help` sort par argparse avant `get_settings()` : ni base ni secret requis, et
-      # l'import du module prouve que l'environnement /opt/backend est complet. Les deux
-      # commandes du DAG `alertes` sont couvertes, `app.cli` tirant tout FastAPI derrière lui.
-      - name: Vérifie que les deux commandes du DAG alertes s'importent sans réseau
+      # l'import des modules prouve que l'environnement /opt/backend est complet.
+      # Les commandes des DAGs `alertes`, historique et API Mock sont couvertes.
+      - name: Vérifie que les quatre commandes backend s'importent sans réseau
         run: >
           docker run --rm --network none enervision-airflow:ci
           bash -c "cd /opt/backend
           && env -u VIRTUAL_ENV uv run --no-sync python -m app.detection.internal_alerts --help
-          && env -u VIRTUAL_ENV uv run --no-sync python -m app.cli generate-recommendations --help"
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.cli generate-recommendations --help
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.etl.historical_import --help
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.etl.mock_api_import --help"

@@ -3,7 +3,7 @@
 # ==================
 
 # Image pour frontend
-FROM node:24-alpine3.22 AS builder
+FROM node:26-alpine3.22 AS builder
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ RUN npm run build
 # ==================
 
 
-FROM nginx:1.28.0-alpine3.21 AS runner
+FROM nginx:1.31-alpine AS runner
 
 # Copie de la configuration de nginx
 COPY --chown=root:root nginx.conf /etc/nginx/nginx.conf

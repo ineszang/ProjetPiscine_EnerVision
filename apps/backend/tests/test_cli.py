@@ -19,13 +19,17 @@ def test_build_parser_reads_the_create_admin_arguments() -> None:
 
 
 def test_build_parser_requires_a_subcommand() -> None:
+    parser = cli.build_parser()
+
     with pytest.raises(SystemExit):
-        cli.build_parser().parse_args([])
+        parser.parse_args([])
 
 
 def test_build_parser_requires_an_email() -> None:
+    parser = cli.build_parser()
+
     with pytest.raises(SystemExit):
-        cli.build_parser().parse_args(["create-admin"])
+        parser.parse_args(["create-admin"])
 
 
 def test_read_password_generates_a_long_secret_when_asked(

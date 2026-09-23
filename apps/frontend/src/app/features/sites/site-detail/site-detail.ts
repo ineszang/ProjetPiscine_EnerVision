@@ -13,6 +13,7 @@ import { Badge, BadgeTone } from '../../../shared/components/ui/badge/badge';
 import { Brand } from '../../../shared/components/ui/brand/brand';
 import { ConsumptionGauge } from '../../../shared/components/consumption-gauge/consumption-gauge';
 import { ReadingHistoryChart } from '../../../shared/components/reading-history-chart/reading-history-chart';
+import { RecommendationList } from '../../../shared/components/recommendation-list/recommendation-list';
 
 const UNAVAILABLE_MESSAGE = 'Détail du site indisponible, réessayez plus tard.';
 const NO_MEASUREMENT_MESSAGE = 'Aucune mesure remontée pour ce site.';
@@ -96,7 +97,16 @@ export interface MetricView {
 @Component({
   selector: 'app-site-detail',
   standalone: true,
-  imports: [RouterLink, Card, Alert, Badge, Brand, ConsumptionGauge, ReadingHistoryChart],
+  imports: [
+    RouterLink,
+    Card,
+    Alert,
+    Badge,
+    Brand,
+    ConsumptionGauge,
+    ReadingHistoryChart,
+    RecommendationList,
+  ],
   templateUrl: './site-detail.html',
   styleUrl: './site-detail.scss',
 })
@@ -116,6 +126,11 @@ export class SiteDetail {
   error = signal<string | null>(null);
 
   hasMeasurement = computed(() => this.current()?.timestamp != null);
+
+  siteAsList = computed<Site[]>(() => {
+    const site = this.site();
+    return site ? [site] : [];
+  });
 
   consumptionKw = computed(() => this.current()?.consumption_kw ?? null);
 

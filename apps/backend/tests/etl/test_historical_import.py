@@ -106,13 +106,15 @@ def test_validate_source_accepts_valid_dataset():
 def test_validate_source_rejects_missing_column():
     frame = make_dataframe().drop(columns=["consumption_kwh"])
 
+    metadata = make_metadata()
+
     with pytest.raises(
         ValueError,
         match="Colonnes obligatoires absentes",
     ):
         validate_source(
             frame,
-            make_metadata(),
+            metadata,
         )
 
 
@@ -124,13 +126,15 @@ def test_validate_source_rejects_duplicates():
         "timestamp",
     ]
 
+    metadata = make_metadata()
+
     with pytest.raises(
         ValueError,
         match="doublons",
     ):
         validate_source(
             frame,
-            make_metadata(),
+            metadata,
         )
 
 
@@ -139,13 +143,15 @@ def test_validate_source_rejects_unknown_site():
 
     frame.loc[1, "site_id"] = "SITE999"
 
+    metadata = make_metadata()
+
     with pytest.raises(
         ValueError,
         match="Sites incohérents",
     ):
         validate_source(
             frame,
-            make_metadata(),
+            metadata,
         )
 
 

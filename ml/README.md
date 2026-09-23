@@ -57,6 +57,50 @@ validation. La coupure est **chronologique**, jamais un tirage aleatoire de lign
 aleatoire laisserait des lignes de validation "voir" des lignes d'entrainement via leurs
 lags/moyennes glissantes, une fuite qui masquerait un surapprentissage.
 
+## Serveur MLflow (conteneur)
+
+Premiere utilisation : copier `.env.example` en `.env` et y choisir un mot de passe PostgreSQL
+(lettres et chiffres uniquement). Le fichier `.env` est ignore par git.
+
+```bash
+cp .env.example .env
+```
+
+Un serveur MLflow (PostgreSQL pour les metadonnees, volume pour les artefacts) se lance avec
+Docker. Prerequis : Docker Desktop demarre.
+
+```bash
+make mlflow-up
+```
+
+La cible vérifie que `MLFLOW_DB_PASSWORD` (définie dans `ml/.env`) ne contient que des lettres et
+des chiffres avant de démarrer le serveur : ce mot de passe est interpolé directement dans l'URI
+PostgreSQL (`postgresql://mlflow:${MLFLOW_DB_PASSWORD}@...`), un caractère spécial la rendrait
+invalide sans message d'erreur clair.
+
+Interface : http://localhost:5000. Entrainer vers ce serveur :
+
+```
+uv run python -m enervision_ml.train --csv data/all_sites_combined.csv --mlflow-tracking-uri http://localhost:5000
+```
+
+Arreter : `docker compose -f docker-compose.mlflow.yml down` (ajouter `-v` pour effacer aussi les
+runs et les modeles).
+
+Pour voir les runs dans l'interface (MLflow 3.x) :
+
+- Passer le selecteur en haut a gauche sur **Model training**. Le mode **GenAI** affiche des
+  traces LLM et reste vide pour un entrainement LightGBM.
+- **Runs** liste les entrainements, **Models** les artefacts de modele de chaque run (tous nommes
+  `model`), et **Model registry** les versions numerotees de `consumption-forecast-lightgbm`.
+
+Limites : l'identifiant PostgreSQL du compose est fixe a `mlflow`, le mot de passe vient de la
+variable obligatoire `MLFLOW_DB_PASSWORD` (aucune valeur par defaut, le compose refuse de
+demarrer sans elle) -- ce mot de passe est choisi lors de la copie de `.env.example`, il ne
+convient donc qu'au developpement local tel quel. Un deploiement partage demandera des secrets,
+de l'authentification et un stockage d'artefacts dedie (S3/MinIO). Le port 5000 doit etre libre : arreter `mlflow ui` avant,
+ou changer le mapping (`"5001:5000"`) dans le compose.
+
 ## Scoring
 
 ```bash
@@ -83,6 +127,13 @@ section 2 :
 fichier : `train.py` reecrit toujours le meme chemin a chaque entrainement, donc le nom seul ne
 distinguerait pas deux versions du modele.
 
+**Le scoring ne lit pas le Model Registry.** Le fichier charge par `--model` est local
+(`models/lightgbm-consumption.txt`), independant des versions enregistrees dans le
+**Model registry** MLflow (`consumption-forecast-lightgbm`). `train.py` enregistre bien une
+version a chaque entrainement (tracabilite), mais aucun alias (`champion` par exemple) n'est
+pose, et `enervision_ml.score` ne les lit pas. Le registre sert aujourd'hui a la tracabilite des
+entrainements, pas au deploiement du modele utilise en scoring.
+
 En mode `--csv`, rien n'est ecrit en base : c'est un instantane historique fige (l'heure "future"
 calculee a partir de la fin du CSV n'existe dans aucune base reelle), utile pour valider le
 pipeline sans base joignable.
@@ -103,7 +154,7 @@ prevision (utile plus tard pour comparer prevision et realise, surveillance de d
 uv run ruff check .                       # lint
 uv run ruff format .                      # format
 uv run mypy enervision_ml tests           # typage strict
-uv run pytest                             # tests
+uv run pytest                             # tests + couverture (ml/coverage.xml avec --cov-report=xml, lu par Sonar)
 ```
 
 Depuis la racine du monorepo, via le `Makefile` : `make install-ml`, `make ml-lint`,
@@ -111,12 +162,23 @@ Depuis la racine du monorepo, via le `Makefile` : `make install-ml`, `make ml-li
 
 ## Ou ecrire les tests
 
-Aucun test ne touche PostgreSQL ni un serveur MLflow distant : `enervision_ml.data.load_from_csv`
-et le chargement CSV de test suffisent a exercer `build_features` sur des donnees reelles ou
-synthetiques, et `enervision_ml.train.train()` accepte un `tracking_uri` SQLite isole (`tmp_path`
-pytest) pour un test de bout en bout sans effet de bord. `enervision_ml.data.load_from_database`
-n'est pas encore couvert : il n'existe aucune base PostgreSQL a interroger en CI ni dans cet
-environnement de developpement pour le moment.
+Deux regimes, separes par le marqueur `integration` que `pytest` ecarte par defaut.
+
+**Sans base** : `enervision_ml.data.load_from_csv` et le chargement CSV de test suffisent a
+exercer `build_features` sur des donnees reelles ou synthetiques, et `enervision_ml.train.train()`
+accepte un `tracking_uri` SQLite isole (`tmp_path` pytest) pour un test de bout en bout sans effet
+de bord.
+
+**Avec base**, sous `integration` : `test_data_integration.py` confronte les neuf colonnes du
+contrat au schema Alembic reel, et `test_score_integration.py` verifie les contraintes de
+`prediction` depuis le code qui ecrit. Les fixtures sont dans `tests/conftest.py`, qui refuse de
+demarrer si `ML_DATABASE_URL` ne vise pas `enervision_test`.
+
+    make db-up migrate-test ml-test-integration
+
+Regle a tenir : **toute requete SQL nouvelle porte un test `integration`**. Le schema vit dans
+`apps/backend/alembic`, pas ici : sans ce garde-fou, une migration qui renomme une colonne casse
+le pipeline en production sans qu'aucun test ne rougisse.
 
 ## Piege a connaitre
 

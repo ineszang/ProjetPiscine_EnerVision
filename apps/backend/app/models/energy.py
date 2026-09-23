@@ -208,3 +208,49 @@ class Recommendation(Base):
     explanation: Mapped[str] = mapped_column(Text)
     rule_reference: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DriftReport(Base):
+    __tablename__ = "drift_report"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('stable', 'derive', 'indetermine')", name="ck_drift_report_status"
+        ),
+        CheckConstraint("status = 'stable' OR reason IS NOT NULL", name="ck_drift_report_reason"),
+        CheckConstraint("n_observations >= 0", name="ck_drift_report_observations"),
+        Index("ix_drift_report_site_computed", "site_id", "computed_at"),
+    )
+
+    drift_report_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    # `NULL` porte la ligne globale, tous sites confondus : une derive d'ensemble et la derive
+    # d'un seul site ne se lisent pas dans le meme chiffre.
+    site_id: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("site.site_id", name="fk_drift_report_site", ondelete="RESTRICT")
+    )
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reference_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reference_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    n_observations: Mapped[int] = mapped_column(Integer)
+    mae: Mapped[float | None] = mapped_column(Double)
+    mape: Mapped[float | None] = mapped_column(Double)
+    bias: Mapped[float | None] = mapped_column(Double)
+    reference_mae: Mapped[float | None] = mapped_column(Double)
+    coverage_ratio: Mapped[float | None] = mapped_column(Double)
+    insufficient_data_ratio: Mapped[float | None] = mapped_column(Double)
+    model_references: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    status: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+
+
+# Piège : une `UniqueConstraint` ne dédoublonnerait pas les lignes globales, dont `site_id` est
+# NULL et qu'aucune n'est égale à une autre. Même forme que `uq_reading_source`.
+Index(
+    "uq_drift_report_window",
+    DriftReport.window_end,
+    func.coalesce(DriftReport.site_id, text("''")),
+    unique=True,
+)

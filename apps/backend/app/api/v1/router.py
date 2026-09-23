@@ -1,10 +1,16 @@
 from fastapi import APIRouter
 
-from app.api.openapi import REPONSE_SERVEUR, REPONSES_ADMIN, REPONSES_LECTEUR
+from app.api.openapi import (
+    REPONSE_SERVEUR,
+    REPONSES_ADMIN,
+    REPONSES_LECTEUR,
+    REPONSES_OPERATEUR,
+)
 from app.api.v1.endpoints import (
     alerts,
     auth,
     health,
+    monitoring,
     predictions,
     readings,
     recommendations,
@@ -37,4 +43,7 @@ api_router.include_router(
 )
 api_router.include_router(
     predictions.router, prefix="/predictions", tags=["predictions"], responses=REPONSES_LECTEUR
+)
+api_router.include_router(
+    monitoring.router, prefix="/monitoring", tags=["monitoring"], responses=REPONSES_OPERATEUR
 )

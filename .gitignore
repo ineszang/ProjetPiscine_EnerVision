@@ -40,7 +40,6 @@ kubeconfig
 # Airflow
 etl/airflow/logs/
 airflow.db
-airflow-webserver.pid
 standalone_admin_password.txt
 
 # Environnement et secrets
@@ -64,7 +63,8 @@ ml/models/*
 !ml/models/.gitkeep
 ml/mlruns/
 ml/mlartifacts/
-ml/mlflow.db
+ml/mlflow.db*
+ml/.env
 
 # Airflow : base sqlite locale generee par les tests d'integrite des DAGs (etl/airflow/tests)
 etl/airflow/tests/.airflow_home/
