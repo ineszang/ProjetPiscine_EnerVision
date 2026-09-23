@@ -6,7 +6,7 @@
 # Contrainte : pas de provisioner `destroy` sur le runner. Il imposerait une connexion ne lisant
 # que `self`, donc le chemin de la cle SSH dans le state, et `svc.sh uninstall` ne desinscrit pas
 # le runner cote GitHub : le retrait reste manuel, depuis les parametres du depot.
-# Ref : ADR 0009 pour les deux environnements, `scripts/provision-host.sh` pour leur contenu.
+# Ref : ADR 0009 et 0017 pour les trois environnements, `scripts/provision-host.sh` pour leur contenu.
 
 locals {
   sudo           = var.ssh_user == "root" ? "" : "sudo "

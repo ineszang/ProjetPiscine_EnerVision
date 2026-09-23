@@ -1,6 +1,6 @@
 variable "ssh_host" {
   type        = string
-  description = "Adresse de la VM ENI qui porte les deux environnements (ADR 0009)."
+  description = "Adresse de la VM ENI qui porte les trois environnements (ADR 0009, ADR 0017)."
 }
 
 variable "ssh_port" {

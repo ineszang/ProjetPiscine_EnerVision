@@ -8,8 +8,9 @@ Rien ici ne construit d'image ni ne lance de conteneur.
   - `k3s` : installe un cluster k3s single-node sur une machine distante via SSH
     (script officiel `get.k3s.io`) et rapatrie le kubeconfig en local.
 - `terraform/environments/<racine>` : une racine par machine provisionnee.
-  - `vm-eni` : la VM `eadl-2025-nantes-g3`, qui porte les environnements `rec` et `prod`
-    ([ADR 0009](../docs/adr/0009-deux-environnements-compose-sur-la-vm-eni.md)). Installe Docker,
+  - `vm-eni` : la VM `eadl-2025-nantes-g3`, qui porte les environnements `dev`, `rec` et `prod`
+    ([ADR 0009](../docs/adr/0009-deux-environnements-compose-sur-la-vm-eni.md),
+    [ADR 0017](../docs/adr/0017-environnement-dev-a-la-demande.md)). Installe Docker,
     execute `scripts/provision-host.sh`, enregistre le runner GitHub Actions.
   - `k3s-cible` : le cluster k3s, cible a terme de `docs/architecture/10-infra.md`. Jamais
     applique.
@@ -32,9 +33,10 @@ terraform apply
   Parametres du depot, Actions, Runners, New self-hosted runner. Seul un administrateur du depot
   peut le creer.
 
-Apres l'apply, la machine porte `/srv/enervision/rec` et `/srv/enervision/prod`, chacun avec son
-`.env` et son certificat. Le premier demarrage reste manuel, `make stack-up` dans chaque dossier ;
-les suivants sont joues par le runner a chaque push sur `dev` et sur `main`.
+Apres l'apply, la machine porte `/srv/enervision/dev`, `/srv/enervision/rec` et
+`/srv/enervision/prod`, chacun avec son `.env` et son certificat. Le premier demarrage reste
+manuel, `make stack-up` dans chaque dossier ; les suivants sont joues par le runner a chaque push
+sur `dev` et sur `main`, et a chaque lancement manuel d'une autre branche pour `dev`.
 
 Retirer le runner se fait a la main, depuis les parametres du depot : `terraform destroy` ne le
 desinscrit pas.

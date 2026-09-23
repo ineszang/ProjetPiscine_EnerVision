@@ -3,6 +3,8 @@
 # espace de travail : `.env`, certificats et volumes y survivent d'un déploiement à l'autre.
 # Piège : jamais de déclencheur `pull_request` ici. Sur un dépôt public, une PR de fork
 # exécuterait son code sur la machine de production (ADR 0009) - job deploy.
+# Pourquoi : `main` va en prod, `dev` en recette, et toute autre branche lancée à la main
+# (workflow_dispatch) va dans `dev`, la vitrine d'une branche de travail (ADR 0017).
 
 name: Déploiement
 
@@ -14,8 +16,10 @@ on:
 permissions:
   contents: read
 
+# Par environnement et non par branche : deux branches lancées dans `dev` écriraient sinon
+# dans le même dossier en même temps.
 concurrency:
-  group: deploy-${{ github.ref_name }}
+  group: deploy-${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
   cancel-in-progress: false
 
 jobs:
@@ -23,11 +27,11 @@ jobs:
     runs-on: [self-hosted, linux, eni-g3]
     timeout-minutes: 30
     environment:
-      name: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
-      url: ${{ github.ref_name == 'main' && 'https://enervision.local' || 'https://rec.enervision.local:8443' }}
+      name: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
+      url: ${{ github.ref_name == 'main' && 'https://enervision.local' || github.ref_name == 'dev' && 'https://rec.enervision.local:8443' || 'https://dev.enervision.local:9443' }}
     env:
-      ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
-      PORT_HTTPS: ${{ github.ref_name == 'main' && '443' || '8443' }}
+      ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
+      PORT_HTTPS: ${{ github.ref_name == 'main' && '443' || github.ref_name == 'dev' && '8443' || '9443' }}
     steps:
       - name: Aligner le dossier de l'environnement sur la branche poussée
         run: |

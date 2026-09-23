@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Pourquoi : la machine porte deux environnements, chacun un clone du dépôt, un `.env` et un
-# projet Compose (ADR 0009). Ce script prépare la machine et les deux dossiers sans rien
-# démarrer : construction des images et démarrage restent à l'opérateur, puis au runner GitHub.
+# Pourquoi : la machine porte trois environnements, chacun un clone du dépôt, un `.env` et un
+# projet Compose (ADR 0009, ADR 0017). Ce script prépare la machine et les trois dossiers sans
+# rien démarrer : construction des images et démarrage restent à l'opérateur, puis au runner.
+# Piège : lancé en root, git refuse un clone déjà chowné au runner (propriété douteuse). D'où
+# `safe.directory` passé en ligne de commande, seule portée où git l'accepte - preparer().
 # Rejouable : un dossier déjà cloné est réaligné sur sa branche, un `.env` existant n'est jamais
 # réécrit, un certificat présent n'est jamais régénéré.
 
@@ -39,9 +41,10 @@ preparer() {
     local dossier="$RACINE/$env"
 
     if [[ -d "$dossier/.git" ]]; then
-        git -C "$dossier" fetch --quiet origin "$branche"
-        git -C "$dossier" checkout --quiet "$branche"
-        git -C "$dossier" reset --quiet --hard "origin/$branche"
+        local git=(git -c "safe.directory=$dossier" -C "$dossier")
+        "${git[@]}" fetch --quiet origin "$branche"
+        "${git[@]}" checkout --quiet "$branche"
+        "${git[@]}" reset --quiet --hard "origin/$branche"
     else
         git clone --quiet --branch "$branche" "$DEPOT" "$dossier"
     fi
@@ -93,6 +96,7 @@ mkdir -p "$RACINE"
 #        env   branche  hôte                  origine                            https  http            pg    mailpit airflow
 preparer prod  main     enervision.local      https://enervision.local           443    80              5433  8025    8080
 preparer rec   dev      rec.enervision.local  https://rec.enervision.local:8443  8443   127.0.0.1:8081  5434  8026    8082
+preparer dev   dev      dev.enervision.local  https://dev.enervision.local:9443  9443   127.0.0.1:8083  5435  8027    8084
 
 if [[ -n "$PROPRIETAIRE" && "$(id -u)" -eq 0 ]]; then
     chown -R "$PROPRIETAIRE" "$RACINE"
@@ -104,10 +108,12 @@ Démarrage, dans chaque dossier : make stack-up, qui applique aussi les migratio
 Premier administrateur, stack démarrée, dans chaque dossier :
   docker compose -f docker-compose.yml -f docker-compose.prod.yml exec backend \\
       python -m app.cli create-admin --email <adresse>
-Le runner GitHub Actions (label eni-g3) rejouera le déploiement à chaque push sur dev et main.
+Le runner GitHub Actions (label eni-g3) rejouera le déploiement à chaque push sur dev et main,
+et déploiera dans dev toute autre branche lancée à la main depuis l'onglet Actions.
 L'installer sous le propriétaire de $RACINE, sinon git refuse ces dépôts et le .env en 600 lui
 échappe : relancer au besoin ce script avec PROPRIETAIRE=<utilisateur du runner>.
 Données historiques : git ne porte pas data/raw, déposer les fichiers dans chaque dossier avant
 de déclencher le DAG historical_import.
-Depuis un poste : ajouter « $ADRESSE enervision.local rec.enervision.local » à /etc/hosts.
+Depuis un poste : ajouter « $ADRESSE enervision.local rec.enervision.local dev.enervision.local »
+à /etc/hosts.
 FIN
