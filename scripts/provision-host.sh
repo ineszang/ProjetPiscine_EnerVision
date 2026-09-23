@@ -143,7 +143,7 @@ publier_dns() {
     [[ -r "$JETON_DNS" ]] || { echo "pas de jeton $JETON_DNS : ni DNS ni Let's Encrypt"; return 0; }
     DNS_TOKEN="$(tr -d '[:space:]' < "$JETON_DNS")" python3 - "$DOMAINE" "$ADRESSE" rec dev <<'PY' \
         || echo "DNS : dynv6 refuse la mise à jour de $DOMAINE, enregistrements inchangés" >&2
-import json, os, sys, urllib.request
+import json, os, sys, time, urllib.request
 
 domaine, adresse, *sous_noms = sys.argv[1:]
 
@@ -151,22 +151,34 @@ def appel(methode, chemin, corps=None):
     requete = urllib.request.Request(
         f"https://dynv6.com/api/v2/{chemin}", method=methode,
         data=None if corps is None else json.dumps(corps).encode(),
-        headers={"Authorization": f"Bearer {os.environ['DNS_TOKEN']}",
+        headers={"Authorization": f"Bearer {os.environ['DNS_TOKEN']}", "User-Agent": "enervision-provision",
                  "Content-Type": "application/json", "Accept": "application/json"})
-    with urllib.request.urlopen(requete, timeout=20) as reponse:
+    with urllib.request.urlopen(requete, timeout=60) as reponse:
         contenu = reponse.read()
     return json.loads(contenu) if contenu else None
 
-zone = appel("GET", f"zones/by-name/{domaine}")
-if zone.get("ipv4address") != adresse:
-    appel("PATCH", f"zones/{zone['id']}", {"ipv4address": adresse})
-existants = {(r["type"], r["name"]): r for r in appel("GET", f"zones/{zone['id']}/records")}
-for nom in sous_noms:
-    actuel = existants.get(("A", nom))
-    if actuel is None:
-        appel("POST", f"zones/{zone['id']}/records", {"type": "A", "name": nom, "data": adresse})
-    elif actuel["data"] != adresse:
-        appel("PATCH", f"zones/{zone['id']}/records/{actuel['id']}", {"data": adresse})
+def synchroniser():
+    zone = appel("GET", f"zones/by-name/{domaine}")
+    if zone.get("ipv4address") != adresse:
+        appel("PATCH", f"zones/{zone['id']}", {"ipv4address": adresse})
+    existants = {(r["type"], r["name"]): r for r in appel("GET", f"zones/{zone['id']}/records")}
+    for nom in sous_noms:
+        actuel = existants.get(("A", nom))
+        if actuel is None:
+            appel("POST", f"zones/{zone['id']}/records", {"type": "A", "name": nom, "data": adresse})
+        elif actuel["data"] != adresse:
+            appel("PATCH", f"zones/{zone['id']}/records/{actuel['id']}", {"data": adresse})
+
+# dynv6 laisse parfois une écriture sans réponse, appliquée ou non : chaque essai relit l'état
+# avant d'écrire, si bien qu'une création aboutie malgré le délai n'est jamais dupliquée.
+for essai in range(3):
+    try:
+        synchroniser()
+        break
+    except OSError:
+        if essai == 2:
+            raise
+        time.sleep(5)
 print(f"DNS : {domaine}, {', '.join(sous_noms)} visent {adresse}")
 PY
 }
