@@ -233,28 +233,29 @@ Deux conséquences se propagent jusqu'à l'application, et elles ne se devinent 
 - `APP_TRUST_PROXY_HEADERS` passe à vrai en même temps, sinon la limitation de débit par IP
   compte sur l'IP du proxy et devient globale.
 
-### Deux environnements sur la même machine
+### Trois environnements sur la même machine
 
-Statut : `En cours`, la machine n'étant pas encore provisionnée. Décision et motifs dans
-l'[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md).
-La VM `eadl-2025-nantes-g3` portera la recette et la production, chacune dans son clone du dépôt,
-son `.env` et son projet Compose. Le nom de projet préfixe volumes, réseau et conteneurs : rien
-n'est partagé. `scripts/provision-host.sh` prépare les deux dossiers, génère les secrets et les
-certificats, et ne démarre rien.
+Statut : `En cours`. Décision et motifs dans
+l'[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md), étendue à un troisième
+environnement par l'[ADR 0017](../adr/0017-environnement-dev-a-la-demande.md).
+La VM `eadl-2025-nantes-g3` porte le développement, la recette et la production, chacun dans son
+clone du dépôt, son `.env` et son projet Compose. Le nom de projet préfixe volumes, réseau et
+conteneurs : rien n'est partagé. `scripts/provision-host.sh` prépare les trois dossiers, génère
+les secrets et les certificats, et ne démarre rien.
 
-| | Recette | Production |
-|---|---|---|
-| Branche, environnement GitHub | `dev`, `rec` | `main`, `prod` |
-| Dossier, projet Compose | `/srv/enervision/rec`, `enervision-rec` | `/srv/enervision/prod`, `enervision-prod` |
-| URL | `https://rec.enervision.local:8443` | `https://enervision.local` |
-| Proxy HTTP, HTTPS | `127.0.0.1:8081`, `8443` | `80`, `443` |
-| PostgreSQL, Mailpit, Airflow, sur `127.0.0.1` | `5434`, `8026`, `8082` | `5433`, `8025`, `8080` |
-| Supervision (profil `monitoring`) | à la demande, `make monitoring-up` | active, `COMPOSE_PROFILES=monitoring` |
-| Grafana, Prometheus, Alertmanager, sur `127.0.0.1` | `3002`, `9091`, `9094` | `3001`, `9090`, `9093` |
+| | Développement | Recette | Production |
+|---|---|---|---|
+| Branche, environnement GitHub | toute branche lancée à la main, `dev` | `dev`, `rec` | `main`, `prod` |
+| Dossier, projet Compose | `/srv/enervision/dev`, `enervision-dev` | `/srv/enervision/rec`, `enervision-rec` | `/srv/enervision/prod`, `enervision-prod` |
+| URL | `https://dev.enervision.local:9443` | `https://rec.enervision.local:8443` | `https://enervision.local` |
+| Proxy HTTP, HTTPS | `127.0.0.1:8083`, `9443` | `127.0.0.1:8081`, `8443` | `80`, `443` |
+| PostgreSQL, Mailpit, Airflow, sur `127.0.0.1` | `5435`, `8027`, `8084` | `5434`, `8026`, `8082` | `5433`, `8025`, `8080` |
+| Supervision (profil `monitoring`) | à la demande, `make monitoring-up` | à la demande, `make monitoring-up` | active, `COMPOSE_PROFILES=monitoring` |
+| Grafana, Prometheus, Alertmanager, sur `127.0.0.1` | `3003`, `9092`, `9095` | `3002`, `9091`, `9094` | `3001`, `9090`, `9093` |
 
-Les deux noms d'hôte visent la même IP, à déclarer dans le `/etc/hosts` des postes. Deux noms
+Les trois noms d'hôte visent la même IP, à déclarer dans le `/etc/hosts` des postes. Deux noms
 distincts sont nécessaires : le cookie `__Secure-ev_refresh` est posé par hôte, pas par port.
-La redirection HTTP de la recette est ramenée sur la boucle locale parce que la configuration
+La redirection HTTP de la recette et du développement est ramenée sur la boucle locale parce que la configuration
 Nginx renvoie vers `https://$host` sans port, c'est-à-dire vers la production.
 
 Le déploiement est décrit dans [50-cicd.md](50-cicd.md) : un runner GitHub Actions installé sur
@@ -275,7 +276,7 @@ sequenceDiagram
 
   TF->>VM: SSH, get.docker.com puis docker compose version
   TF->>VM: copie et exécute scripts/provision-host.sh
-  VM->>VM: deux clones, deux .env, deux certificats
+  VM->>VM: trois clones, trois .env, trois certificats
   TF->>VM: installe actions-runner, config.sh, svc.sh
   VM->>GH: le runner s'enregistre avec le label eni-g3
 ```

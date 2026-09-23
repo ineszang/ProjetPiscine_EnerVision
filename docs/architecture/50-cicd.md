@@ -104,6 +104,7 @@ n'est ouvert. Il n'a pas de déclencheur propre en dehors de `workflow_dispatch`
 |---|---|---|---|
 | `push` sur `dev`, « CI ok » vert | `rec` | `/srv/enervision/rec` | aucune de plus : la recette suit `dev` |
 | `push` sur `main`, « CI ok » vert | `prod` | `/srv/enervision/prod` | approbation d'un relecteur dans l'environnement `prod`, branche `main` seule autorisée |
+| `workflow_dispatch` sur toute autre branche | `dev` | `/srv/enervision/dev` | droit d'écriture sur le dépôt, seul à pouvoir lancer un workflow ([ADR 0017](../adr/0017-environnement-dev-a-la-demande.md)) |
 
 Le job aligne le clone sur **le commit testé** (`fetch`, `checkout`, `reset --hard $GITHUB_SHA`),
 et non sur la pointe de branche du moment, qui a pu avancer pendant la CI. Il lance
@@ -116,10 +117,12 @@ sans schéma, et c'est pourquoi `make stack-up` la porte.
 Les CI de deux push rapprochés peuvent finir dans le désordre. Deux gardes empêchent un
 environnement de reculer ou de sauter un commit :
 
-- un commit qui **précède** celui déjà déployé est ignoré, avec une annotation dans le run ;
+- un commit qui **précède** celui déjà déployé depuis la même branche est ignoré, avec une
+  annotation dans le run. Dans `dev`, une autre branche que celle en place est toujours déployée ;
 - les déploiements d'un même environnement passent un par un sous un verrou `flock` posé dans le
-  clone de la VM. Un groupe `concurrency` ne convenait pas : GitHub n'y garde qu'un job en
-  attente, et un troisième arrivé l'annule sans erreur.
+  clone de la VM, y compris deux branches lancées coup sur coup dans `dev`. Un groupe
+  `concurrency` ne convenait pas : GitHub n'y garde qu'un job en attente, et un troisième arrivé
+  l'annule sans erreur.
 
 Le job ne fait pas de `actions/checkout` dans son espace de travail, et c'est voulu : le dossier
 de l'environnement est stable, hors du runner, parce que `.env`, certificats et volumes doivent
@@ -144,7 +147,7 @@ passé à `scripts/provision-host.sh` fixe ce propriétaire.
 
 La machine se prépare avec `scripts/provision-host.sh`, qui vérifie Docker et Compose 2.24.4 ou
 plus, clone les deux branches, génère les secrets de chaque `.env` et les certificats
-auto-signés, et ne démarre rien. Le détail des deux environnements, ports et noms d'hôte, est
+auto-signés, et ne démarre rien. Le détail des trois environnements, ports et noms d'hôte, est
 dans [10-infra.md](10-infra.md).
 
 ## Ce qui bloque un merge

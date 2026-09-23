@@ -3,11 +3,14 @@
 # espace de travail : `.env`, certificats et volumes y survivent d'un déploiement à l'autre.
 # Pourquoi : appelé par ci.yml une fois « CI ok » vert, jamais directement par un push, et il
 # déploie `GITHUB_SHA`, le commit testé, pas la pointe de branche du moment (ADR 0014).
+# Pourquoi : `main` va en prod, `dev` en recette, et toute autre branche lancée à la main
+# (workflow_dispatch) va dans `dev`, la vitrine d'une branche de travail (ADR 0017).
 # Piège : jamais de déclencheur `pull_request` ici. Sur un dépôt public, une PR de fork
 # exécuterait son code sur la machine de production (ADR 0009) - job deploy.
 # Piège : les CI de deux push finissent parfois dans le désordre. Un commit qui précède celui déjà
-# déployé est ignoré, et le verrou est un `flock` sur la VM plutôt qu'un groupe `concurrency` :
-# GitHub n'y garde qu'un job en attente, et le suivant l'évince sans bruit.
+# déployé depuis la même branche est ignoré, et le verrou est un `flock` sur le dossier de
+# l'environnement plutôt qu'un groupe `concurrency` : GitHub n'y garde qu'un job en attente, et
+# le suivant l'évince sans bruit.
 
 name: Déploiement
 
@@ -24,11 +27,11 @@ jobs:
     runs-on: [self-hosted, linux, eni-g3]
     timeout-minutes: 30
     environment:
-      name: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
-      url: ${{ github.ref_name == 'main' && 'https://enervision.local' || 'https://rec.enervision.local:8443' }}
+      name: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
+      url: ${{ github.ref_name == 'main' && 'https://enervision.local' || github.ref_name == 'dev' && 'https://rec.enervision.local:8443' || 'https://dev.enervision.local:9443' }}
     env:
-      ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
-      PORT_HTTPS: ${{ github.ref_name == 'main' && '443' || '8443' }}
+      ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
+      PORT_HTTPS: ${{ github.ref_name == 'main' && '443' || github.ref_name == 'dev' && '8443' || '9443' }}
     steps:
       # Un seul step : le verrou tombe avec le shell qui l'a posé.
       - name: Déploie le commit testé, sans jamais reculer
@@ -40,7 +43,8 @@ jobs:
           echo "::group::Aligne le dossier de l'environnement sur le commit testé"
           git fetch --quiet origin "${GITHUB_REF_NAME}"
           deploye="$(git rev-parse HEAD)"
-          if [ "$deploye" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$deploye"; then
+          if [ "$(git branch --show-current)" = "$GITHUB_REF_NAME" ] && [ "$deploye" != "$GITHUB_SHA" ] \
+            && git merge-base --is-ancestor "$GITHUB_SHA" "$deploye"; then
             echo "::notice::${GITHUB_SHA:0:7} précède le commit déjà déployé (${deploye:0:7}) : rien à déployer."
             exit 0
           fi

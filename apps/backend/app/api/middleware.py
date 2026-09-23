@@ -16,6 +16,9 @@ EN_TETES: Final[dict[str, str]] = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
+    # same-origin : aucun client ne charge l'API en no-cors depuis une autre origine
+    # (proxy.conf.json en dev, reverse proxy nginx ensuite, cf. docs/architecture/20-backend.md).
+    "Cross-Origin-Resource-Policy": "same-origin",
 }
 
 PREFIXE_AUTHENTIFICATION: Final = "/auth"
