@@ -248,7 +248,7 @@ les secrets et les certificats, et ne démarre rien.
 |---|---|---|---|
 | Branche, environnement GitHub | toute branche lancée à la main, `dev` | `dev`, `rec` | `main`, `prod` |
 | Dossier, projet Compose | `/srv/enervision/dev`, `enervision-dev` | `/srv/enervision/rec`, `enervision-rec` | `/srv/enervision/prod`, `enervision-prod` |
-| URL | `https://dev.enervision-g3.dynv6.net` | `https://rec.enervision-g3.dynv6.net` | `https://enervision-g3.dynv6.net` |
+| URL | `https://dev.enervision-g3.dynv6.net` | `https://rec.enervision-g3.dynv6.net` | `https://prod.enervision-g3.dynv6.net` |
 | Proxy HTTP, HTTPS, PROXY protocol, sur `127.0.0.1` | `8083`, `9443`, `9444` | `8081`, `8443`, `8444` | `10080`, `10443`, `10444` |
 | PostgreSQL, Mailpit, Airflow, sur `127.0.0.1` | `5435`, `8027`, `8084` | `5434`, `8026`, `8082` | `5433`, `8025`, `8080` |
 | Supervision (profil `monitoring`) | à la demande, `make monitoring-up` | à la demande, `make monitoring-up` | active, `COMPOSE_PROFILES=monitoring` |

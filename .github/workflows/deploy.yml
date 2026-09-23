@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 30
     environment:
       name: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
-      url: ${{ github.ref_name == 'main' && 'https://enervision-g3.dynv6.net' || github.ref_name == 'dev' && 'https://rec.enervision-g3.dynv6.net' || 'https://dev.enervision-g3.dynv6.net' }}
+      url: ${{ github.ref_name == 'main' && 'https://prod.enervision-g3.dynv6.net' || github.ref_name == 'dev' && 'https://rec.enervision-g3.dynv6.net' || 'https://dev.enervision-g3.dynv6.net' }}
     env:
       ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
       PORT_HTTPS: ${{ github.ref_name == 'main' && '10443' || github.ref_name == 'dev' && '8443' || '9443' }}

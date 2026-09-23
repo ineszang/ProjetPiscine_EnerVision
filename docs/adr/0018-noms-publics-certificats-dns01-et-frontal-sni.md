@@ -20,16 +20,19 @@ et API, depuis les postes comme depuis la VM.
 
 ## Décision
 
-**Des noms publics qui visent l'IP privée.** `enervision-g3.dynv6.net`, zone gratuite de dynv6,
-porte la prod, et deux enregistrements A portent `rec.` et `dev.`. `provision-host.sh` les publie
-par l'API dynv6 : le DNS est décrit par le code comme le reste. Tout
+**Des noms publics qui visent l'IP privée.** Dans `enervision-g3.dynv6.net`, zone gratuite de
+dynv6, trois enregistrements A portent `prod.`, `rec.` et `dev.`. `provision-host.sh` les publie
+par l'API dynv6 : le DNS est décrit par le code comme le reste. La prod n'est pas à la racine de
+la zone : dynv6 y sert mal un TXT `_acme-challenge`, que l'API ne liste ni ne supprime et qu'un
+seul de ses trois serveurs renvoie (constaté le 23/09), si bien que son défi DNS-01 échoue. Tout
 poste du réseau de l'école les résout sans configuration ; hors de ce réseau, l'IP ne mène
 nulle part.
 
 **Des certificats Let's Encrypt par défi DNS-01.** Le défi passe par l'API dynv6, qui pose
 l'enregistrement TXT : Let's Encrypt n'a jamais à joindre la VM. `make tls-dns01` (acme.sh
 épinglé) le joue dans chaque stack ; il ne renouvelle qu'à échéance, d'où son rejeu à chaque
-déploiement et chaque nuit par cron. Un certificat par environnement plutôt qu'un joker : chaque
+déploiement et chaque nuit par cron. `--dnssleep 90` laisse aux trois serveurs de dynv6 le temps
+de servir le TXT avant que Let's Encrypt ne le cherche depuis plusieurs réseaux. Un certificat par environnement plutôt qu'un joker : chaque
 stack garde le sien, et la clé de la prod n'est pas lisible depuis le clone de dev.
 
 **Un frontal SNI sur 443, le seul composant exposé.** `infra/front`, un nginx sur le réseau de

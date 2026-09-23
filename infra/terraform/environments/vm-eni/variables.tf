@@ -45,7 +45,7 @@ variable "depot_url" {
 
 variable "domaine" {
   type        = string
-  description = "Zone dynv6 de la prod, rec. et dev. en sous-domaines (ADR 0018). Son jeton doit se trouver dans <racine>/dns.token sur la machine : provision-host.sh y fait pointer la zone et ses deux sous-domaines vers la machine."
+  description = "Zone dynv6 des trois environnements, prod., rec. et dev. en sous-domaines (ADR 0018). Son jeton doit se trouver dans <racine>/dns.token sur la machine : provision-host.sh y fait pointer la zone et ses trois sous-domaines vers la machine."
   default     = "enervision-g3.dynv6.net"
 }
 

@@ -244,14 +244,14 @@ DNS01_JETON_FICHIER ?= $(abspath $(CURDIR)/../dns.token)
 acme-sh = docker run --rm --user "$$(id -u):$$(id -g)" -e $(DNS01_JETON_VAR) -e AUTO_UPGRADE=0 \
 	-v "$(CURDIR)/infra/proxy/acme:/acme.sh" -v "$(CURDIR)/infra/proxy/tls:/tls" $(ACME_SH)
 
-# acme.sh sort en 2 quand le certificat n'est pas encore à renouveler, et recopie le jeton dans
-# acme/account.conf : d'où le chmod, qui le soustrait aux autres comptes de la machine.
+# acme.sh sort en 2 quand le certificat n'est pas à renouveler, et recopie le jeton dans
+# acme/account.conf, d'où le chmod. `--dnssleep` : Let's Encrypt valide depuis plusieurs réseaux.
 tls-dns01: ## Certificat Let's Encrypt par DNS-01, renouvelé seulement à échéance. Jeton : ../dns.token
 	@case "$(PUBLIC_HOST)" in *.local | localhost) echo "PUBLIC_HOST=$(PUBLIC_HOST) n'est pas un nom public"; exit 1 ;; esac
 	@test -r "$(DNS01_JETON_FICHIER)" || { echo "Jeton DNS illisible : $(DNS01_JETON_FICHIER)"; exit 1; }
 	@mkdir -p infra/proxy/acme && chmod 700 infra/proxy/acme
 	@$(DNS01_JETON_VAR)="$$(tr -d '[:space:]' < "$(DNS01_JETON_FICHIER)")"; export $(DNS01_JETON_VAR); \
-		$(acme-sh) --issue --server letsencrypt --dns $(DNS01_API) -d "$(PUBLIC_HOST)"; \
+		$(acme-sh) --issue --server letsencrypt --dns $(DNS01_API) --dnssleep 90 -d "$(PUBLIC_HOST)"; \
 		code=$$?; chmod -R go-rwx infra/proxy/acme; [ $$code -eq 0 ] || [ $$code -eq 2 ] || exit $$code
 	@$(acme-sh) --install-cert --ecc -d "$(PUBLIC_HOST)" \
 		--fullchain-file /tls/fullchain.pem --key-file /tls/privkey.pem
