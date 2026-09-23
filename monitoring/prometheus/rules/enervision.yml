@@ -1,0 +1,103 @@
+# Contrainte : chaque règle a son cas dans tests/enervision.test.yml, joué par `promtool test
+# rules` en CI - enervision.yml. Une règle modifiée sans son test fait échouer le job Infra.
+# Pourquoi : `critical` réveille (mail immédiat, rappel toutes les heures), `warning` se lit le
+# lendemain ; alertmanager.yml masque le warning d'une cible déjà en critical.
+
+groups:
+  - name: api
+    rules:
+      - alert: ApiIndisponible
+        expr: up{job="backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "L'API ne répond plus"
+          description: "Prometheus ne joint plus {{ $labels.instance }} depuis 2 minutes."
+
+      - alert: ApiErreursServeur
+        expr: |
+          sum(rate(http_requests_total{job="backend", status="5xx"}[5m]))
+            / sum(rate(http_requests_total{job="backend"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Plus de 5 % de réponses 5xx"
+          description: "{{ $value | humanizePercentage }} des réponses de l'API sont des erreurs serveur."
+
+      - alert: ApiLatenceElevee
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_highr_seconds_bucket{job="backend"}[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 de l'API au-dessus d'une seconde"
+          description: "Le p95 des réponses vaut {{ $value | humanizeDuration }} depuis 10 minutes."
+
+  - name: base
+    rules:
+      - alert: BaseIndisponible
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL ne répond plus"
+          description: "L'exportateur ne se connecte plus à la base depuis 2 minutes."
+
+      - alert: BaseConnexionsSaturees
+        expr: |
+          sum by (instance) (pg_stat_activity_count)
+            / max by (instance) (pg_settings_max_connections) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Connexions PostgreSQL au-delà de 80 %"
+          description: "{{ $value | humanizePercentage }} des connexions autorisées sont ouvertes."
+
+  - name: hote
+    rules:
+      - alert: HoteMemoireSaturee
+        expr: 1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mémoire de l'hôte au-delà de 90 %"
+          description: "{{ $value | humanizePercentage }} de la mémoire est utilisée, recette et prod comprises."
+
+      - alert: HoteDisquePlein
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay"}
+            / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} < 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Moins de 10 % de disque libre"
+          description: "Il reste {{ $value | humanizePercentage }} d'espace sur la racine de l'hôte."
+
+      - alert: HoteCpuSature
+        expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Processeur de l'hôte au-delà de 90 %"
+          description: "Le processeur est occupé à {{ $value | humanizePercentage }} depuis 15 minutes."
+
+  - name: supervision
+    rules:
+      - alert: CibleInjoignable
+        expr: up{job!="backend"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cible de supervision injoignable"
+          description: "Prometheus ne joint plus {{ $labels.job }} ({{ $labels.instance }}) depuis 5 minutes."

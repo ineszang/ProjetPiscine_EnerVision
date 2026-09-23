@@ -2,6 +2,7 @@ BACKEND := apps/backend
 FRONTEND := apps/frontend
 ML := ml
 AIRFLOW := etl/airflow
+E2E := tests/e2e
 COMPOSE_PROD := docker compose -f docker-compose.yml -f docker-compose.prod.yml
 
 # Piège : sans `export`, une valeur passée en ligne de commande n'atteindrait pas docker compose.
@@ -34,6 +35,31 @@ PG_TEST_DB ?= enervision_test
 TEST_DATABASE_URL ?= postgresql+asyncpg://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_TEST_DB)
 ML_TEST_DATABASE_URL ?= postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_TEST_DB)
 
+# Piege : ni make ni ces cibles ne lisent `.env` pour COMPOSE_PROFILES, que docker compose y lit
+# seul. `stack-up` le relit ici pour savoir s'il doit poser le role `supervision` apres migration.
+SUPERVISION := $(findstring monitoring,$(COMPOSE_PROFILES) $(call env-val,COMPOSE_PROFILES))
+SERVICES_SUPERVISION := prometheus alertmanager grafana postgres-exporter node-exporter cadvisor
+GRAFANA_PORT := $(or $(strip $(call env-val,GRAFANA_PORT)),3001)
+PROMETHEUS_PORT := $(or $(strip $(call env-val,PROMETHEUS_PORT)),9090)
+supervision-garde = for cle in APP_METRICS_TOKEN GRAFANA_ADMIN_PASSWORD SUPERVISION_DB_PASSWORD; do \
+		sed -n "s/^$$cle=//p" .env 2>/dev/null | tail -1 | grep -q . \
+			|| { echo "$$cle manquant dans .env, requis par la supervision (cf. .env.example)"; exit 1; }; \
+	done
+MONITORING := docker compose --profile monitoring
+PROMTOOL := $(MONITORING) run --rm --no-deps --entrypoint promtool prometheus
+
+# Piege : `e2e-prepare` ajoute trois sites `demo-*` et des comptes `test-*` a la base visee. Elle
+# vise la base de `make dev` ; ne jamais la lancer contre la recette ou la prod.
+E2E_COMPTES ?= $(CURDIR)/$(E2E)/.comptes.json
+E2E_API ?= http://localhost:$(or $(strip $(call env-val,BACKEND_PORT)),8000)
+
+# Piege : `run` ne demarre que k6, la stack doit deja tourner. `--user` fait ecrire les rapports
+# de tests/load/results avec l'uid du poste, pas celui de l'image (12345), qui n'y a pas acces.
+k6-run = mkdir -p tests/load/results && $(COMPOSE_PROD) --profile load run --rm \
+	--user "$$(id -u):$$(id -g)" -e K6_WEB_DASHBOARD=true \
+	-e K6_WEB_DASHBOARD_EXPORT=/results/$(1)-$$(date +%Y%m%dT%H%M%S).html \
+	k6 run /scripts/$(1).js
+
 # Le jeu historique s'arrete au 31/12/2024 : score et detection ancres a l'horloge reelle ne
 # verraient qu'un parc muet depuis des mois. Cf. `--now` de enervision_ml.score.
 DEMO_NOW ?= 2024-12-31T00:00:00Z
@@ -47,10 +73,12 @@ DEMO_NOW ?= 2024-12-31T00:00:00Z
         migrate migrate-test bootstrap-admin services-up demo-data demo-data-force \
         ml-lint ml-typecheck ml-test ml-check ml-train ml-score mlflow-up detect-alerts recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs \
-        tls-selfsigned tls-acme tls-renew stack-up stack-down stack-logs
+        tls-selfsigned tls-acme tls-renew tls-dns01 front-up stack-up stack-down stack-logs \
+        e2e-install e2e-prepare e2e load-smoke load-test load-stress load-limits \
+        db-ensure-supervision monitoring-up monitoring-down monitoring-logs monitoring-check
 
 help: ## Liste les cibles disponibles
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 install: install-backend install-frontend install-ml install-airflow ## Installe les dépendances backend, frontend, ML et Airflow
 
@@ -183,8 +211,10 @@ stack-up: ## Démarre la stack derrière le reverse proxy, puis migre la base. P
 		|| { echo "Aucun certificat dans infra/proxy/tls. Lancer d'abord make tls-selfsigned"; exit 1; }
 	@openssl x509 -in infra/proxy/tls/fullchain.pem -noout -checkhost "$(PUBLIC_HOST)" >/dev/null \
 		|| { echo "Le certificat ne couvre pas $(PUBLIC_HOST). Relancer make tls-selfsigned PUBLIC_HOST=$(PUBLIC_HOST) FORCE=1"; exit 1; }
+	@$(if $(SUPERVISION),$(supervision-garde),true)
 	$(COMPOSE_PROD) up -d --build
 	$(COMPOSE_PROD) exec -T backend alembic upgrade head
+	@$(if $(SUPERVISION),$(MAKE) --no-print-directory db-ensure-supervision,true)
 
 stack-down: ## Arrête la stack complète en conservant les données
 	$(COMPOSE_PROD) stop
@@ -204,6 +234,82 @@ tls-acme: ## Demande un certificat Let's Encrypt. PUBLIC_HOST public et ACME_EMA
 tls-renew: ## Renouvelle les certificats Let's Encrypt et recharge le proxy
 	$(COMPOSE_PROD) --profile acme run --rm certbot renew --deploy-hook /deploy-hook.sh
 	$(COMPOSE_PROD) exec proxy nginx -s reload
+
+# Pourquoi : la VM n'a qu'une IP privée, que Let's Encrypt ne joint pas ; le défi DNS-01 passe
+# par l'API du fournisseur DNS, dynv6 par défaut (ADR 0018). Le jeton ne passe jamais par `argv`.
+ACME_SH := neilpang/acme.sh:3.1.6
+DNS01_API ?= dns_dynv6
+DNS01_JETON_VAR ?= DYNV6_TOKEN
+DNS01_JETON_FICHIER ?= $(abspath $(CURDIR)/../dns.token)
+acme-sh = docker run --rm --user "$$(id -u):$$(id -g)" -e $(DNS01_JETON_VAR) -e AUTO_UPGRADE=0 \
+	-v "$(CURDIR)/infra/proxy/acme:/acme.sh" -v "$(CURDIR)/infra/proxy/tls:/tls" $(ACME_SH)
+
+# acme.sh sort en 2 quand le certificat n'est pas à renouveler, et recopie le jeton dans
+# acme/account.conf, d'où le chmod. `--dnssleep` : Let's Encrypt valide depuis plusieurs réseaux.
+tls-dns01: ## Certificat Let's Encrypt par DNS-01, renouvelé seulement à échéance. Jeton : ../dns.token
+	@case "$(PUBLIC_HOST)" in *.local | localhost) echo "PUBLIC_HOST=$(PUBLIC_HOST) n'est pas un nom public"; exit 1 ;; esac
+	@test -r "$(DNS01_JETON_FICHIER)" || { echo "Jeton DNS illisible : $(DNS01_JETON_FICHIER)"; exit 1; }
+	@mkdir -p infra/proxy/acme && chmod 700 infra/proxy/acme
+	@$(DNS01_JETON_VAR)="$$(tr -d '[:space:]' < "$(DNS01_JETON_FICHIER)")"; export $(DNS01_JETON_VAR); \
+		$(acme-sh) --issue --server letsencrypt --dns $(DNS01_API) --dnssleep 90 -d "$(PUBLIC_HOST)"; \
+		code=$$?; chmod -R go-rwx infra/proxy/acme; [ $$code -eq 0 ] || [ $$code -eq 2 ] || exit $$code
+	@$(acme-sh) --install-cert --ecc -d "$(PUBLIC_HOST)" \
+		--fullchain-file /tls/fullchain.pem --key-file /tls/privkey.pem
+	@$(COMPOSE_PROD) exec -T proxy nginx -s reload 2>/dev/null \
+		|| echo "Proxy arrêté : il lira le certificat à son démarrage"
+
+front-up: ## Démarre ou recharge le frontal SNI de la VM, sur les ports 80 et 443 de l'hôte
+	docker compose -f infra/front/compose.yml up -d
+	docker compose -f infra/front/compose.yml exec -T front nginx -s reload
+
+e2e-install: ## Installe Playwright et Chromium pour les tests de bout en bout
+	cd $(E2E) && npm ci && npx playwright install chromium
+
+e2e-prepare: ## Sème le jeu de démonstration et crée les comptes de test sur la base de `make dev`
+	docker compose exec -T db psql -U $(PG_USER) -d $(PG_DB) -v ON_ERROR_STOP=1 < db/seeds/demo.sql
+	cd $(BACKEND) && BASE_URL=$(E2E_API) COMPTES_FICHIER=$(E2E_COMPTES) ADMIN_SUPPLEMENTAIRE=1 \
+		../../scripts/comptes-test.sh
+
+e2e: ## Joue les parcours Playwright. E2E_BASE_URL= optionnel (défaut http://localhost:4200)
+	cd $(E2E) && E2E_COMPTES=$(E2E_COMPTES) npx playwright test
+
+load-smoke: ## Tir k6 d'une minute. K6_EMAIL= et K6_PASSWORD= d'un lecteur, K6_BASE_URL= optionnel
+	$(call k6-run,smoke)
+
+load-test: ## Charge nominale k6, 50 utilisateurs pendant 8 minutes. Rapport HTML dans tests/load/results
+	$(call k6-run,charge)
+
+load-stress: ## Monte le débit jusqu'à la rupture de l'API. Sur la VM, la prod partage la machine
+	$(call k6-run,stress)
+
+load-limits: ## Vérifie par le proxy que nginx limite le débit d'une même adresse (429)
+	$(call k6-run,limitation-debit)
+
+# Piege : le mot de passe est lu dans `.env` par le shell et passe a psql sur son entree
+# standard. Developpe par make, il apparaitrait en clair dans la ligne de commande (`ps`).
+db-ensure-supervision: ## Crée ou réaligne le rôle `supervision`, en lecture seule, de Grafana et de l'exportateur
+	@mdp="$$(sed -n 's/^SUPERVISION_DB_PASSWORD=//p' .env 2>/dev/null | tail -1)"; \
+	[ -n "$$mdp" ] || { echo "SUPERVISION_DB_PASSWORD manquant dans .env"; exit 1; }; \
+	{ printf '\\set mot_de_passe %s\n' "$$mdp"; cat db/roles/supervision.sql; } \
+		| docker compose exec -T db psql -U $(PG_USER) -d $(PG_DB) -v ON_ERROR_STOP=1 -v base=$(PG_DB) -q
+
+monitoring-up: ## Démarre la supervision sur la stack en cours : Prometheus, Alertmanager, Grafana, exporteurs
+	@$(supervision-garde)
+	$(MONITORING) up -d --no-deps $(SERVICES_SUPERVISION)
+	@$(MAKE) --no-print-directory db-ensure-supervision
+	@echo "grafana -> http://localhost:$(GRAFANA_PORT)  prometheus -> http://localhost:$(PROMETHEUS_PORT)"
+
+monitoring-down: ## Arrête la supervision en conservant ses données
+	$(MONITORING) stop $(SERVICES_SUPERVISION)
+
+monitoring-logs: ## Suit les journaux de Prometheus, Alertmanager et Grafana
+	$(MONITORING) logs -f prometheus alertmanager grafana
+
+monitoring-check: ## Valide la configuration de supervision et joue les tests des règles d'alerte, comme la CI
+	$(PROMTOOL) check config /etc/prometheus/prometheus.yml
+	$(PROMTOOL) test rules /etc/prometheus/tests/enervision.test.yml
+	$(MONITORING) run --rm --no-deps --entrypoint amtool alertmanager check-config /etc/alertmanager/alertmanager.yml
+	@for tableau in monitoring/grafana/dashboards/*.json; do jq empty "$$tableau" || exit 1; done
 
 db-up: ## Démarre la base PostgreSQL TimescaleDB
 	docker compose up -d db

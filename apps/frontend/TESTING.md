@@ -86,3 +86,9 @@ describe('MonComposant', () => {
 - Un fichier ou un dossier seulement :
   `npx ng test --watch=false --coverage=false --include=src/app/core/services/alerts.service.spec.ts`
   (répéter `--include` pour plusieurs cibles ; un dossier joue tous ses specs)
+
+## Au-delà des tests unitaires
+Les parcours utilisateur complets (connexion, rôles, sites, recommandations, alertes) sont
+testés de bout en bout par Playwright, contre l'API et le proxy réels : voir
+[tests/e2e/README.md](../../tests/e2e/README.md). Un élément sans rôle ni libellé stable que ces
+parcours doivent viser reçoit un `data-testid`.

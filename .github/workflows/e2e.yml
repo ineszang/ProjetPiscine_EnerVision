@@ -1,0 +1,135 @@
+name: E2E
+
+# Pourquoi : les parcours tournent contre la stack telle qu'elle est déployée, derrière le proxy
+# TLS (cookie `__Secure-`, CSP, limitation de débit), pas contre `ng serve` - job parcours. Il
+# construit aussi les images backend et frontend, que rien d'autre ne construit avant le
+# déploiement (ADR 0015).
+# Piège : pas d'Airflow ici. `up` nomme ses services : sans eux, la construction de l'image
+# Airflow doublerait la durée du job sans rien tester de plus.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  parcours:
+    name: Parcours Playwright et tirs k6
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.prod.yml
+      PUBLIC_HOST: localhost
+      E2E_BASE_URL: https://localhost
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      - name: Prépare le .env de la stack
+        run: |
+          secret() { openssl rand -hex 32; }
+          sed -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(secret)|" \
+              -e "s|^APP_SECRET_KEY=.*|APP_SECRET_KEY=$(secret)|" \
+              -e "s|^PUBLIC_HOST=.*|PUBLIC_HOST=localhost|" \
+              .env.example > .env
+
+      - name: Génère le certificat de démonstration
+        run: ./scripts/tls-selfsigned.sh
+
+      - name: Construit et démarre la stack derrière le proxy
+        run: docker compose up --detach --build --wait --wait-timeout 300 db mailpit backend frontend proxy
+
+      - name: Applique les migrations
+        run: docker compose exec -T backend alembic upgrade head
+
+      # Même cible que `make stack-up` en prod : les droits du rôle portent sur le schéma réel.
+      - name: Pose le rôle de supervision en lecture seule
+        run: make db-ensure-supervision
+
+      - name: Sème le jeu de démonstration
+        run: docker compose exec -T db psql -U enervision -d enervision -v ON_ERROR_STOP=1 < db/seeds/demo.sql
+
+      - name: Crée les comptes de test
+        env:
+          BASE_URL: https://localhost
+          APP_CLI: docker compose exec -T backend python -m app.cli
+          COMPTES_FICHIER: ${{ runner.temp }}/comptes.json
+        run: ./scripts/comptes-test.sh
+
+      - name: Installe Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+
+      - name: Installe Playwright
+        working-directory: tests/e2e
+        run: npm ci
+
+      - name: Restaure les navigateurs de Playwright
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tests/e2e/package-lock.json') }}
+
+      # `--with-deps` tourne même quand le cache a servi : il pose aussi les bibliothèques système.
+      - name: Installe Chromium
+        working-directory: tests/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Joue les parcours
+        working-directory: tests/e2e
+        env:
+          E2E_COMPTES: ${{ runner.temp }}/comptes.json
+        run: npx playwright test
+
+      # Direct sur `backend:8000` : ce tir mesure l'API, pas la limitation de nginx.
+      - name: Tir k6 de fumée sur l'API
+        env:
+          K6_RESUME: /results/resume-smoke.md
+        run: |
+          K6_EMAIL="$(jq -r .lecteur.email "$RUNNER_TEMP/comptes.json")"
+          K6_PASSWORD="$(jq -r .lecteur.password "$RUNNER_TEMP/comptes.json")"
+          echo "::add-mask::$K6_PASSWORD"
+          export K6_EMAIL K6_PASSWORD
+          make load-smoke
+
+      - name: Vérifie par k6 que le proxy limite le débit
+        env:
+          K6_RESUME: /results/resume-limitation.md
+        run: make load-limits
+
+      - name: Publie la synthèse k6
+        if: ${{ !cancelled() }}
+        run: cat tests/load/results/resume-*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Publie les rapports k6
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: k6-rapports
+          path: tests/load/results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publie le rapport Playwright
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            tests/e2e/playwright-report/
+            tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Journaux de la stack en cas d'échec
+        if: failure()
+        run: docker compose logs --tail=200 backend proxy frontend
+
+      - name: Arrête la stack
+        if: always()
+        run: docker compose down --volumes

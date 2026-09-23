@@ -1,6 +1,6 @@
 variable "ssh_host" {
   type        = string
-  description = "Adresse de la VM ENI qui porte les deux environnements (ADR 0009)."
+  description = "Adresse de la VM ENI qui porte les trois environnements (ADR 0009, ADR 0017)."
 }
 
 variable "ssh_port" {
@@ -41,6 +41,12 @@ variable "depot_url" {
   type        = string
   description = "URL de clonage du depot, passee a provision-host.sh."
   default     = "https://github.com/ineszang/ProjetPiscine_EnerVision.git"
+}
+
+variable "domaine" {
+  type        = string
+  description = "Zone dynv6 des trois environnements, prod., rec. et dev. en sous-domaines (ADR 0018). Son jeton doit se trouver dans <racine>/dns.token sur la machine : provision-host.sh y fait pointer la zone et ses trois sous-domaines vers la machine."
+  default     = "enervision-g3.dynv6.net"
 }
 
 variable "adresse_publique" {

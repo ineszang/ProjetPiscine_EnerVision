@@ -6,7 +6,8 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
-from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import CollectorRegistry, GCCollector, PlatformCollector, ProcessCollector
+from prometheus_fastapi_instrumentator import Instrumentator, metrics
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
@@ -35,6 +36,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     )
     yield
     await get_engine().dispose()
+
+
+# Pourquoi : le registre global n'accepte chaque métrique qu'une fois. Toute application créée
+# après la première, dans les tests notamment, n'aurait rien mesuré.
+def _registre_de_metriques() -> CollectorRegistry:
+    registre = CollectorRegistry()
+    ProcessCollector(registry=registre)
+    PlatformCollector(registry=registre)
+    GCCollector(registry=registre)
+    return registre
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -102,7 +113,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_error_handlers(application)
 
-    Instrumentator().instrument(application).expose(
+    # Les sondes de santé tombent toutes les 30 s : comptées, elles fausseraient latences et débit.
+    # Seaux fins autour du seuil de charge (p95 < 500 ms, ADR 0015), route par route.
+    registre = _registre_de_metriques()
+    Instrumentator(
+        excluded_handlers=["/metrics", f"{resolved.api_prefix}/health/.*"], registry=registre
+    ).add(
+        metrics.default(latency_lowr_buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5), registry=registre)
+    ).instrument(application).expose(
         application,
         endpoint="/metrics",
         include_in_schema=False,

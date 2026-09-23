@@ -1,57 +1,74 @@
 # Pourquoi : le runner tourne sur la VM ENI, adresse privée que les runners hébergés par GitHub
 # ne joignent pas, et travaille dans un dossier stable par environnement plutôt que dans son
 # espace de travail : `.env`, certificats et volumes y survivent d'un déploiement à l'autre.
+# Pourquoi : appelé par ci.yml une fois « CI ok » vert, jamais directement par un push, et il
+# déploie `GITHUB_SHA`, le commit testé, pas la pointe de branche du moment (ADR 0014).
+# Pourquoi : `main` va en prod, `dev` en recette, et toute autre branche lancée à la main
+# (workflow_dispatch) va dans `dev`, la vitrine d'une branche de travail (ADR 0017).
 # Piège : jamais de déclencheur `pull_request` ici. Sur un dépôt public, une PR de fork
 # exécuterait son code sur la machine de production (ADR 0009) - job deploy.
+# Piège : les CI de deux push finissent parfois dans le désordre. Un commit qui précède celui déjà
+# déployé depuis la même branche est ignoré, et le verrou est un `flock` sur le dossier de
+# l'environnement plutôt qu'un groupe `concurrency` : GitHub n'y garde qu'un job en attente, et
+# le suivant l'évince sans bruit.
 
 name: Déploiement
 
 on:
-  push:
-    branches: [dev, main]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: deploy-${{ github.ref_name }}
-  cancel-in-progress: false
-
 jobs:
   deploy:
+    name: Déploie sur la VM
     runs-on: [self-hosted, linux, eni-g3]
     timeout-minutes: 30
     environment:
-      name: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
-      url: ${{ github.ref_name == 'main' && 'https://enervision.local' || 'https://rec.enervision.local:8443' }}
+      name: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
+      url: ${{ github.ref_name == 'main' && 'https://prod.enervision-g3.dynv6.net' || github.ref_name == 'dev' && 'https://rec.enervision-g3.dynv6.net' || 'https://dev.enervision-g3.dynv6.net' }}
     env:
-      ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
-      PORT_HTTPS: ${{ github.ref_name == 'main' && '443' || '8443' }}
+      ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
+      PORT_HTTPS: ${{ github.ref_name == 'main' && '10443' || github.ref_name == 'dev' && '8443' || '9443' }}
     steps:
-      - name: Aligner le dossier de l'environnement sur la branche poussée
+      # Un seul step : le verrou tombe avec le shell qui l'a posé.
+      - name: Déploie le commit testé, sans jamais reculer
         run: |
           cd "/srv/enervision/${ENVIRONNEMENT}"
+          exec 9>"$(git rev-parse --git-dir)/verrou-deploiement"
+          flock 9
+
+          echo "::group::Aligne le dossier de l'environnement sur le commit testé"
           git fetch --quiet origin "${GITHUB_REF_NAME}"
+          deploye="$(git rev-parse HEAD)"
+          if [ "$(git branch --show-current)" = "$GITHUB_REF_NAME" ] && [ "$deploye" != "$GITHUB_SHA" ] \
+            && git merge-base --is-ancestor "$GITHUB_SHA" "$deploye"; then
+            echo "::notice::${GITHUB_SHA:0:7} précède le commit déjà déployé (${deploye:0:7}) : rien à déployer."
+            exit 0
+          fi
           git checkout --quiet "${GITHUB_REF_NAME}"
-          git reset --quiet --hard "origin/${GITHUB_REF_NAME}"
+          git reset --quiet --hard "${GITHUB_SHA}"
           git log -1 --format='%h %s'
+          echo "::endgroup::"
 
-      - name: Reconstruire et redémarrer la stack
-        run: |
-          cd "/srv/enervision/${ENVIRONNEMENT}"
+          echo "::group::Reconstruit et redémarre la stack"
+          # Un `.env` pas encore réaligné par provision-host.sh porte encore un nom en `.local`.
+          if [ -r ../dns.token ] && ! grep -q '^PUBLIC_HOST=.*\.local$' .env; then make tls-dns01; fi
           make stack-up
+          if [ "${ENVIRONNEMENT}" = prod ]; then make front-up; fi
+          echo "::endgroup::"
 
-      - name: Attendre que l'API réponde derrière le proxy
-        run: |
-          for tentative in $(seq 1 36); do
+          echo "::group::Attend que l'API réponde derrière le proxy"
+          for _ in $(seq 1 36); do
             if curl --fail --silent --insecure "https://localhost:${PORT_HTTPS}/api/v1/health/ready"; then
               exit 0
             fi
             sleep 5
           done
+          echo "::endgroup::"
           echo "L'API ne répond pas après 3 minutes" >&2
-          cd "/srv/enervision/${ENVIRONNEMENT}"
           compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
           $compose ps
           $compose logs --tail=50 backend proxy

@@ -1,0 +1,12 @@
+# Pourquoi : le réseau de l'hôte, parce que les trois stacks publient leur écouteur PROXY protocol
+# sur 127.0.0.1 et que seul un conteneur sur l'hôte joint cette boucle locale (ADR 0018).
+
+name: enervision-front
+
+services:
+  front:
+    image: nginx:1.31-alpine
+    network_mode: host
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped

@@ -1,0 +1,31 @@
+# Contrainte : Mailpit est le seul serveur SMTP de la stack, et il ne relaie rien vers l'extérieur
+# - alertmanager.yml. Les alertes se lisent dans son interface (MAILPIT_UI_PORT), comme les
+# courriels de réinitialisation de l'API.
+
+global:
+  smtp_smarthost: mailpit:1025
+  smtp_from: supervision@enervision.fr
+  smtp_require_tls: false
+
+route:
+  receiver: equipe
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: equipe
+      group_wait: 10s
+      repeat_interval: 1h
+
+receivers:
+  - name: equipe
+    email_configs:
+      - to: supervision@enervision.fr
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers: ['severity="critical"']
+    target_matchers: ['severity="warning"']
+    equal: [instance]

@@ -1,0 +1,112 @@
+rule_files:
+  - ../rules/enervision.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: l'API injoignable déclenche une alerte critique au bout de 2 minutes
+    interval: 1m
+    input_series:
+      - series: 'up{job="backend", instance="backend:8000"}'
+        values: "1 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ApiIndisponible
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: ApiIndisponible
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: backend
+              instance: backend:8000
+            exp_annotations:
+              summary: "L'API ne répond plus"
+              description: "Prometheus ne joint plus backend:8000 depuis 2 minutes."
+
+  - name: une API qui répond ne déclenche rien
+    interval: 1m
+    input_series:
+      - series: 'up{job="backend", instance="backend:8000"}'
+        values: "1x10"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ApiIndisponible
+        exp_alerts: []
+
+  - name: dix pour cent de 5xx déclenchent l'alerte d'erreurs serveur
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="backend", handler="/api/v1/sites", method="GET", status="5xx"}'
+        values: "0+10x20"
+      - series: 'http_requests_total{job="backend", handler="/api/v1/sites", method="GET", status="2xx"}'
+        values: "0+90x20"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ApiErreursServeur
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Plus de 5 % de réponses 5xx"
+              description: "10% des réponses de l'API sont des erreurs serveur."
+
+  - name: un p95 au-delà d'une seconde déclenche l'alerte de latence
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_highr_seconds_bucket{job="backend", le="0.5"}'
+        values: "0x30"
+      - series: 'http_request_duration_highr_seconds_bucket{job="backend", le="1"}'
+        values: "0x30"
+      - series: 'http_request_duration_highr_seconds_bucket{job="backend", le="2"}'
+        values: "0+10x30"
+      - series: 'http_request_duration_highr_seconds_bucket{job="backend", le="+Inf"}'
+        values: "0+10x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ApiLatenceElevee
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "p95 de l'API au-dessus d'une seconde"
+              description: "Le p95 des réponses vaut 1.95s depuis 10 minutes."
+
+  - name: la mémoire de l'hôte au-delà de 90 % déclenche un avertissement
+    interval: 1m
+    input_series:
+      - series: 'node_memory_MemAvailable_bytes{job="node", instance="node-exporter:9100"}'
+        values: "500000000x15"
+      - series: 'node_memory_MemTotal_bytes{job="node", instance="node-exporter:9100"}'
+        values: "10000000000x15"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: HoteMemoireSaturee
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: node
+              instance: node-exporter:9100
+            exp_annotations:
+              summary: "Mémoire de l'hôte au-delà de 90 %"
+              description: "95% de la mémoire est utilisée, recette et prod comprises."
+
+  - name: un exportateur muet déclenche l'alerte de cible, pas celle de l'API
+    interval: 1m
+    input_series:
+      - series: 'up{job="postgres", instance="postgres-exporter:9187"}'
+        values: "0x10"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: CibleInjoignable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: postgres
+              instance: postgres-exporter:9187
+            exp_annotations:
+              summary: "Cible de supervision injoignable"
+              description: "Prometheus ne joint plus postgres (postgres-exporter:9187) depuis 5 minutes."
+      - eval_time: 6m
+        alertname: ApiIndisponible
+        exp_alerts: []
