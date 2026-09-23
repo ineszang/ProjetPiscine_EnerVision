@@ -43,6 +43,12 @@ variable "depot_url" {
   default     = "https://github.com/ineszang/ProjetPiscine_EnerVision.git"
 }
 
+variable "domaine" {
+  type        = string
+  description = "Nom DuckDNS de la prod, rec. et dev. en sous-domaines (ADR 0018). Son enregistrement doit viser ssh_host, et son jeton se trouver dans <racine>/duckdns.token sur la machine."
+  default     = "enervision-g3.duckdns.org"
+}
+
 variable "adresse_publique" {
   type        = string
   description = "Adresse annoncee dans les certificats auto-signes. Vide : la premiere adresse de la VM."

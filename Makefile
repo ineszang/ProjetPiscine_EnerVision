@@ -73,7 +73,7 @@ DEMO_NOW ?= 2024-12-31T00:00:00Z
         migrate migrate-test bootstrap-admin services-up demo-data demo-data-force \
         ml-lint ml-typecheck ml-test ml-check ml-train ml-score mlflow-up detect-alerts recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs \
-        tls-selfsigned tls-acme tls-renew stack-up stack-down stack-logs \
+        tls-selfsigned tls-acme tls-renew tls-duckdns front-up stack-up stack-down stack-logs \
         e2e-install e2e-prepare e2e load-smoke load-test load-stress load-limits \
         db-ensure-supervision monitoring-up monitoring-down monitoring-logs monitoring-check
 
@@ -234,6 +234,30 @@ tls-acme: ## Demande un certificat Let's Encrypt. PUBLIC_HOST public et ACME_EMA
 tls-renew: ## Renouvelle les certificats Let's Encrypt et recharge le proxy
 	$(COMPOSE_PROD) --profile acme run --rm certbot renew --deploy-hook /deploy-hook.sh
 	$(COMPOSE_PROD) exec proxy nginx -s reload
+
+# Pourquoi : la VM n'a qu'une IP privée, que Let's Encrypt ne joint pas ; le défi DNS-01 passe
+# par l'API DuckDNS (ADR 0018). Le jeton transite par l'environnement, jamais par `argv`.
+ACME_SH := neilpang/acme.sh:3.1.6
+DUCKDNS_TOKEN_FILE ?= $(abspath $(CURDIR)/../duckdns.token)
+acme-sh = docker run --rm --user "$$(id -u):$$(id -g)" -e DuckDNS_Token -e AUTO_UPGRADE=0 \
+	-v "$(CURDIR)/infra/proxy/acme:/acme.sh" -v "$(CURDIR)/infra/proxy/tls:/tls" $(ACME_SH)
+
+# acme.sh sort en 2 quand le certificat n'est pas encore à renouveler : rejouable à chaque déploiement.
+tls-duckdns: ## Certificat Let's Encrypt par DNS-01 DuckDNS, renouvelé seulement à échéance
+	@case "$(PUBLIC_HOST)" in *.duckdns.org) ;; *) echo "PUBLIC_HOST=$(PUBLIC_HOST) n'est pas un nom DuckDNS"; exit 1 ;; esac
+	@test -r "$(DUCKDNS_TOKEN_FILE)" || { echo "Jeton DuckDNS illisible : $(DUCKDNS_TOKEN_FILE)"; exit 1; }
+	@mkdir -p infra/proxy/acme
+	@DuckDNS_Token="$$(cat "$(DUCKDNS_TOKEN_FILE)")"; export DuckDNS_Token; \
+		$(acme-sh) --issue --server letsencrypt --dns dns_duckdns -d "$(PUBLIC_HOST)"; \
+		code=$$?; [ $$code -eq 0 ] || [ $$code -eq 2 ] || exit $$code
+	@$(acme-sh) --install-cert --ecc -d "$(PUBLIC_HOST)" \
+		--fullchain-file /tls/fullchain.pem --key-file /tls/privkey.pem
+	@$(COMPOSE_PROD) exec -T proxy nginx -s reload 2>/dev/null \
+		|| echo "Proxy arrêté : il lira le certificat à son démarrage"
+
+front-up: ## Démarre ou recharge le frontal SNI de la VM, sur les ports 80 et 443 de l'hôte
+	docker compose -f infra/front/compose.yml up -d
+	docker compose -f infra/front/compose.yml exec -T front nginx -s reload
 
 e2e-install: ## Installe Playwright et Chromium pour les tests de bout en bout
 	cd $(E2E) && npm ci && npx playwright install chromium

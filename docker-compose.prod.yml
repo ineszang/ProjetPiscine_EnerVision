@@ -58,6 +58,8 @@ services:
     ports:
       - "${PROXY_HTTP_PORT:-80}:80"
       - "${PROXY_HTTPS_PORT:-443}:443"
+      # Vide : port aléatoire sur la boucle locale, pour que deux stacks sans frontal cohabitent.
+      - "${PROXY_FRONT_PORT:-127.0.0.1:}:4443"
     volumes:
       - ./infra/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./infra/proxy/conf.d:/etc/nginx/conf.d:ro

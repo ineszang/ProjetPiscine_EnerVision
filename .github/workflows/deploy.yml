@@ -28,10 +28,10 @@ jobs:
     timeout-minutes: 30
     environment:
       name: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
-      url: ${{ github.ref_name == 'main' && 'https://enervision.local' || github.ref_name == 'dev' && 'https://rec.enervision.local:8443' || 'https://dev.enervision.local:9443' }}
+      url: ${{ github.ref_name == 'main' && 'https://enervision-g3.duckdns.org' || github.ref_name == 'dev' && 'https://rec.enervision-g3.duckdns.org' || 'https://dev.enervision-g3.duckdns.org' }}
     env:
       ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
-      PORT_HTTPS: ${{ github.ref_name == 'main' && '443' || github.ref_name == 'dev' && '8443' || '9443' }}
+      PORT_HTTPS: ${{ github.ref_name == 'main' && '10443' || github.ref_name == 'dev' && '8443' || '9443' }}
     steps:
       # Un seul step : le verrou tombe avec le shell qui l'a posé.
       - name: Déploie le commit testé, sans jamais reculer
@@ -54,7 +54,9 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Reconstruit et redémarre la stack"
+          if [ -r /srv/enervision/duckdns.token ]; then make tls-duckdns; fi
           make stack-up
+          if [ "${ENVIRONNEMENT}" = prod ]; then make front-up; fi
           echo "::endgroup::"
 
           echo "::group::Attend que l'API réponde derrière le proxy"

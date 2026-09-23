@@ -81,6 +81,7 @@ jobs:
             compose:
               - "docker-compose*.yml"
               - ".env.example"
+              - "infra/front/**"
               - "monitoring/**"
               - ".github/workflows/infra.yml"
             workflows:

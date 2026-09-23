@@ -75,6 +75,7 @@ etl/airflow/tests/.airflow_home/
 
 # TLS : certificats du reverse proxy, générés par script ou par certbot
 infra/proxy/tls/*.pem
+infra/proxy/acme/
 
 # IDE et OS
 .idea/
