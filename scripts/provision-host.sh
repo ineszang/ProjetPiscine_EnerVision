@@ -141,7 +141,7 @@ preparer() {
 # jeton passe par l'environnement du seul processus Python, jamais par `argv`.
 publier_dns() {
     [[ -r "$JETON_DNS" ]] || { echo "pas de jeton $JETON_DNS : ni DNS ni Let's Encrypt"; return 0; }
-    DNS_TOKEN="$(tr -d '[:space:]' < "$JETON_DNS")" python3 - "$DOMAINE" "$ADRESSE" rec dev <<'PY' \
+    DNS_TOKEN="$(tr -d '[:space:]' < "$JETON_DNS")" python3 - "$DOMAINE" "$ADRESSE" prod rec dev <<'PY' \
         || echo "DNS : dynv6 refuse la mise à jour de $DOMAINE, enregistrements inchangés" >&2
 import json, os, sys, time, urllib.request
 
@@ -198,10 +198,10 @@ verifier_outils
 mkdir -p "$RACINE"
 publier_dns
 
-# Supervision active en prod seulement (ADR 0016). Le frontal (infra/front) publie 80 et 443 et
-# relaie vers les ports `front` ; les stacks ne publient plus rien hors de la boucle locale.
+# Supervision active en prod seulement (ADR 0016). La prod vit sur `prod.` et non à la racine :
+# dynv6 ne sert pas de façon fiable un TXT `_acme-challenge` à la racine de la zone (ADR 0018).
 #        env   branche  hôte            https            http             front            pg    mailpit airflow profils    grafana prometheus alertmanager
-preparer prod  main     "$DOMAINE"      127.0.0.1:10443  127.0.0.1:10080  127.0.0.1:10444  5433  8025    8080    monitoring 3001    9090       9093
+preparer prod  main     "prod.$DOMAINE" 127.0.0.1:10443  127.0.0.1:10080  127.0.0.1:10444  5433  8025    8080    monitoring 3001    9090       9093
 preparer rec   dev      "rec.$DOMAINE"  127.0.0.1:8443   127.0.0.1:8081   127.0.0.1:8444   5434  8026    8082    ""         3002    9091       9094
 preparer dev   dev      "dev.$DOMAINE"  127.0.0.1:9443   127.0.0.1:8083   127.0.0.1:9444   5435  8027    8084    ""         3003    9092       9095
 

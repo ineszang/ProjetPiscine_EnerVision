@@ -40,7 +40,7 @@ sur `dev` et sur `main`, et a chaque lancement manuel d'une autre branche pour `
 
 Noms et certificats (ADR 0018) : avant l'apply, la zone `domaine` doit exister chez dynv6 et son
 jeton se trouver dans `<racine>/dns.token` (600, proprietaire). L'apply fait alors pointer la
-zone, `rec` et `dev` vers la machine, obtient un certificat Let's Encrypt par environnement et planifie leur
+zone, `prod`, `rec` et `dev` vers la machine, obtient un certificat Let's Encrypt par environnement et planifie leur
 renouvellement ; sans jeton, chaque environnement garde un certificat auto-signe. Le frontal SNI (`infra/front`)
 se demarre une fois depuis le dossier de la prod, `make front-up`.
 
