@@ -103,7 +103,7 @@ démarre ne prouve rien sur la base, la première connexion réelle a lieu au pr
 | `APP_LOGIN_MAX_FAILURES_PER_IDENTIFIER` | `50` | Signature d'une attaque distribuée |
 | `APP_TRUST_PROXY_HEADERS` | `false` | À vrai derrière un proxy, sinon le compteur par IP devient global |
 | `APP_EXPOSE_API_DOCS` | déduit | Faux en `staging` et `prod` si non renseigné |
-| `APP_METRICS_TOKEN` | absent | Si présent, `/metrics` exige `Authorization: Bearer` |
+| `APP_METRICS_TOKEN` | absent | Si présent et non vide, `/metrics` exige `Authorization: Bearer`. Vide vaut absent |
 
 Cinq gardes refusent de démarrer plutôt que de laisser passer une erreur silencieuse :
 secret de moins de 32 caractères ou laissé à sa valeur d'exemple, `debug` en `staging` ou
@@ -435,7 +435,17 @@ Le reste, par ordre de surface :
 
 - Journalisation par `dictConfig` : format console en développement, JSON dès `APP_ENV=prod`.
   `sqlalchemy.engine` est forcé à `WARNING` pour ne pas noyer les journaux.
-- `/metrics` au format Prometheus. **Aucun collecteur ne le lit** : `monitoring/` est vide.
+- `/metrics` au format Prometheus (`prometheus-fastapi-instrumentator`), scruté toutes les 15 s
+  par Prometheus sous le profil `monitoring` ([60-observabilite.md](60-observabilite.md)).
+  - **Séries publiées.** `http_requests_total` par route, méthode et classe de statut, et
+    `http_request_duration_seconds` par route, avec des seaux de 50 ms à 2,5 s autour du seuil
+    de charge de 500 ms (ADR 0015). Aussi `http_request_duration_highr_seconds`, fin mais sans
+    libellé de route, et les métriques du processus.
+  - **Exclusions.** Les sondes `/health/*` et `/metrics` lui-même sont exclus : la sonde Docker
+    de 30 s fausserait débit et latences.
+  - **Un registre par application** (`_registre_de_metriques()` dans `main.py`). Le registre
+    global de `prometheus_client` n'accepte chaque métrique qu'une fois : toute application créée
+    après la première, dans les tests notamment, ne mesurait rien.
 
 ## Tests
 

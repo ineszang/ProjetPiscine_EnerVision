@@ -51,8 +51,8 @@ flowchart TB
     api["API FastAPI<br/>apps/backend"]
     db[("PostgreSQL 17<br/>TimescaleDB")]
     airflow["Airflow<br/>etl/airflow"]
-    prom["Prometheus"]
-    grafana["Grafana"]
+    prom["Prometheus<br/>profil monitoring"]
+    grafana["Grafana<br/>profil monitoring"]
   end
 
   navigateur --> proxy
@@ -61,9 +61,9 @@ flowchart TB
   front -.-> api
   api --> db
   airflow --> db
-  prom -.-> api
-  grafana -.-> db
-  grafana -.-> prom
+  prom --> api
+  grafana --> db
+  grafana --> prom
 ```
 
 Le lien `front -.-> api` reste en pointillé : le frontend appelle bien une API, mais un
@@ -76,8 +76,11 @@ génération des recommandations (issue #116), `historical_import` pour le datas
 (issue #119) et `mock_api_import` pour l'ingestion horaire de l'API Mock (issue #15).
 La réconciliation globale des données provenant des deux sources reste à compléter dans l'issue #15.
 
-Le lien `prom -.-> api` de même : l'API expose bien `/metrics` au format Prometheus, mais aucun
-collecteur ne vient le lire.
+Les liens de la supervision sont en trait plein depuis le 23/09 (issue #26) : Prometheus scrute
+`/metrics` avec un jeton, Grafana lit Prometheus et, par un rôle en lecture seule, les tables
+métier de TimescaleDB. Ils tournent en prod sous le profil Compose `monitoring`, à la demande
+ailleurs ([ADR 0016](../adr/0016-supervision-en-profil-compose.md),
+[60-observabilite.md](60-observabilite.md)).
 
 ## État de la stack
 
@@ -88,9 +91,9 @@ collecteur ne vient le lire.
 | Base | PostgreSQL 17 + TimescaleDB | `db` | `Fait` | Bootstrap de l'extension, base de test, chaîne Alembic. Schéma applicatif créé (`site`, `dataset`, `reading` en hypertable, `prediction`, `alert`, `recommendation`) |
 | ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`, orchestré par Airflow (`ml_train`/`ml_score`). Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../ML-START.md). Surveillance de dérive livrée côté backend (`app.monitoring.drift`, table `drift_report`, `GET /monitoring/drift`, DAG `derive`), voir [ADR 0013](../adr/0013-surveillance-de-derive-dans-le-backend.md) |
 | Infra | Docker Compose, Nginx, Terraform, k3s single-node | `infra`, `docker-compose.prod.yml` | `En cours` | Reverse proxy et overlay de déploiement écrits et validés, jamais lancés sur le serveur ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)). Provisionnement de la VM par Terraform, qui installe Docker, prépare les deux environnements et enregistre le runner, jamais appliqué ([ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md)). Module d'installation k3s jamais appliqué, aucune ressource Kubernetes déclarée |
-| Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Cible` | Rien, hors le `/metrics` exposé par l'API |
+| Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Fait` | Profil Compose `monitoring`, actif en prod : Prometheus et trois exporteurs (PostgreSQL, hôte, conteneurs), neuf règles d'alerte testées par `promtool`, Alertmanager vers Mailpit, trois tableaux de bord Grafana provisionnés. Voir [60-observabilite.md](60-observabilite.md) |
 | ETL | Apache Airflow | `etl/airflow` | `En cours` | Webserver et scheduler avec LocalExecutor via Docker Compose, sur une base PostgreSQL dédiée. Six DAGs en sous-processus `uv run` : `ml_train`, `ml_score`, `alertes`, `historical_import`, `mock_api_import` et `derive` (quotidien, surveillance de dérive). L'import historique reste manuel et l'import API Mock s'exécute chaque heure. La réconciliation globale des deux sources reste à compléter dans l'issue #15. |
-| CI/CD | GitHub Actions | `.github/workflows` | `En cours` | 7 workflows, 19 jobs : lint, typage, tests avec seuil de couverture bloquant, tests d'intégration sur TimescaleDB réel, audit de dépendances, SAST Bandit, quality gate SonarCloud, intégrité des DAGs Airflow, formatage et validation du Terraform. Déploiement continu vers la VM ENI écrit par `deploy.yml`, `dev` en recette et `main` en production après approbation ([ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)), mais jamais exécuté : la machine n'est pas provisionnée et le runner n'y est pas enregistré. Détail dans [50-cicd.md](50-cicd.md) |
+| CI/CD | GitHub Actions | `.github/workflows` | `En cours` | Un orchestrateur `ci.yml` qui n'appelle que les composants modifiés ([ADR 0014](../adr/0014-pipeline-ci-unique-et-deploiement-conditionne.md)) : lint, typage, tests avec seuil de couverture bloquant, tests d'intégration sur TimescaleDB réel, audit de dépendances, SAST Bandit, quality gate SonarCloud, intégrité des DAGs Airflow, Terraform, Compose et supervision, parcours Playwright et tirs k6 contre la stack de prod ([ADR 0015](../adr/0015-tests-e2e-et-de-charge-contre-la-stack-compose.md)). Déploiement vers la VM ENI par `deploy.yml`, appelé une fois « CI ok » vert, `dev` en recette et `main` en production après approbation ([ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)), mais jamais exécuté : le runner n'est pas enregistré sur la machine. Détail dans [50-cicd.md](50-cicd.md) |
 
 ## Flux bout en bout
 
@@ -148,7 +151,7 @@ consolidée.
 - **Caviardage des journaux** : jetons, empreintes Argon2, mots de passe et cookies sont
   expurgés avant écriture.
 - **Documentation interactive fermée** en préproduction et en production, `/metrics` derrière un
-  jeton facultatif, sonde de disponibilité qui ne publie plus la version de TimescaleDB.
+  jeton, exigé dès que la supervision tourne, sonde de disponibilité qui ne publie plus la version de TimescaleDB.
 - **CI backend bloquante** : format, lint, typage strict et tests avec seuil de couverture.
 - **Conteneur backend non-root**, déclaré dans `apps/backend/Dockerfile`.
 - **Terminaison TLS au frontal** : un reverse proxy Nginx est le seul service publié, il redirige

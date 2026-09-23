@@ -37,6 +37,8 @@ flowchart TB
 |---|---|---|
 | `db` | `timescale/timescaledb-ha:pg17` | Publié sur **5433** côté hôte, 5432 souvent déjà pris. `healthcheck` `pg_isready`, 12 tentatives, `start_period` 40s |
 | `backend` | Construite depuis `apps/backend` | `depends_on: db, condition: service_healthy`. **N'embarque pas le source** : toute modification impose `docker compose up -d --build backend` |
+| `prometheus`, `alertmanager`, `grafana`, exporteurs | Images épinglées par tag | Profil `monitoring`, jamais démarrés par `make dev`. `make monitoring-up` les lance en `--no-deps`. Voir [60-observabilite.md](60-observabilite.md) |
+| `k6` | `grafana/k6` | Profil `load`, lancé par `make load-*` le temps d'un tir, sur le réseau du projet. Voir [`tests/load/README.md`](../../tests/load/README.md) |
 
 **La boucle de développement n'utilise pas le service `backend`.** `make db-up` puis `make dev` :
 seule la base tourne en conteneur, l'API et `ng serve` tournent sur le poste avec le rechargement
@@ -201,11 +203,12 @@ flowchart LR
   navigateur["Navigateur"]
 
   subgraph machine["Machine on-premise"]
-    proxy["service proxy<br/>nginx:1.28-alpine<br/>:80 et :443"]
+    proxy["service proxy<br/>nginx:1.31-alpine<br/>:80 et :443"]
     front["service frontend<br/>nginx statique :3000"]
     api["service backend<br/>uvicorn :8000"]
     db[("service db<br/>:5432")]
     mail["service mailpit"]
+    sup["profil monitoring<br/>Prometheus, Alertmanager, Grafana"]
   end
 
   navigateur -->|"HTTPS"| proxy
@@ -213,6 +216,9 @@ flowchart LR
   proxy -->|"/api/"| api
   api --> db
   api --> mail
+  sup -->|"/metrics, jeton"| api
+  sup -->|"rôle supervision, lecture seule"| db
+  sup -->|"alertes par courriel"| mail
 ```
 
 Le proxy est **le seul service à publier des ports** sur le réseau. Backend et frontend ne sont
@@ -243,6 +249,8 @@ certificats, et ne démarre rien.
 | URL | `https://rec.enervision.local:8443` | `https://enervision.local` |
 | Proxy HTTP, HTTPS | `127.0.0.1:8081`, `8443` | `80`, `443` |
 | PostgreSQL, Mailpit, Airflow, sur `127.0.0.1` | `5434`, `8026`, `8082` | `5433`, `8025`, `8080` |
+| Supervision (profil `monitoring`) | à la demande, `make monitoring-up` | active, `COMPOSE_PROFILES=monitoring` |
+| Grafana, Prometheus, Alertmanager, sur `127.0.0.1` | `3002`, `9091`, `9094` | `3001`, `9090`, `9093` |
 
 Les deux noms d'hôte visent la même IP, à déclarer dans le `/etc/hosts` des postes. Deux noms
 distincts sont nécessaires : le cookie `__Secure-ev_refresh` est posé par hôte, pas par port.
@@ -358,6 +366,7 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | Base applicative | `enervision` | Variable `POSTGRES_DB` |
 | Base de test | `enervision_test` | Créée par `db/init/110-test-database.sql`, nom attendu en dur par `apps/backend/tests/conftest.py` |
 | Base de métadonnées Airflow | `airflow` | Créée par `db/init/120-airflow-database.sql`, même conteneur `db` |
+| Grafana, Prometheus, Alertmanager | `3001`, `9090`, `9093` | Sur `127.0.0.1` seulement, profil `monitoring`. `GRAFANA_PORT`, `PROMETHEUS_PORT`, `ALERTMANAGER_PORT`. 3000 est pris par le frontend |
 | API server Airflow | `8080` | `make airflow-up`. Api-server, scheduler et dag-processor ne publient que ce port ; les tâches (`LocalExecutor`) tournent côté scheduler, sans port propre |
 
 ## Le trou vers k3s

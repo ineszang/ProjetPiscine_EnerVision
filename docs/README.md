@@ -20,3 +20,6 @@
 | [0011](adr/0011-enervision-procedure-deploiement.md) | Procédure de déploiement, telle qu'exécutée le 22/09/2026 |
 | [0012](adr/0012-enervision-deploiement-rec-prod-vm-eni.md) | État de la recette et de la production sur la VM ENI |
 | [0013](adr/0013-surveillance-de-derive-dans-le-backend.md) | La surveillance de dérive vit dans le backend et écrit sa propre table |
+| [0014](adr/0014-pipeline-ci-unique-et-deploiement-conditionne.md) | Un pipeline CI unique appelle les workflows de composant et conditionne le déploiement |
+| [0015](adr/0015-tests-e2e-et-de-charge-contre-la-stack-compose.md) | Les tests de bout en bout et de charge visent la stack Compose déployée |
+| [0016](adr/0016-supervision-en-profil-compose.md) | La supervision vit dans un profil Compose, active en prod |

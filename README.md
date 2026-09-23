@@ -27,7 +27,8 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
 | Reverse proxy | Nginx, TLS                       | `infra/proxy`       | En place      |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | En place |
-| Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
+| Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | En place, profil Compose |
+| Tests e2e et de charge | Playwright, k6              | `tests`             | En place |
 | ML         | LightGBM, MLflow                    | `ml`                | En place |
 
 Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Le frontend
@@ -48,7 +49,8 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 ├── db/
 │   ├── init/           Bootstrap PostgreSQL + TimescaleDB
 │   ├── migrations/     Migrations SQL versionnees
-│   └── seeds/          Jeux de donnees de reference
+│   ├── roles/          Roles PostgreSQL hors schema (supervision)
+│   └── seeds/          Jeu de demonstration des tests
 ├── etl/airflow/
 │   ├── dags/           DAGs d'orchestration (pipeline ML, alertes, imports, dérive)
 │   ├── plugins/        Operateurs et hooks maison
@@ -64,6 +66,9 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   ├── prometheus/     Collecte et regles d'alerte
 │   ├── grafana/        Provisioning et dashboards
 │   └── alertmanager/   Routage des alertes
+├── tests/
+│   ├── e2e/            Parcours Playwright contre la stack
+│   └── load/           Scenarios de charge k6
 ├── docs/               ADR et vues d'architecture
 └── scripts/            Outillage local
 ```
@@ -148,9 +153,24 @@ nom de domaine public ne résout vers la machine. Routage, mode ACME et renouvel
 
 Sur la VM ENI, deux environnements cohabitent, recette sur `dev` et production sur `main`,
 chacun dans son dossier et son projet Compose : `scripts/provision-host.sh` les prépare, le
-workflow `deploy.yml` les redéploie à chaque push par un runner auto-hébergé. Ports, noms
+workflow `deploy.yml` les redéploie par un runner auto-hébergé, une fois la CI du commit poussé
+verte ([ADR 0014](docs/adr/0014-pipeline-ci-unique-et-deploiement-conditionne.md)). Ports, noms
 d'hôte et garde-fous dans [`docs/architecture/10-infra.md`](docs/architecture/10-infra.md) et
 [l'ADR 0009](docs/adr/0009-deux-environnements-compose-sur-la-vm-eni.md).
+
+## Tests de bout en bout, charge et supervision
+
+| Besoin | Commandes | Détail |
+|---|---|---|
+| Parcours utilisateur (Playwright) | `make e2e-install`, puis `make e2e-prepare e2e` contre `make dev` | [`tests/e2e/README.md`](tests/e2e/README.md) |
+| Tir de charge (k6) | `make load-smoke`, `load-test`, `load-stress`, `load-limits` | [`tests/load/README.md`](tests/load/README.md) |
+| Supervision | `make monitoring-up`, Grafana sur <http://localhost:3001> | [`monitoring/README.md`](monitoring/README.md) |
+
+La CI joue les parcours, un tir de fumée et le contrôle de la limitation de débit à chaque PR
+qui touche l'application, contre la stack de prod derrière le proxy
+([ADR 0015](docs/adr/0015-tests-e2e-et-de-charge-contre-la-stack-compose.md)). La supervision
+est active en prod, à la demande ailleurs
+([ADR 0016](docs/adr/0016-supervision-en-profil-compose.md)).
 
 ## Conventions
 

@@ -10,8 +10,9 @@ vérifié, ce qui bloque, et ce qui ne l'est pas.
 
 Le **D** de CI/CD est écrit depuis le 21/09 : `deploy.yml` déploie `dev` en recette et `main` en
 production sur la VM de l'école, par un runner auto-hébergé (issue #21,
-[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)). Il n'a encore rien
-déployé : la machine n'est pas provisionnée et le runner n'y est pas enregistré. Statut à
+[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)). Depuis le 23/09, il ne part
+plus qu'une fois la CI du commit verte ([ADR 0014](../adr/0014-pipeline-ci-unique-et-deploiement-conditionne.md)).
+Il n'a encore rien déployé : le runner n'est pas enregistré sur la machine. Statut à
 basculer sur `Fait` au premier déploiement vert. Sa limite, nommée ici plutôt que découverte en
 soutenance : les images sont construites sur la machine à chaque déploiement, aucun artefact
 n'est publié puis promu d'un environnement à l'autre.
@@ -24,95 +25,67 @@ GitHub Actions déploie ; aucun des deux ne fait le travail de l'autre.
 
 ## Vue d'ensemble
 
+`ci.yml` est le seul point d'entrée des PR et des push sur `dev` et `main`. Il appelle les
+workflows de composant, qui n'ont plus de déclencheur propre, selon les fichiers modifiés
+([ADR 0014](../adr/0014-pipeline-ci-unique-et-deploiement-conditionne.md)).
+
 ```mermaid
 flowchart TB
-  push["push ou pull_request"]
+  evt["pull_request, ou push sur dev et main"]
+  changes["changes<br/>paths-filter : composants touchés"]
 
-  subgraph back["Backend · .github/workflows/backend.yml"]
-    bv["verification<br/>ruff, mypy, pytest --cov-fail-under=85"]
-    bi["integration<br/>TimescaleDB réel + alembic upgrade head"]
-    bd["security-audit<br/>uv export | pip-audit"]
-    bs["sast<br/>bandit"]
+  subgraph comp["Workflows de composant (workflow_call)"]
+    back["backend.yml<br/>lint, typage, tests ≥ 85 %, intégration, pip-audit, bandit"]
+    front["frontend.yml<br/>build et tests, npm audit"]
+    mlw["ml.yml<br/>lint, typage, tests, ML ↔ DB, chaîne ML → API, bandit"]
+    afw["airflow.yml<br/>intégrité des DAGs, image"]
+    infw["infra.yml<br/>Terraform, Compose et supervision, actionlint"]
+    e2e["e2e.yml<br/>stack de prod, Playwright, k6 smoke et limitation"]
   end
 
-  subgraph front["Frontend · frontend.yml"]
-    fb["build<br/>npm ci, npm run build"]
-    ft["test<br/>couverture lcov"]
-    fd["security-audit<br/>npm audit --audit-level=high"]
-  end
+  sonar["sonar<br/>reprend les couvertures du run"]
+  ok["CI ok<br/>seul check à exiger"]
+  dep["deploy.yml<br/>runner eni-g3, rec ou prod"]
 
-  subgraph mlw["ML · ml.yml"]
-    mv["verification<br/>ruff, mypy, pytest"]
-    ms["sast<br/>bandit"]
-  end
+  evt --> changes --> back & front & mlw & afw & infw & e2e
+  back & front & mlw --> sonar
+  back & front & mlw & afw & infw & e2e & sonar --> ok
+  ok -->|"push sur dev ou main"| dep
 
-  subgraph afw["Airflow · airflow.yml"]
-    av["verification<br/>ruff, intégrité des DAGs"]
-    ab["image<br/>construction de l'image"]
-  end
-
-  subgraph infw["Infra · infra.yml"]
-    it["terraform<br/>fmt -check, init et validate par racine"]
-  end
-
-  subgraph sq["SonarQube · sonarqube.yml"]
-    sb1["build-front / test-front"]
-    sb2["build-back / test-back"]
-    sb3["test-ml"]
-    sscan["sonarqube<br/>quality gate SonarCloud"]
-  end
-
-  push --> bv & bi & bd & bs
-  push --> fb --> ft
-  push --> fd
-  push --> mv & ms
-  push --> av & ab
-  push --> it
-  push --> sb1 & sb2 & sb3 --> sscan
-
-  subgraph cd["Déploiement · deploy.yml"]
-    dep["deploy<br/>runner eni-g3, environnement rec ou prod"]
-  end
-
-  push -->|"push sur dev ou main"| dep
-
-  planifie["chaque lundi 3h UTC,<br/>ou à la main"]
-  subgraph dastw["DAST · dast.yml"]
-    zscan["zap<br/>seed + scan actif OWASP ZAP"]
-  end
-
-  planifie --> zscan
-  push -->|"PR sur dast.yml<br/>ou dast-token.sh"| zscan
+  planifie["chaque lundi 3h UTC, à la main,<br/>ou PR sur ses fichiers"]
+  dast["dast.yml<br/>seed + scan actif OWASP ZAP"]
+  planifie --> dast
 ```
 
 ## Déclenchement
 
-Les six workflows hébergés par GitHub qui vérifient le code se déclenchent sur `push` **et** sur
-`pull_request`, filtrés par **chemin** : `backend.yml` sur `apps/backend/**`, `frontend.yml` sur
-`apps/frontend/**`, `ml.yml` sur `ml/**`, `infra.yml` sur `infra/terraform/**`, `airflow.yml` sur
-`etl/airflow/**` **plus des chemins de `ml/` et de `apps/backend/`**, chacun incluant son propre
-fichier de workflow dans le filtre pour qu'une modification du pipeline déclenche le pipeline.
+**Sur une PR**, le job `changes` lit la liste des fichiers modifiés par l'API GitHub
+(`dorny/paths-filter`, épinglé sur un SHA) et chaque composant n'est appelé que si son filtre
+vaut vrai. Une PR de documentation ne joue que `changes` et `CI ok`. Modifier `ci.yml` rejoue
+tout.
 
-`dast.yml` s'en écarte volontairement (détail dans sa propre section plus bas) : aucun
-déclenchement sur `push`, seulement `workflow_dispatch`, une planification hebdomadaire, et
-`pull_request` restreint à ses deux seuls fichiers. Un scan actif est trop long pour tourner à
-chaque commit.
+**Sur un push vers `dev` ou `main`**, tous les filtres valent vrai. C'est le moment où l'analyse
+Sonar doit couvrir tout le dépôt, et paths-filter comparerait sinon le push à sa base de fusion
+avec `main`, en retard de 80 commits. Une branche de travail ne déclenche plus rien par un push :
+la CI part de sa PR, une seule fois par commit.
 
-Le filtre d'`airflow.yml` mérite un mot : il inclut `ml/pyproject.toml`, `ml/uv.lock`,
-`ml/enervision_ml/**`, `apps/backend/pyproject.toml`, `apps/backend/uv.lock` et
-`apps/backend/app/**` parce que l'image Airflow copie le code et les dépendances des deux
-modules : celles du ML pour `ml_train`/`ml_score`, celles du backend depuis que le DAG `alertes`
-y exécute les commandes de détection ([ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md)).
-Une modification de l'un ou l'autre peut donc casser la construction de cette image, et le filtre
-le voit.
+Deux filtres écoutent plus que leur dossier, parce que ce qu'ils testent dépend d'autres modules :
 
-**Piège à connaître** : il n'y a **aucun filtre de branche**. Une branche de travail déclenche la
-CI complète à chaque push, et un merge vers n'importe quelle branche la déclenche aussi. C'est
-délibéré pendant le projet (retour au plus tôt, et la CI tournera sur `main` dès la remontée sans
-rien changer), mais ce serait à borner sur un dépôt à forte fréquence de push.
+- `airflow` inclut `ml/pyproject.toml`, `ml/uv.lock`, `ml/enervision_ml/**`,
+  `apps/backend/pyproject.toml`, `apps/backend/uv.lock` et `apps/backend/app/**`. L'image
+  Airflow copie le code et les dépendances des deux modules
+  ([ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md)), et une modification de l'un
+  ou de l'autre peut casser sa construction.
+- `e2e` inclut le frontend, l'API, ses migrations et son Dockerfile, le proxy, les fichiers
+  Compose, `db/`, `tests/` et les scripts qu'il appelle : tout ce qui change un parcours.
 
-`backend.yml`, `ml.yml` et `airflow.yml` déclarent en plus un groupe de concurrence par référence
-git avec `cancel-in-progress`, ce qui annule un run devenu obsolète par un push plus récent.
+`dast.yml` reste hors de l'orchestrateur : un scan actif est trop long pour chaque PR. Il se
+lance à la main, chaque lundi, et sur une PR qui modifie le scan, son jeu de données ou ses
+comptes.
+
+Le groupe de concurrence de `ci.yml` annule le run d'une PR devenu obsolète par un push plus
+récent. Pour un push sur `dev` ou `main`, le groupe est le SHA et rien n'est annulé : un run
+coupé en plein `make stack-up` laisserait la stack à moitié redémarrée.
 
 **Piège de version** : `etl/airflow` tourne en **Python 3.12** et non 3.14 : c'est l'interpréteur
 de l'image `apache/airflow:3.3.2-python3.12` retenue, et les tests d'intégrité doivent tourner sur
@@ -121,18 +94,19 @@ environnement.
 
 ## Déploiement
 
-`deploy.yml` est le huitième workflow (`backend`, `frontend`, `ml`, `infra`, `airflow`,
-`sonarqube`, `dast`, plus lui-même), et le seul qui ne tourne pas chez GitHub : il s'exécute sur
-un runner auto-hébergé installé sur la VM ENI, label `eni-g3`, parce que les runners hébergés ne
-joignent pas une adresse privée d'école. Le runner se connecte en sortie vers GitHub, aucun port
-entrant n'est ouvert.
+`deploy.yml` est le seul workflow qui ne tourne pas chez GitHub : il s'exécute sur un runner
+auto-hébergé installé sur la VM ENI, label `eni-g3`, parce que les runners hébergés ne joignent
+pas une adresse privée d'école. Le runner se connecte en sortie vers GitHub, aucun port entrant
+n'est ouvert. Il n'a pas de déclencheur propre en dehors de `workflow_dispatch` : c'est le job
+`deploy` de `ci.yml` qui l'appelle, sur un push, une fois « CI ok » vert.
 
 | Événement | Environnement GitHub | Dossier sur la VM | Garde |
 |---|---|---|---|
-| `push` sur `dev` | `rec` | `/srv/enervision/rec` | aucune : la recette suit `dev` |
-| `push` sur `main` | `prod` | `/srv/enervision/prod` | approbation d'un relecteur dans l'environnement `prod`, branche `main` seule autorisée |
+| `push` sur `dev`, « CI ok » vert | `rec` | `/srv/enervision/rec` | aucune de plus : la recette suit `dev` |
+| `push` sur `main`, « CI ok » vert | `prod` | `/srv/enervision/prod` | approbation d'un relecteur dans l'environnement `prod`, branche `main` seule autorisée |
 
-Le job aligne le clone sur la branche (`fetch`, `checkout`, `reset --hard`), lance
+Le job aligne le clone sur **le commit testé** (`fetch`, `checkout`, `reset --hard $GITHUB_SHA`),
+et non sur la pointe de branche du moment, qui a pu avancer pendant la CI. Il lance
 `make stack-up`, qui reconstruit les images, redémarre les conteneurs puis applique les
 migrations Alembic dans le conteneur backend, et attend jusqu'à trois minutes que
 `/api/v1/health/ready` réponde derrière le proxy. Cette sonde ne vérifie que la connexion à la
@@ -145,11 +119,17 @@ de l'environnement est stable, hors du runner, parce que `.env`, certificats et 
 survivre d'un déploiement à l'autre.
 
 **Piège à connaître.** Un runner auto-hébergé sur un dépôt public exécute ce qu'un workflow lui
-envoie, et une PR de fork peut réécrire un workflow. Trois parades, et les trois sont
-nécessaires : `deploy.yml` ne se déclenche jamais sur `pull_request` ; le runner tourne sous un
-utilisateur dédié membre du groupe `docker`, jamais root ; le dépôt doit exiger une approbation
-pour les workflows des PR externes (Settings, Actions, « Require approval for all outside
-collaborators »), ce qui reste à activer. Les workflows de CI restent sur `ubuntu-latest`.
+envoie, et une PR de fork peut ajouter son propre workflow qui vise le label `eni-g3`. L'absence
+de `pull_request` dans `deploy.yml` ne suffit donc pas. Ce qui protège vraiment le runner :
+
+- le dépôt exige l'approbation des workflows de tous les contributeurs externes (Settings,
+  Actions, « Require approval for all external contributors ») ;
+- les environnements `rec` et `prod` n'acceptent que leur branche (`dev`, `main` avec un
+  relecteur), ce qui bloque un job qui les déclare avant qu'il atteigne le runner ;
+- le runner tourne sous un utilisateur dédié membre du groupe `docker`, jamais root.
+
+Les deux réglages de dépôt restent à activer par l'administratrice. Tous les autres workflows
+restent sur `ubuntu-latest`.
 
 Cet utilisateur dédié doit posséder `/srv/enervision` : sinon git refuse les deux clones pour
 propriété douteuse et le `.env` en `600` lui échappe. `PROPRIETAIRE=<utilisateur du runner>`
@@ -179,6 +159,14 @@ dans [10-infra.md](10-infra.md).
 | Intégrité des DAGs | airflow | chargement des DAGs sans erreur d'import | Bloque |
 | Construction de l'image Airflow | airflow | `docker build` de `etl/airflow/Dockerfile` | Bloque |
 | Formatage et validité Terraform | infra | `fmt -check -recursive`, puis `init` et `validate` par racine | Bloque |
+| Verrous uv à jour | backend, ml, airflow | `uv sync --locked` : un `uv.lock` qui ne suit plus `pyproject.toml` échoue | Bloque |
+| Fichiers Compose | infra | `docker compose config` sur la stack de dev et la stack déployée, tous profils | Bloque |
+| Supervision | infra | `promtool check config`, `promtool test rules` (un cas par alerte), `amtool check-config`, JSON des tableaux | Bloque |
+| Workflows | infra | `actionlint`, shellcheck compris sur les blocs `run:` | Bloque |
+| Parcours de bout en bout | e2e | 18 parcours Playwright contre la stack de prod (proxy TLS) | Bloque |
+| Tir k6 de fumée | e2e | p95 < 500 ms et p99 < 1 s sur les lectures, moins de 1 % d'échecs | Bloque |
+| Limitation de débit | e2e | k6 par le proxy : des 429 au-delà de 20 req/s, aucune 5xx | Bloque |
+| **CI ok** | ci.yml | aucun job en `failure` ou `cancelled` | Bloque, **seul check à exiger** |
 
 Deux seuils portent une décision qu'il faut savoir défendre :
 
@@ -218,7 +206,7 @@ qu'évite déjà le choix de l'image `timescaledb-ha` plutôt qu'un `postgres` n
 donc les deux environnements uv, applique `alembic upgrade head`, puis joue `-m integration` côté
 `ml/` et `-m chaine` côté backend.
 
-Conséquence sur le déclenchement : les `paths` de `ml.yml` incluent `apps/backend/alembic/**` et
+Conséquence sur le déclenchement : le filtre `ml` de `ci.yml` inclut `apps/backend/alembic/**` et
 `apps/backend/app/models/**`. Sans eux, une migration qui renomme une colonne de `reading` ne
 déclencherait pas ce job, le SQL brut du pipeline dériverait du schéma, et **rien ne casserait
 avant la production**. Le prix est qu'une PR touchant seulement une migration lance aussi le lint
@@ -233,10 +221,18 @@ poste où `ml/` n'est pas installé.
 
 ## SonarCloud, et l'incident qui a immobilisé trois PR
 
-Le workflow `sonarqube.yml` exécute cinq jobs de préparation (`build-front`, `test-front`,
-`build-back`, `test-back`, `test-ml`) dont les tests produisent chacun un rapport de couverture en
-artefact, puis un dernier job qui les télécharge et lance `SonarSource/sonarqube-scan-action@v8`
-avec le secret `SONAR_TOKEN`. Le périmètre est décrit par `sonar-project.properties` à la racine.
+Le job `sonar` de `ci.yml` ne reconstruit ni ne reteste rien. Les jobs `verification` de
+`backend.yml`, `ml.yml` et `frontend.yml` versent leur rapport de couverture en artefact, et
+`sonar` les télécharge dans le même run, un par un (backend et ML nomment tous deux le leur
+`coverage.xml`), puis lance `SonarSource/sonarqube-scan-action`, épinglée sur un SHA, avec le
+secret `SONAR_TOKEN`. Il ne tourne ni pour Dependabot ni pour une PR de fork, qui n'ont pas ce
+secret. Le périmètre est décrit par `sonar-project.properties` à la racine, seul fichier de
+configuration Sonar du dépôt.
+
+Jusqu'au 23/09, un `sonarqube.yml` à part rejouait build et tests des trois modules pour produire
+ces rapports, en double exact des workflows qui le faisaient déjà. Les exclusions de
+`sonar-project.properties` sont aussi passées en globs (`**/tests/**`, `**/alembic/**`) : un
+motif sans `**` ne vise que la racine du dépôt.
 
 Le périmètre couvre `apps/frontend`, `apps/backend`, `ml/` et `etl/airflow` (les deux derniers
 ajoutés après coup : ils n'étaient pas analysés, une PR qui ne touchait qu'eux ne lançait pas
@@ -261,9 +257,10 @@ contournée** en désactivant la gate ou en excluant les fichiers gênants.
 
 ## Dependabot
 
-`.github/dependabot.yml` déclare **six entrées hebdomadaires groupées, sur cinq écosystèmes** :
-`npm` sur `/apps/frontend`, `uv` sur `/apps/backend`, `github-actions` sur `/`, `docker` sur les
-deux dossiers d'application, et `docker-compose` sur `/`. Les mises à jour arrivent en PR, donc
+`.github/dependabot.yml` déclare **sept entrées hebdomadaires, sur cinq écosystèmes** : `npm`
+sur `/apps/frontend` et sur `/tests/e2e`, `uv` sur `/apps/backend`, `github-actions` sur `/`,
+`docker` sur les deux dossiers d'application, et `docker-compose` sur `/`, qui suit aussi les
+images de supervision et de k6. Les mises à jour arrivent en PR, donc
 elles traversent les mêmes gates que n'importe quel changement : une montée de version qui casse
 les tests ne se merge pas.
 
@@ -300,10 +297,10 @@ UTC, et sur une PR qui modifie le scan lui-même. Pas à chaque PR : un scan act
 minutes.
 
 Le job démarre sur le runner la base (même image TimescaleDB que `docker-compose.yml`, base
-jetable), applique les migrations, y sème un site et deux relevés (`db/seeds/` est vide, pas
-encore d'outillage de jeu de données pour la CI ; sans données, `GET /sites` rend `[]`, chaque
-`/{site_id}` rend 404, et le scan actif ne frappe que des gestionnaires d'erreur), démarre le
-backend, puis `scripts/dast-token.sh` crée un compte **`lecteur`** et rend son jeton.
+jetable), applique les migrations, y sème `db/seeds/demo.sql` (sans données, `GET /sites` rend
+`[]`, chaque `/{site_id}` rend 404, et le scan actif ne frappe que des gestionnaires d'erreur),
+démarre le backend, puis `scripts/dast-token.sh` s'appuie sur `scripts/comptes-test.sh` pour
+créer les comptes et rend le jeton du **`lecteur`**. Le jeu et les comptes sont ceux de l'e2e.
 
 ZAP charge le contrat `/openapi.json` depuis un fichier (`zap-api-scan.py -f openapi -t
 /zap/wrk/openapi.json`) et en importe les 26 opérations **quel que soit le jeton** : c'est le
@@ -392,15 +389,34 @@ pas de TLS, pas de reverse proxy). Il remontera des alertes qui n'existent pas d
 (HSTS absent...) et ne dit **rien** des en-têtes ni du TLS que le proxy pose en production. Un
 second passage sur la stack complète reste à faire.
 
+## Tests de bout en bout et de charge
+
+Le workflow `e2e.yml` démarre la stack telle qu'elle est déployée, derrière le proxy TLS, sur
+`https://localhost` ([ADR 0015](../adr/0015-tests-e2e-et-de-charge-contre-la-stack-compose.md)) :
+
+1. Il construit et démarre `db`, `mailpit`, `backend`, `frontend` et `proxy` avec
+   `docker-compose.prod.yml`, sans Airflow. C'est le seul job qui construit les images backend et
+   frontend avant un déploiement.
+2. Il migre la base, pose le rôle `supervision`, sème `db/seeds/demo.sql` et crée les comptes
+   (`scripts/comptes-test.sh`).
+3. Il joue les 18 parcours Playwright de `tests/e2e`, sur un seul worker et avec une session par
+   fichier. Le rapport HTML et les traces du premier réessai sont versés en artefact.
+4. Il lance le tir k6 `smoke`, directement sur `backend:8000`, puis `limitation-debit` par le
+   proxy. Les synthèses s'affichent dans le résumé du job, et les rapports HTML sont versés en
+   artefact.
+
+La charge nominale (`make load-test`) et le stress (`make load-stress`) ne tournent pas en CI :
+voir `tests/load/README.md`.
+
 ## Ce qui manque, et pourquoi
 
 | Manque | Issue | Conséquence assumée |
 |---|---|---|
 | Images publiées et promues par digest (GHCR) | aucune | Chaque environnement reconstruit ses images : la production n'exécute pas l'artefact validé en recette, mais un second build du même commit |
 | DAST bloquant | #41 | Le scan ZAP existe mais ne bloque rien : aucun seuil n'est fixé tant que les alertes du premier passage ne sont pas triées |
-| Tests end to end | #46 | Les parcours utilisateur ne sont pas vérifiés en CI |
-| Tests de charge | #47 | Aucun garde-fou de performance |
-| Scan d'image de conteneur | aucune | Les `Dockerfile` sont construits en local, pas analysés |
+| Tir de charge nominal automatisé | #47 | Seul le smoke tourne en CI ; la charge à 50 utilisateurs se lance à la main en recette (`make load-test`), rec et prod partageant la VM |
+| Cache de couches Docker en CI | aucune | Le job E2E reconstruit les images backend et frontend à chaque run, deux à quatre minutes de plus |
+| Scan d'image de conteneur | aucune | Les images sont construites par le job E2E, pas analysées |
 
 ## Reproduire la CI en local
 
@@ -415,6 +431,14 @@ make db-up migrate-test     # la base de test reçoit les six révisions Alembic
 make test-integration       # backend, marqueur `integration`
 make ml-test-integration    # pipeline ML, marqueur `integration`
 make test-chaine            # vrais binaires ML puis relecture par l'API, marqueur `chaine`
+```
+
+Les autres jobs se rejouent aussi sur le poste :
+
+```bash
+make e2e-prepare e2e        # parcours Playwright contre `make dev` (tests/e2e/README.md)
+make load-smoke K6_EMAIL=... K6_PASSWORD=...   # tir k6 d'une minute (tests/load/README.md)
+make monitoring-check       # promtool, amtool et JSON des tableaux de bord, comme le job Infra
 ```
 
 Le SAST se rejoue à l'identique : `uvx bandit==1.9.4 --recursive app --severity-level medium
