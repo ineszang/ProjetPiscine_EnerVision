@@ -5,6 +5,9 @@
 # déploie `GITHUB_SHA`, le commit testé, pas la pointe de branche du moment (ADR 0014).
 # Piège : jamais de déclencheur `pull_request` ici. Sur un dépôt public, une PR de fork
 # exécuterait son code sur la machine de production (ADR 0009) - job deploy.
+# Piège : les CI de deux push finissent parfois dans le désordre. Un commit qui précède celui déjà
+# déployé est ignoré, et le verrou est un `flock` sur la VM plutôt qu'un groupe `concurrency` :
+# GitHub n'y garde qu'un job en attente, et le suivant l'évince sans bruit.
 
 name: Déploiement
 
@@ -20,9 +23,6 @@ jobs:
     name: Déploie sur la VM
     runs-on: [self-hosted, linux, eni-g3]
     timeout-minutes: 30
-    concurrency:
-      group: deploy-${{ github.ref_name }}
-      cancel-in-progress: false
     environment:
       name: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
       url: ${{ github.ref_name == 'main' && 'https://enervision.local' || 'https://rec.enervision.local:8443' }}
@@ -30,29 +30,38 @@ jobs:
       ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || 'rec' }}
       PORT_HTTPS: ${{ github.ref_name == 'main' && '443' || '8443' }}
     steps:
-      - name: Aligne le dossier de l'environnement sur le commit testé
+      # Un seul step : le verrou tombe avec le shell qui l'a posé.
+      - name: Déploie le commit testé, sans jamais reculer
         run: |
           cd "/srv/enervision/${ENVIRONNEMENT}"
+          exec 9>"$(git rev-parse --git-dir)/verrou-deploiement"
+          flock 9
+
+          echo "::group::Aligne le dossier de l'environnement sur le commit testé"
           git fetch --quiet origin "${GITHUB_REF_NAME}"
+          deploye="$(git rev-parse HEAD)"
+          if [ "$deploye" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$deploye"; then
+            echo "::notice::${GITHUB_SHA:0:7} précède le commit déjà déployé (${deploye:0:7}) : rien à déployer."
+            exit 0
+          fi
           git checkout --quiet "${GITHUB_REF_NAME}"
           git reset --quiet --hard "${GITHUB_SHA}"
           git log -1 --format='%h %s'
+          echo "::endgroup::"
 
-      - name: Reconstruit et redémarre la stack
-        run: |
-          cd "/srv/enervision/${ENVIRONNEMENT}"
+          echo "::group::Reconstruit et redémarre la stack"
           make stack-up
+          echo "::endgroup::"
 
-      - name: Attend que l'API réponde derrière le proxy
-        run: |
+          echo "::group::Attend que l'API réponde derrière le proxy"
           for _ in $(seq 1 36); do
             if curl --fail --silent --insecure "https://localhost:${PORT_HTTPS}/api/v1/health/ready"; then
               exit 0
             fi
             sleep 5
           done
+          echo "::endgroup::"
           echo "L'API ne répond pas après 3 minutes" >&2
-          cd "/srv/enervision/${ENVIRONNEMENT}"
           compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
           $compose ps
           $compose logs --tail=50 backend proxy

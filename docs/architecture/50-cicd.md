@@ -111,8 +111,15 @@ et non sur la pointe de branche du moment, qui a pu avancer pendant la CI. Il la
 migrations Alembic dans le conteneur backend, et attend jusqu'à trois minutes que
 `/api/v1/health/ready` réponde derrière le proxy. Cette sonde ne vérifie que la connexion à la
 base et la présence de TimescaleDB : sans la migration, le déploiement serait vert sur une base
-sans schéma, et c'est pourquoi `make stack-up` la porte. Un groupe de concurrence par branche,
-sans annulation, empêche deux déploiements simultanés du même environnement.
+sans schéma, et c'est pourquoi `make stack-up` la porte.
+
+Les CI de deux push rapprochés peuvent finir dans le désordre. Deux gardes empêchent un
+environnement de reculer ou de sauter un commit :
+
+- un commit qui **précède** celui déjà déployé est ignoré, avec une annotation dans le run ;
+- les déploiements d'un même environnement passent un par un sous un verrou `flock` posé dans le
+  clone de la VM. Un groupe `concurrency` ne convenait pas : GitHub n'y garde qu'un job en
+  attente, et un troisième arrivé l'annule sans erreur.
 
 Le job ne fait pas de `actions/checkout` dans son espace de travail, et c'est voulu : le dossier
 de l'environnement est stable, hors du runner, parce que `.env`, certificats et volumes doivent

@@ -44,7 +44,11 @@ passent en `workflow_call` et n'ont plus de déclencheur propre.
    exiger dans les règles de branche** : un composant sauté par son filtre ne publie aucun check
    interne, qui resterait « en attente » s'il était exigé.
 4. **`deploy`.** Il appelle `deploy.yml`, sur les seuls push, et seulement si `CI ok` a réussi.
-   `deploy.yml` aligne le dossier de l'environnement sur `GITHUB_SHA`, le commit testé.
+   `deploy.yml` aligne le dossier de l'environnement sur `GITHUB_SHA`, le commit testé, sauf
+   si ce commit précède celui déjà déployé : les CI de deux push peuvent finir dans le désordre,
+   et un environnement ne recule jamais. Les déploiements d'un même environnement passent un par
+   un sous un verrou `flock` sur la VM, et non dans un groupe `concurrency`, où GitHub ne garde
+   qu'un job en attente et annule le précédent quand un troisième arrive.
 
 `deploy.yml` n'a toujours **aucun déclencheur `pull_request`** : il n'accepte que
 `workflow_call` et `workflow_dispatch`, dans l'esprit de l'ADR 0009.
