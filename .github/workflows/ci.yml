@@ -98,6 +98,8 @@ jobs:
               - "tests/**"
               - "scripts/comptes-test.sh"
               - "scripts/tls-selfsigned.sh"
+              - "Makefile"
+              - ".env.example"
               - ".github/workflows/e2e.yml"
             sonar:
               - "apps/backend/**"
