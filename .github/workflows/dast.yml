@@ -79,7 +79,7 @@ jobs:
       - name: Installe uv
         # Épinglé sur le commit du tag v7 (règle Sonar githubactions:S7637 : dépendance tierce,
         # contrairement à actions/checkout ou actions/upload-artifact, premières parties).
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
