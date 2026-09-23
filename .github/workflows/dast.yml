@@ -1,9 +1,9 @@
 name: DAST
 
 # Scan dynamique OWASP ZAP de l'API (issue #41). Il attaque une API qui tourne : le job démarre
-# la base et le backend sur le runner, sème un site et quelques relevés (sans ça le scan ne
-# frappe que des gestionnaires d'erreur), crée un compte `lecteur` jetable
-# (scripts/dast-token.sh), puis lance ZAP sur le contrat OpenAPI avec le jeton de ce compte.
+# la base et le backend sur le runner, sème le jeu de démonstration (sans ça le scan ne frappe que
+# des gestionnaires d'erreur), crée des comptes jetables (scripts/dast-token.sh), puis lance ZAP
+# sur le contrat OpenAPI avec le jeton du `lecteur`.
 #
 # Non bloquant pour l'instant sur les alertes (`continue-on-error` sur la seule étape du scan) :
 # le volume d'un premier passage trié est inconnu. Deux étapes suivantes, elles, bloquent si le
@@ -24,6 +24,8 @@ on:
     paths:
       - ".github/workflows/dast.yml"
       - "scripts/dast-token.sh"
+      - "scripts/comptes-test.sh"
+      - "db/seeds/**"
 
 permissions:
   contents: read
@@ -97,7 +99,7 @@ jobs:
       # `apps/backend`, comme dans son Dockerfile. Les `uv run` suivants portent `--frozen
       # --no-sync` pour ne rien résoudre ni reconstruire (règle S8544).
       - name: Synchronise les dépendances sans dévier du verrou
-        run: uv sync --frozen --no-dev --no-install-project --no-build
+        run: uv sync --locked --no-dev --no-install-project --no-build
         working-directory: apps/backend
 
       - name: Active TimescaleDB sur la base du scan
@@ -108,22 +110,9 @@ jobs:
         working-directory: apps/backend
 
       # Sans données, `GET /sites` rend `[]`, chaque `/{site_id}` rend 404 et le scan actif ne
-      # frappe que des gestionnaires d'erreur plutôt que la logique métier. `db/seeds/` est vide
-      # (pas encore d'outillage de jeu de données pour la CI) : un site et deux relevés à la main,
-      # juste assez pour que les routes de lecture aient quelque chose à rendre.
-      - name: Insère un site et des relevés minimaux pour le scan
-        run: |
-          psql -h localhost -p 5433 -U enervision -d enervision_dast <<'SQL'
-          INSERT INTO site (site_id, site_name, site_type, location, capacity_kw, status)
-          VALUES ('dast-site', 'Site du scan DAST', 'bureau', 'CI', 50, 'actif')
-          ON CONFLICT (site_id) DO NOTHING;
-
-          INSERT INTO reading (site_id, timestamp, source, consumption_kw, consumption_kwh, is_working_hours, data_quality, raw_data)
-          VALUES
-            ('dast-site', now() - interval '2 hours', 'api_current', 12.5, 12.5, true, 'good', '{}'),
-            ('dast-site', now() - interval '1 hour',  'api_current', 13.0, 13.0, true, 'good', '{}')
-          ON CONFLICT DO NOTHING;
-          SQL
+      # frappe que des gestionnaires d'erreur plutôt que la logique métier.
+      - name: Sème le jeu de démonstration
+        run: psql -h localhost -p 5433 -U enervision -d enervision_dast -v ON_ERROR_STOP=1 -f db/seeds/demo.sql
 
       - name: Démarre l'API
         run: |
@@ -299,9 +288,11 @@ jobs:
         if: always()
         run: |
           if [ -f zap-out/zap-report.md ]; then
-            awk '/^## Alert Detail/{exit} {print}' zap-out/zap-report.md >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Rapport complet (HTML/JSON/Markdown) dans l'artefact \`zap-report\`." >> "$GITHUB_STEP_SUMMARY"
+            {
+              awk '/^## Alert Detail/{exit} {print}' zap-out/zap-report.md
+              echo ""
+              echo "Rapport complet (HTML/JSON/Markdown) dans l'artefact \`zap-report\`."
+            } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Aucun rapport ZAP produit, voir le journal du job." >> "$GITHUB_STEP_SUMMARY"
           fi

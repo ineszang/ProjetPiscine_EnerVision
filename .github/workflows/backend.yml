@@ -2,28 +2,20 @@ name: Backend
 
 # Piège : la version de Python vient de apps/backend/.python-version, et elle doit rester
 # en 3.14. Le code utilise le PEP 758, qu'un interpréteur 3.13 refuse de compiler.
+# Pourquoi : aucun déclencheur propre. ci.yml appelle ce workflow quand le backend change, et
+# Sonar y reprend la couverture versée par le job `verification` (ADR 0014).
 
 on:
-  push:
-    paths:
-      - "apps/backend/**"
-      - ".github/workflows/backend.yml"
-  pull_request:
-    paths:
-      - "apps/backend/**"
-      - ".github/workflows/backend.yml"
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: backend-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   verification:
     name: Lint, typage et tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/backend
@@ -32,17 +24,20 @@ jobs:
       - name: Récupère le dépôt
         uses: actions/checkout@v7
 
+      # Action tierce, épinglée sur le commit du tag (règle Sonar githubactions:S7637).
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
+          prune-cache: false
 
       - name: Installe l'interpréteur déclaré par .python-version
         run: uv python install
 
-      - name: Synchronise les dépendances sans dévier du verrou
-        run: uv sync --all-groups --frozen
+      # `--locked` et non `--frozen` : un verrou qui ne suit plus pyproject.toml doit casser ici.
+      - name: Synchronise les dépendances sur le verrou
+        run: uv sync --all-groups --locked
 
       - name: Vérifie le formatage
         run: uv run ruff format --check .
@@ -55,14 +50,21 @@ jobs:
 
       # Le marqueur `integration` est exclu par défaut, donc aucune base n'est nécessaire ici.
       - name: Tests et couverture
-        run: uv run pytest --cov-fail-under=85
+        run: uv run pytest --cov-fail-under=85 --cov-report=xml
 
-  # Piège : l'image est celle de docker-compose.yml, pas une image `postgres` nue. La première
-  # migration (`5353c0e4f094`) échoue volontairement si l'extension TimescaleDB manque, et un
-  # écart d'image entre la CI et le poste rendrait ce job vert sur une base qui n'est pas la nôtre.
+      - name: Verse la couverture pour Sonar
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage
+          path: apps/backend/coverage.xml
+          if-no-files-found: error
+
+  # Piège : même image que docker-compose.yml, pas un `postgres` nu. La première migration refuse
+  # de s'appliquer sans TimescaleDB, et une autre image testerait une base qui n'est pas la nôtre.
   integration:
     name: Tests exigeant une base
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/backend
@@ -93,16 +95,17 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
+          prune-cache: false
 
       - name: Installe l'interpréteur déclaré par .python-version
         run: uv python install
 
-      - name: Synchronise les dépendances sans dévier du verrou
-        run: uv sync --all-groups --frozen
+      - name: Synchronise les dépendances sur le verrou
+        run: uv sync --all-groups --locked
 
       # Sur le poste, c'est db/init/110-test-database.sql qui pose l'extension. Ce fichier n'est
       # pas monté ici, et sans lui `alembic upgrade head` s'arrête sur la garde de la révision 1.
@@ -112,14 +115,15 @@ jobs:
       - name: Applique les migrations
         run: uv run alembic upgrade head
 
-      # `-m` en ligne de commande écrase celui d'`addopts`. La couverture est désactivée : ce job
-      # ne joue qu'une partie de la suite, son taux n'aurait aucun sens face au seuil de 85 %.
+      # Couverture désactivée : ce job ne joue qu'une partie de la suite, son taux n'aurait
+      # aucun sens face au seuil de 85 %.
       - name: Tests d'intégration
         run: uv run pytest -m integration --no-cov
 
   security-audit:
     name: Audit des dépendances
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: apps/backend
@@ -129,21 +133,23 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: apps/backend/uv.lock
+          prune-cache: false
 
       # L'audit porte sur le verrou, pas sur l'environnement : sinon pip-audit auditerait
       # aussi les paquets que son propre `--with` injecte, hors dépendances du projet.
       - name: Audite les dépendances livrées
         # Piège : sans `shell: bash`, un échec de `uv export` serait masqué par le pipe.
         shell: bash
-        run: uv export --frozen --no-dev --no-emit-project --no-hashes | uvx pip-audit --requirement /dev/stdin --no-deps
+        run: uv export --locked --no-dev --no-emit-project --no-hashes | uvx pip-audit --requirement /dev/stdin --no-deps
 
   sast:
     name: Analyse statique de sécurité
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: apps/backend
@@ -155,7 +161,9 @@ jobs:
       # Pourquoi : pas de cache ici. uvx n'installe pas le projet, le verrou n'alimente donc
       # aucune clé de cache ; la seule roue téléchargée est celle de Bandit.
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: false
 
       # Pourquoi : le périmètre est `app`, le code livré. Les tests emploient légitimement des
       # secrets factices et des `assert` que Bandit signalerait sans qu'aucun n'atteigne la prod.

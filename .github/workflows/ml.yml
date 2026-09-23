@@ -2,46 +2,20 @@ name: ML
 
 # Piège : la version de Python vient de ml/.python-version, et doit rester en 3.14 (cf.
 # .github/workflows/backend.yml, même contrainte).
+# Pourquoi : aucun déclencheur propre. ci.yml l'appelle aussi quand les migrations ou les modèles
+# du backend changent, dont dépend le job `integration` (ADR 0014).
 
 on:
-  push:
-    paths:
-      - "ml/**"
-      - ".github/workflows/ml.yml"
-      # Le job `integration` monte son schema avec les migrations du backend et joue le test de
-      # chaine qui vit dans ses tests : sans ces chemins, une migration modifiee ne declencherait
-      # rien et le schema deriverait du SQL du pipeline sans que rien ne casse. Meme raisonnement
-      # que le filtre d'airflow.yml, qui inclut deja des chemins de ml/ et de apps/backend/.
-      - "apps/backend/alembic/**"
-      - "apps/backend/app/models/**"
-      - "apps/backend/tests/test_chaine_ml_api.py"
-      - "apps/backend/pyproject.toml"
-      - "apps/backend/uv.lock"
-  pull_request:
-    paths:
-      - "ml/**"
-      - ".github/workflows/ml.yml"
-      # Le job `integration` monte son schema avec les migrations du backend et joue le test de
-      # chaine qui vit dans ses tests : sans ces chemins, une migration modifiee ne declencherait
-      # rien et le schema deriverait du SQL du pipeline sans que rien ne casse. Meme raisonnement
-      # que le filtre d'airflow.yml, qui inclut deja des chemins de ml/ et de apps/backend/.
-      - "apps/backend/alembic/**"
-      - "apps/backend/app/models/**"
-      - "apps/backend/tests/test_chaine_ml_api.py"
-      - "apps/backend/pyproject.toml"
-      - "apps/backend/uv.lock"
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: ml-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   verification:
     name: Lint, typage et tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ml
@@ -50,17 +24,19 @@ jobs:
       - name: Récupère le dépôt
         uses: actions/checkout@v7
 
+      # Action tierce, épinglée sur le commit du tag (règle Sonar githubactions:S7637).
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: ml/uv.lock
+          prune-cache: false
 
       - name: Installe l'interpréteur déclaré par .python-version
         run: uv python install
 
-      - name: Synchronise les dépendances sans dévier du verrou
-        run: uv sync --all-groups --frozen
+      - name: Synchronise les dépendances sur le verrou
+        run: uv sync --all-groups --locked
 
       - name: Vérifie le formatage
         run: uv run ruff format --check .
@@ -71,17 +47,24 @@ jobs:
       - name: Typage
         run: uv run mypy enervision_ml tests
 
-      # Les tests exigeant une base portent le marqueur `integration`, ecarte par defaut et
-      # joue par le job `integration` ci-dessous.
-      - name: Tests
-        run: uv run pytest
+      # Les tests exigeant une base portent le marqueur `integration`, écarté par défaut et
+      # joué par le job `integration` ci-dessous.
+      - name: Tests et couverture
+        run: uv run pytest --cov-report=xml
 
-  # Le seul job du depot qui dispose a la fois des deux environnements uv et d'une base. Piege :
-  # le schema de la base ML est celui du backend (apps/backend/alembic, proprietaire du schema).
-  # Le reconstruire ici a la main rendrait ce job vert sur une base qui n'est pas la notre.
+      - name: Verse la couverture pour Sonar
+        uses: actions/upload-artifact@v7
+        with:
+          name: ml-coverage
+          path: ml/coverage.xml
+          if-no-files-found: error
+
+  # Piège : le schéma de la base ML est celui du backend (apps/backend/alembic, propriétaire du
+  # schéma). Le reconstruire ici à la main rendrait ce job vert sur une base qui n'est pas la nôtre.
   integration:
     name: ML - DB et chaîne ML - DB - API
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       db:
@@ -112,26 +95,27 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: |
             ml/uv.lock
             apps/backend/uv.lock
+          prune-cache: false
 
       - name: Installe l'interpréteur déclaré par .python-version
         working-directory: ml
         run: uv python install
 
-      - name: Synchronise le pipeline ML sans dévier du verrou
+      - name: Synchronise le pipeline ML sur le verrou
         working-directory: ml
-        run: uv sync --all-groups --frozen
+        run: uv sync --all-groups --locked
 
       # Le backend est installé ici parce qu'il porte les migrations, seule source du schéma, et
       # le test de chaîne, qui interroge l'API.
-      - name: Synchronise le backend sans dévier du verrou
+      - name: Synchronise le backend sur le verrou
         working-directory: apps/backend
-        run: uv sync --all-groups --frozen
+        run: uv sync --all-groups --locked
 
       # db/init/110-test-database.sql n'est pas monté ici, et sans l'extension la première
       # révision Alembic refuse de s'appliquer.
@@ -142,8 +126,8 @@ jobs:
         working-directory: apps/backend
         run: uv run alembic upgrade head
 
-      # `-m` en ligne de commande écrase celui d'addopts. Couverture désactivée : ce job ne joue
-      # qu'une partie de la suite, son taux n'aurait pas de sens (même raison que backend.yml).
+      # Couverture désactivée : ce job ne joue qu'une partie de la suite, son taux n'aurait pas
+      # de sens (même raison que backend.yml).
       - name: Tests ML exigeant une base
         working-directory: ml
         run: uv run pytest -m integration --no-cov
@@ -159,6 +143,7 @@ jobs:
   sast:
     name: Analyse statique de sécurité
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: ml
@@ -170,7 +155,9 @@ jobs:
       # Pourquoi : pas de cache ici. uvx n'installe pas le projet, le verrou n'alimente donc
       # aucune clé de cache ; la seule roue téléchargée est celle de Bandit.
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: false
 
       - name: Analyse le code livré (bloquant à partir de MEDIUM)
         run: uvx bandit==1.9.4 --recursive enervision_ml --severity-level medium --confidence-level medium

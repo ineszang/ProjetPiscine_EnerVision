@@ -5,7 +5,12 @@ PostgreSQL 17 avec l'extension TimescaleDB, servie en local par le service `db` 
 
 - `init` : scripts de bootstrap joues au premier demarrage du conteneur.
 - `migrations` : migrations SQL versionnees.
-- `seeds` : jeux de donnees de reference.
+- `seeds` : jeux de donnees de reference. `demo.sql` seme trois sites `demo-*`, 72 heures de
+  releves, des alertes et des rapports de derive pour la CI, l'e2e et les tirs de charge. Base
+  jetable seulement.
+- `roles` : roles PostgreSQL hors schema applicatif. `supervision.sql` pose le role en lecture
+  seule de Grafana et de postgres-exporter, rejoue par `make db-ensure-supervision` (et par
+  `make stack-up` quand la supervision est active) plutot que par `init`, qui ne rejoue jamais.
 
 Les migrations du schema applicatif expose par l'API vivent dans
 `apps/backend/alembic`, pas ici.

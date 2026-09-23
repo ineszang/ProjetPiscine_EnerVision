@@ -1,64 +1,70 @@
 name: Frontend
 
+# Pourquoi : aucun déclencheur propre. ci.yml appelle ce workflow quand le frontend change, et
+# Sonar y reprend la couverture versée par le job `verification` (ADR 0014).
+
 on:
-  push:
-    paths:
-      - "apps/frontend/**"
-      - ".github/workflows/frontend.yml"
-  pull_request:
-    paths:
-      - "apps/frontend/**"
-      - ".github/workflows/frontend.yml"
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  # Un seul `npm ci` pour la construction et les tests : un job de plus ne ferait que le rejouer.
+  verification:
+    name: Construction et tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/frontend
+
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installe Node
+        uses: actions/setup-node@v7
         with:
           node-version: 26
           cache: npm
           cache-dependency-path: apps/frontend/package-lock.json
 
-      - run: npm ci
-        working-directory: apps/frontend
-      - run: npm run build
-        working-directory: apps/frontend
+      - name: Installe les dépendances
+        run: npm ci
 
-  security-audit:
-    name: Audit des dépendances
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 26
-      # Seuil high : une vulnérabilité moderate de devDependency ne doit pas bloquer une livraison.
-      - run: npm audit --audit-level=high --package-lock-only
-        working-directory: apps/frontend
+      - name: Construit l'application
+        run: npm run build
 
-  test:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 26
-          cache: npm
-          cache-dependency-path: apps/frontend/package-lock.json
-      - name : Installation des dépendances (Front)
-        run: npm ci 
-        working-directory: apps/frontend
-      - name : Lancement des tests et génénration du rapport de couverture (Front)
-        run: npm test --watch=false --code-coverage --coverageReporters=lcov
-        working-directory: apps/frontend
-      - name: Upload coverage
+      # Piège : `npm test --watch=false` garde l'option pour npm, `ng test` ne la reçoit jamais.
+      # La couverture lcov vient d'angular.json (`coverage: true`).
+      - name: Tests et couverture
+        run: npm run test:ci
+
+      - name: Verse la couverture pour Sonar
         uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage
           path: apps/frontend/coverage/frontend/lcov.info
+          if-no-files-found: error
+
+  security-audit:
+    name: Audit des dépendances
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/frontend
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installe Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      # Seuil high : une vulnérabilité moderate de devDependency ne doit pas bloquer une livraison.
+      - name: Audite le verrou
+        run: npm audit --audit-level=high --package-lock-only

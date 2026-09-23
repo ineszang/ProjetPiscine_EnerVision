@@ -31,8 +31,9 @@ le droit d'écriture sur le dépôt peut lancer un workflow.
 `8083`, PostgreSQL `5435`, Mailpit `8027`, Airflow `8084`. Nom d'hôte `dev.enervision.local`,
 pour la même raison de cookie que la recette.
 
-**Le groupe de concurrence suit l'environnement**, et non plus la branche : deux branches lancées
-coup sur coup écriraient sinon dans le même dossier en même temps.
+**Le verrou de déploiement suit l'environnement** (un `flock` sur son dossier, ADR 0014), et non
+plus la branche : deux branches lancées coup sur coup écriraient sinon dans le même dossier en
+même temps.
 
 ## Alternatives écartées
 

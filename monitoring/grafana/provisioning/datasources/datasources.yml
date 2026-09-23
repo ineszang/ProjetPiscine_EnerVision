@@ -1,0 +1,28 @@
+# Pourquoi : Grafana lit la base avec le rôle `supervision`, en lecture seule sur les seules tables
+# métier (db/roles/supervision.sql) - datasources.yml. Jamais le compte applicatif.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: TimescaleDB
+    uid: timescaledb
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: db:5432
+    user: supervision
+    jsonData:
+      database: ${POSTGRES_DB}
+      sslmode: disable
+      postgresVersion: 1700
+      timescaledb: true
+    secureJsonData:
+      password: ${SUPERVISION_DB_PASSWORD}
+    editable: false
