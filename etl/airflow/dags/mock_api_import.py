@@ -18,9 +18,15 @@ from airflow.timetables.trigger import CronTriggerTimetable
 # Le backend possède son propre environnement uv dans l'image Airflow (ADR 0008).
 COMMANDE_BACKEND = "cd /opt/backend && env -u VIRTUAL_ENV uv run --no-sync python -m"
 
-# Le pipeline backend et l'API acceptent au maximum 1 000 lectures par site.
-# Cette marge évite de perdre silencieusement une lecture si une heure en contient plus de 60.
-LIMITE_LECTURES = 1000
+# L'API Mock ne renvoie pas un flux au rythme naturel : elle répartit exactement `limit`
+# lectures, espacées uniformément, sur toute la fenêtre demandée (vérifié empiriquement :
+# une fenêtre d'1h avec `limit=1000` renvoie 1000 lectures espacées de 3,6s à l'intérieur de
+# cette heure, pas une lecture horaire). Comme la fenêtre de ce DAG est toujours 1h
+# (`interval=timedelta(hours=1)` ci-dessous), `limit=1` est ce qui produit une lecture par
+# heure, alignée sur l'heure, cohérente avec le grain horaire du reste du schéma
+# (`period_minutes=60`, historique CSV à 1 ligne/heure). Un `limit` plus grand ici fabriquerait
+# des lectures infra-horaires, incompatibles avec les lags positionnels de `build_features`.
+LIMITE_LECTURES = 1
 
 # Deux reprises donnent trois tentatives au total. Même dans le pire cas, l'exécution reste
 # inférieure au pas horaire du DAG.

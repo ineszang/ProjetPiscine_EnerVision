@@ -118,7 +118,7 @@ def test_mock_api_import_uses_the_airflow_data_interval(dagbag: DagBag) -> None:
 
     assert "--start-time \"{{ data_interval_start.strftime('%Y-%m-%dT%H:%M:%S') }}\"" in commande
     assert "--end-time \"{{ data_interval_end.strftime('%Y-%m-%dT%H:%M:%S') }}\"" in commande
-    assert "--limit 1000" in commande
+    assert "--limit 1" in commande
 
 
 @pytest.mark.parametrize("task_id", ["detection", "recommandations"])

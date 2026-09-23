@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.core.config import get_settings
+from app.etl.historical_import import SOURCE_NAME as SOURCE_CSV
 
 SOURCE_HISTORY = "api_history"
 
@@ -244,6 +245,35 @@ def build_reading_row(
     }
 
 
+# `uq_reading_source` autorise deux lignes au même (site_id, timestamp) dès que `source` diffère :
+# sans ce garde-fou, importer une fenêtre déjà couverte par le dataset historique (source='csv')
+# dupliquerait silencieusement chaque point plutôt que de lever une erreur, et rien côté lecture
+# (pipeline ML, GET /readings) ne saurait laquelle des deux lectures retenir.
+OVERLAP_CHECK = text(
+    "SELECT count(*) FROM reading WHERE source = :source_csv "
+    "AND timestamp >= :start_time AND timestamp < :end_time"
+)
+
+
+async def refuse_if_overlaps_historical_dataset(
+    connection: AsyncConnection,
+    start_time: datetime,
+    end_time: datetime,
+) -> None:
+    resultat = await connection.execute(
+        OVERLAP_CHECK,
+        {"source_csv": SOURCE_CSV, "start_time": start_time, "end_time": end_time},
+    )
+    nombre = resultat.scalar_one()
+
+    if nombre > 0:
+        raise ValueError(
+            f"La fenêtre [{start_time.isoformat()}, {end_time.isoformat()}) recouvre "
+            f"{nombre} lecture(s) déjà importée(s) du dataset historique (source='{SOURCE_CSV}') : "
+            "import refusé pour éviter un doublon inter-source."
+        )
+
+
 # Le conflit vise l'index unique uq_reading_source plutôt que la table entière : sans cible
 # nommée, DO NOTHING avalerait aussi une violation de clé primaire.
 READING_INSERT = text(
@@ -345,6 +375,8 @@ async def import_mock_api_history(
 
     try:
         async with engine.begin() as connection:
+            await refuse_if_overlaps_historical_dataset(connection, start_time, end_time)
+
             await upsert_sites(
                 connection,
                 sites,

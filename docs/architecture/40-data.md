@@ -441,6 +441,16 @@ Les paramètres de ligne de commande disponibles pour l'import sont :
 --dry-run
 ```
 
+**Piège sur `--limit`** : l'API ne renvoie pas un flux à un rythme naturel, elle répartit
+exactement `limit` lectures, espacées uniformément, sur toute la fenêtre `[start_time, end_time)`
+demandée. Une fenêtre d'une heure avec `limit=1000` renvoie donc 1000 lectures espacées de 3,6
+secondes à l'intérieur de cette heure, pas une lecture horaire — vérifié empiriquement en
+interrogeant directement l'API. Le seul réglage qui produise une lecture par heure, alignée sur
+l'heure et cohérente avec le grain horaire du reste du schéma (`period_minutes=60`, historique
+CSV à une ligne par heure), est `limit` = nombre d'heures de la fenêtre. Le DAG `mock_api_import`
+interroge toujours une fenêtre d'1h (`interval=timedelta(hours=1)`, voir
+[10-infra.md](10-infra.md)), donc `limit=1`.
+
 ### Flux d'ingestion API Mock
 
 ```text
@@ -492,7 +502,7 @@ réponse est donc traitée comme une entrée hostile, conformément à API10 dan
 [la traçabilité OWASP](owasp-traceabilite.md). Le risque premier n'est pas la fausse alerte,
 c'est l'empoisonnement du jeu d'entraînement du modèle de prédiction.
 
-Quatre garde-fous, tous dans `mock_api_import.py` :
+Cinq garde-fous, tous dans `mock_api_import.py` :
 
 | Garde-fou | Mise en œuvre |
 |---|---|
@@ -500,6 +510,7 @@ Quatre garde-fous, tous dans `mock_api_import.py` :
 | Taille de tableau plafonnée | `MAX_SITES` sites, et au plus `--limit` mesures par site |
 | Bornes physiques | `PHYSICAL_BOUNDS`, une plage par grandeur |
 | Frontière d'anti-corruption | `build_site_row()` et `build_reading_row()`, qui ne recopient que les champs attendus |
+| Refus de recouvrir l'historique | `refuse_if_overlaps_historical_dataset()`, voir ci-dessous |
 
 Une valeur hors bornes, d'un type inattendu, `NaN` ou infinie devient `NULL`. Elle laisse sa
 trace dans `null_reasons` sous la forme `out_of_physical_bounds:<colonne>`, et `data_quality`
@@ -509,6 +520,30 @@ d'origine intacte : rien n'est perdu, seule son exploitation est bornée.
 
 Le plafond de taille s'applique après désérialisation de la réponse. Borner le corps HTTP
 lui-même demanderait une lecture en flux, et reste à faire.
+
+### Réconciliation entre les deux sources (issue #15)
+
+`historical_import` (source `csv`) et `mock_api_import` (source `api_history`) écrivent toutes
+deux dans `reading`. Trois décisions ferment cette réconciliation :
+
+- **Le trou temporel est accepté.** Le dataset historique s'arrête au 31/12/2024, et
+  `mock_api_import` n'importe que l'heure précédant chaque déclenchement : rien ne comble
+  automatiquement la période intermédiaire, et rien ne le pourra jamais — aucune mesure réelle
+  n'existe pour ces instants.
+- **Le recouvrement est refusé à l'ingestion.** `uq_reading_source` autorise deux lignes au même
+  `(site_id, timestamp)` dès que `source` diffère : rien dans le schéma n'empêche donc un import
+  Mock API manuel avec une fenêtre passée (le script accepte `--start-time`/`--end-time`
+  arbitraires) de dupliquer un point déjà couvert par le CSV. `import_mock_api_history()` appelle
+  `refuse_if_overlaps_historical_dataset()` avant toute écriture : si la fenêtre demandée recouvre
+  au moins une lecture `source='csv'`, l'import est refusé (`ValueError`) plutôt que d'écrire un
+  doublon inter-source silencieux.
+- **Le pipeline ML déduplique en défense.** Le garde-fou ci-dessus protège l'ingestion, pas
+  la lecture : si un recouvrement se produisait malgré tout (import direct en base, contournement
+  du script), `ml/enervision_ml/data.py` ne doit pas casser silencieusement l'hypothèse de
+  `build_features` (« une ligne par `(site_id, timestamp)` »). `load_from_database()` et
+  `load_recent_from_database()` utilisent donc `SELECT DISTINCT ON (site_id, timestamp)`, `source
+  = 'csv'` gagnant sur `'api_history'` en cas d'égalité — l'historique étant une source vérifiée,
+  l'API Mock une entrée hostile (cf. ci-dessus).
 
 ### Qualité des données de l'API Mock
 

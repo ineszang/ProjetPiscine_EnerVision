@@ -357,6 +357,31 @@ async def test_upsert_sites_with_empty_list_does_nothing() -> None:
     connection.execute.assert_not_awaited()
 
 
+async def test_refuse_if_overlaps_historical_dataset_lets_a_clear_window_through() -> None:
+    connection = AsyncMock()
+    connection.execute.return_value.scalar_one = MagicMock(return_value=0)
+
+    await mock_api_import.refuse_if_overlaps_historical_dataset(
+        connection,
+        datetime.fromisoformat("2026-01-01T00:00:00"),
+        datetime.fromisoformat("2026-01-01T01:00:00"),
+    )
+
+    connection.execute.assert_awaited_once()
+
+
+async def test_refuse_if_overlaps_historical_dataset_rejects_a_window_already_in_the_csv() -> None:
+    connection = AsyncMock()
+    connection.execute.return_value.scalar_one = MagicMock(return_value=5)
+
+    with pytest.raises(ValueError, match="doublon inter-source"):
+        await mock_api_import.refuse_if_overlaps_historical_dataset(
+            connection,
+            datetime.fromisoformat("2023-06-15T12:00:00"),
+            datetime.fromisoformat("2023-06-15T13:00:00"),
+        )
+
+
 async def test_import_mock_api_history_dry_run_does_not_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -454,6 +479,7 @@ async def test_import_mock_api_history_loads_data(
     )
 
     connection = AsyncMock()
+    connection.execute.return_value.scalar_one = MagicMock(return_value=0)
 
     transaction_context = MagicMock()
     transaction_context.__aenter__ = AsyncMock(
@@ -502,7 +528,58 @@ async def test_import_mock_api_history_loads_data(
         [make_site()],
     )
 
+    assert connection.execute.await_count == 2
+    dernier_appel = connection.execute.await_args_list[-1]
+    assert dernier_appel.args[0] is READING_INSERT
+    engine.dispose.assert_awaited_once()
+
+
+async def test_import_mock_api_history_refuses_when_it_overlaps_the_historical_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: Request) -> Response:
+        if request.url.path == "/api/v1/sites":
+            return Response(status_code=200, json=[make_site()])
+
+        if request.url.path == "/api/v1/readings":
+            return Response(status_code=200, json=[make_reading()])
+
+        return Response(status_code=404)
+
+    client = AsyncClient(transport=MockTransport(handler), base_url="https://mock.test")
+
+    monkeypatch.setattr(mock_api_import, "create_mock_api_client", lambda: client)
+    monkeypatch.setattr(
+        mock_api_import,
+        "get_settings",
+        lambda: SimpleNamespace(database_url="postgresql+asyncpg://test:test@localhost/test"),
+    )
+
+    connection = AsyncMock()
+    connection.execute.return_value.scalar_one = MagicMock(return_value=3)
+
+    transaction_context = MagicMock()
+    transaction_context.__aenter__ = AsyncMock(return_value=connection)
+    transaction_context.__aexit__ = AsyncMock(return_value=None)
+
+    engine = MagicMock()
+    engine.begin.return_value = transaction_context
+    engine.dispose = AsyncMock()
+
+    monkeypatch.setattr(mock_api_import, "create_async_engine", MagicMock(return_value=engine))
+    upsert_sites_mock = AsyncMock()
+    monkeypatch.setattr(mock_api_import, "upsert_sites", upsert_sites_mock)
+
+    with pytest.raises(ValueError, match="doublon inter-source"):
+        await mock_api_import.import_mock_api_history(
+            start_time=datetime.fromisoformat("2023-06-15T12:00:00"),
+            end_time=datetime.fromisoformat("2023-06-15T13:00:00"),
+            limit=60,
+            dry_run=False,
+        )
+
     connection.execute.assert_awaited_once()
+    upsert_sites_mock.assert_not_awaited()
     engine.dispose.assert_awaited_once()
 
 
