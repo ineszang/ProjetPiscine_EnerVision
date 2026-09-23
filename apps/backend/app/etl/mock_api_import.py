@@ -367,28 +367,44 @@ def limit_for_window(start_time: datetime, end_time: datetime) -> int:
     """Nombre de lectures à demander pour que l'API Mock en rende une par heure, alignée.
 
     L'API ne renvoie pas un flux à un rythme naturel : elle répartit exactement `limit` lectures,
-    espacées uniformément, sur toute la fenêtre `[start_time, end_time)` demandée (vérifié
-    empiriquement). `limit` = nombre d'heures de la fenêtre est donc le seul réglage cohérent avec
-    le grain horaire du reste du schéma (`period_minutes=60`, historique CSV à une ligne/heure) ;
-    un `limit` plus grand fabriquerait des lectures infra-horaires, incompatibles avec les lags
-    positionnels de `build_features`. La fenêtre doit donc couvrir un nombre entier d'heures.
+    espacées uniformément, sur toute la fenêtre `[start_time, end_time)` demandée, la première
+    au tout début de la fenêtre (vérifié empiriquement). Deux façons d'obtenir une lecture
+    alignée sur l'heure :
+
+    - une fenêtre d'exactement N heures (`start_time` sur l'heure) donne, avec `limit=N`, N
+      lectures espacées d'1h pile, la première à `start_time` : c'est le chemin du backfill
+      manuel (plusieurs jours d'historique en un seul appel).
+    - une fenêtre plus courte qu'une heure, ou qui n'est pas un multiple entier d'heure, ne peut
+      espacer plusieurs lectures d'1h pile (l'espacement de l'API vaut toujours
+      `durée / limit`) : seule `limit=1` reste alignée, la lecture unique atterrissant à
+      `start_time`. C'est le chemin du DAG horaire, dont la fenêtre part de l'heure pile qui
+      précède son déclenchement jusqu'à l'instant du déclenchement lui-même (`:45`), donc plus
+      courte qu'une heure.
+
+    Dans les deux cas, `start_time` doit tomber pile sur l'heure : c'est elle qui ancre
+    l'alignement, jamais `end_time`. Un `limit` plus grand que celui rendu ici fabriquerait des
+    lectures infra-horaires, incompatibles avec les lags positionnels de `build_features`.
     """
+    if start_time.minute or start_time.second or start_time.microsecond:
+        raise ValueError(
+            f"La fenêtre doit démarrer pile sur l'heure : {start_time.isoformat()} ne l'est pas."
+        )
+
     duree = end_time - start_time
     heures, reste = divmod(duree.total_seconds(), 3600)
 
-    if reste != 0:
-        raise ValueError(
-            "La fenêtre doit couvrir un nombre entier d'heures pour obtenir une lecture par "
-            f"heure alignée : [{start_time.isoformat()}, {end_time.isoformat()}) n'en couvre pas."
-        )
+    # Fenêtre plus courte qu'une heure, ou pas un multiple entier : aucun `limit` supérieur à 1
+    # n'espacerait ses lectures d'1h pile (l'espacement vaut toujours durée / limit). Seule la
+    # lecture unique, ancrée sur `start_time`, reste alignée.
+    limit = int(heures) if reste == 0 and heures >= 1 else 1
 
-    if heures > MAX_LIMIT:
+    if limit > MAX_LIMIT:
         raise ValueError(
-            f"La fenêtre demandée couvre {int(heures)}h, au-delà du plafond de {MAX_LIMIT} "
+            f"La fenêtre demandée couvre {limit}h, au-delà du plafond de {MAX_LIMIT} "
             "lectures accepté par l'API Mock."
         )
 
-    return int(heures)
+    return limit
 
 
 async def import_mock_api_history(

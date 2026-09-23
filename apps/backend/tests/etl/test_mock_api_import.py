@@ -441,11 +441,34 @@ def test_limit_for_window_returns_one_per_hour() -> None:
     assert limite == 21 * 24
 
 
-def test_limit_for_window_rejects_a_partial_hour() -> None:
-    with pytest.raises(ValueError, match="nombre entier d'heures"):
+def test_limit_for_window_falls_back_to_one_reading_under_an_hour() -> None:
+    # Le DAG horaire (`:45`) demande desormais [heure pile precedente, instant du declenchement) :
+    # une fenetre plus courte qu'une heure, dont l'espacement `duree/limit` ne peut jamais valoir
+    # 1h pile pour plus d'une lecture. Seule `limit=1`, ancree sur `start_time`, reste alignee.
+    limite = mock_api_import.limit_for_window(
+        datetime.fromisoformat("2026-09-02T12:00:00+00:00"),
+        datetime.fromisoformat("2026-09-02T12:45:00+00:00"),
+    )
+
+    assert limite == 1
+
+
+def test_limit_for_window_falls_back_to_one_reading_for_a_non_whole_hour_span() -> None:
+    # Meme raisonnement pour une fenetre de plus d'une heure mais qui n'en est pas un multiple
+    # entier : aucun `limit > 1` ne donnerait un espacement d'1h pile.
+    limite = mock_api_import.limit_for_window(
+        datetime.fromisoformat("2026-09-02T12:00:00+00:00"),
+        datetime.fromisoformat("2026-09-02T13:30:00+00:00"),
+    )
+
+    assert limite == 1
+
+
+def test_limit_for_window_rejects_a_start_time_not_on_the_hour() -> None:
+    with pytest.raises(ValueError, match="pile sur l'heure"):
         mock_api_import.limit_for_window(
-            datetime.fromisoformat("2026-09-02T12:00:00+00:00"),
-            datetime.fromisoformat("2026-09-02T12:30:00+00:00"),
+            datetime.fromisoformat("2026-09-02T12:05:00+00:00"),
+            datetime.fromisoformat("2026-09-02T13:05:00+00:00"),
         )
 
 

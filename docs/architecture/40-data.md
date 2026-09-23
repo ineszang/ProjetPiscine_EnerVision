@@ -442,18 +442,23 @@ Les paramètres de ligne de commande disponibles pour l'import sont :
 
 **Piège sur `limit`, corrigé dans le code plutôt que documenté** : l'API ne renvoie pas un flux à
 un rythme naturel, elle répartit exactement `limit` lectures, espacées uniformément, sur toute la
-fenêtre `[start_time, end_time)` demandée (vérifié empiriquement en interrogeant directement
-l'API). Une fenêtre d'une heure avec `limit=1000`, le réglage d'origine, renvoyait donc 1000
-lectures espacées de 3,6 secondes à l'intérieur de cette heure, pas une lecture horaire,
-incompatible avec les lags positionnels de `build_features`. Plutôt que documenter la règle
-« `limit` = nombre d'heures de la fenêtre » et compter sur chaque appelant pour la respecter,
-`limit_for_window()` la porte : `import_mock_api_history()` calcule `limit` depuis la fenêtre
-reçue, refuse une fenêtre qui ne couvre pas un nombre entier d'heures, et refuse un intervalle de
-plus de 1000 heures (le plafond `limit` de l'API). `--limit` n'existe donc plus côté CLI. Le DAG
-`mock_api_import` interroge toujours une fenêtre d'1h (`interval=timedelta(hours=1)`, voir
-[10-infra.md](10-infra.md)) : la fenêtre `[:45, :45)` place chaque lecture à :45, pas à :00 (la
-première lecture atterrit au début de la fenêtre demandée), un décalage constant sans effet sur
-les lags positionnels ni sur les jointures en aval.
+fenêtre `[start_time, end_time)` demandée, la première au tout début de la fenêtre (vérifié
+empiriquement en interrogeant directement l'API). Une fenêtre d'une heure avec `limit=1000`, le
+réglage d'origine, renvoyait donc 1000 lectures espacées de 3,6 secondes à l'intérieur de cette
+heure, pas une lecture horaire, incompatible avec les lags positionnels de `build_features`.
+Plutôt que documenter la règle « `limit` = nombre d'heures de la fenêtre » et compter sur chaque
+appelant pour la respecter, `limit_for_window()` la porte : `import_mock_api_history()` calcule
+`limit` depuis la fenêtre reçue, refuse une fenêtre dont `start_time` ne tombe pas pile sur
+l'heure (c'est elle qui ancre l'alignement), et refuse un intervalle de plus de 1000 heures (le
+plafond `limit` de l'API). `--limit` n'existe donc plus côté CLI. Deux formes de fenêtre sont
+gérées : un multiple entier d'heures (`limit` = ce nombre d'heures, une lecture par heure
+espacée d'1h pile, chemin du backfill manuel) ou une fenêtre plus courte qu'une heure, ou qui
+n'en est pas un multiple entier (`limit=1`, seule valeur qui reste alignée quand l'espacement
+`durée / limit` ne peut valoir 1h pile). Le DAG `mock_api_import` est dans ce second cas : il
+demande la fenêtre `[heure pile précédant le déclenchement, instant du déclenchement)`, plus
+courte qu'une heure, plutôt que l'intervalle Airflow `[data_interval_start, data_interval_end)`
+tel quel (`[:45, :45)`) qui aurait placé l'unique lecture à :45, hors de la grille horaire du
+reste du schéma.
 
 ### Flux d'ingestion API Mock
 

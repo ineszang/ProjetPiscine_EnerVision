@@ -99,8 +99,10 @@ modifier.
 
 Le DAG `mock_api_import` exécute le pipeline API Mock toutes les heures, à la minute `:45`.
 Un `CronTriggerTimetable` explicite lui attribue un intervalle d'une heure, y compris lors d'un
-déclenchement manuel. Il transmet cet intervalle au script backend et charge les mesures dans
-les tables communes `site` et `reading`. Le décalage à `:45` laisse quinze minutes avant le
+déclenchement manuel, mais la fenêtre transmise au script backend part de l'heure pile qui
+précède le déclenchement (pas de l'intervalle Airflow tel quel), pour que la mesure importée
+tombe à :00 et non à :45, voir [40-data.md](40-data.md). Le pipeline charge la mesure dans les
+tables communes `site` et `reading`. Le décalage à `:45` laisse quinze minutes avant le
 scoring exécuté à l'heure pile, puis quinze minutes supplémentaires avant les alertes à `:15`.
 `max_active_runs=1` empêche deux exécutions du DAG de se chevaucher.
 
