@@ -57,9 +57,10 @@ resource "null_resource" "environnements" {
   depends_on = [null_resource.docker_engine]
 
   triggers = {
-    script = filesha256(local.provisionneur)
-    racine = var.racine
-    depot  = var.depot_url
+    script  = filesha256(local.provisionneur)
+    racine  = var.racine
+    depot   = var.depot_url
+    domaine = var.domaine
   }
 
   connection {
@@ -83,6 +84,7 @@ resource "null_resource" "environnements" {
         ${local.sudo}env RACINE='${var.racine}' \
           REPO_URL='${var.depot_url}' \
           PROPRIETAIRE='${var.proprietaire}' \
+          DOMAINE='${var.domaine}' \
           PUBLIC_IP='${var.adresse_publique}' \
           bash /tmp/provision-host.sh
         rm -f /tmp/provision-host.sh

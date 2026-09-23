@@ -73,6 +73,11 @@ jobs:
       - name: Valide la stack déployée, profils compris
         run: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile acme --profile monitoring --profile load config --quiet
 
+      - name: Valide le frontal SNI de la VM
+        run: |
+          docker compose -f infra/front/compose.yml config --quiet
+          docker run --rm -v "$PWD/infra/front/nginx.conf:/etc/nginx/nginx.conf:ro" nginx:1.31-alpine nginx -t
+
       # Mêmes commandes que `make monitoring-check` : images et montages viennent du fichier Compose.
       - name: Valide la configuration de Prometheus et ses règles
         run: docker compose --profile monitoring run --rm --no-deps --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml

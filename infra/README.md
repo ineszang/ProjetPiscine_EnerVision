@@ -38,6 +38,12 @@ Apres l'apply, la machine porte `/srv/enervision/dev`, `/srv/enervision/rec` et
 manuel, `make stack-up` dans chaque dossier ; les suivants sont joues par le runner a chaque push
 sur `dev` et sur `main`, et a chaque lancement manuel d'une autre branche pour `dev`.
 
+Noms et certificats (ADR 0018) : avant l'apply, la zone `domaine` doit exister chez dynv6 et son
+jeton se trouver dans `<racine>/dns.token` (600, proprietaire). L'apply fait alors pointer la
+zone, `prod`, `rec` et `dev` vers la machine, obtient un certificat Let's Encrypt par environnement et planifie leur
+renouvellement ; sans jeton, chaque environnement garde un certificat auto-signe. Le frontal SNI (`infra/front`)
+se demarre une fois depuis le dossier de la prod, `make front-up`.
+
 Retirer le runner se fait a la main, depuis les parametres du depot : `terraform destroy` ne le
 desinscrit pas.
 

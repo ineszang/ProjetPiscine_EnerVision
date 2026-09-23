@@ -73,7 +73,7 @@ DEMO_NOW ?= 2024-12-31T00:00:00Z
         migrate migrate-test bootstrap-admin services-up demo-data demo-data-force \
         ml-lint ml-typecheck ml-test ml-check ml-train ml-score mlflow-up detect-alerts recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs \
-        tls-selfsigned tls-acme tls-renew stack-up stack-down stack-logs \
+        tls-selfsigned tls-acme tls-renew tls-dns01 front-up stack-up stack-down stack-logs \
         e2e-install e2e-prepare e2e load-smoke load-test load-stress load-limits \
         db-ensure-supervision monitoring-up monitoring-down monitoring-logs monitoring-check
 
@@ -234,6 +234,33 @@ tls-acme: ## Demande un certificat Let's Encrypt. PUBLIC_HOST public et ACME_EMA
 tls-renew: ## Renouvelle les certificats Let's Encrypt et recharge le proxy
 	$(COMPOSE_PROD) --profile acme run --rm certbot renew --deploy-hook /deploy-hook.sh
 	$(COMPOSE_PROD) exec proxy nginx -s reload
+
+# Pourquoi : la VM n'a qu'une IP privée, que Let's Encrypt ne joint pas ; le défi DNS-01 passe
+# par l'API du fournisseur DNS, dynv6 par défaut (ADR 0018). Le jeton ne passe jamais par `argv`.
+ACME_SH := neilpang/acme.sh:3.1.6
+DNS01_API ?= dns_dynv6
+DNS01_JETON_VAR ?= DYNV6_TOKEN
+DNS01_JETON_FICHIER ?= $(abspath $(CURDIR)/../dns.token)
+acme-sh = docker run --rm --user "$$(id -u):$$(id -g)" -e $(DNS01_JETON_VAR) -e AUTO_UPGRADE=0 \
+	-v "$(CURDIR)/infra/proxy/acme:/acme.sh" -v "$(CURDIR)/infra/proxy/tls:/tls" $(ACME_SH)
+
+# acme.sh sort en 2 quand le certificat n'est pas à renouveler, et recopie le jeton dans
+# acme/account.conf, d'où le chmod. `--dnssleep` : Let's Encrypt valide depuis plusieurs réseaux.
+tls-dns01: ## Certificat Let's Encrypt par DNS-01, renouvelé seulement à échéance. Jeton : ../dns.token
+	@case "$(PUBLIC_HOST)" in *.local | localhost) echo "PUBLIC_HOST=$(PUBLIC_HOST) n'est pas un nom public"; exit 1 ;; esac
+	@test -r "$(DNS01_JETON_FICHIER)" || { echo "Jeton DNS illisible : $(DNS01_JETON_FICHIER)"; exit 1; }
+	@mkdir -p infra/proxy/acme && chmod 700 infra/proxy/acme
+	@$(DNS01_JETON_VAR)="$$(tr -d '[:space:]' < "$(DNS01_JETON_FICHIER)")"; export $(DNS01_JETON_VAR); \
+		$(acme-sh) --issue --server letsencrypt --dns $(DNS01_API) --dnssleep 90 -d "$(PUBLIC_HOST)"; \
+		code=$$?; chmod -R go-rwx infra/proxy/acme; [ $$code -eq 0 ] || [ $$code -eq 2 ] || exit $$code
+	@$(acme-sh) --install-cert --ecc -d "$(PUBLIC_HOST)" \
+		--fullchain-file /tls/fullchain.pem --key-file /tls/privkey.pem
+	@$(COMPOSE_PROD) exec -T proxy nginx -s reload 2>/dev/null \
+		|| echo "Proxy arrêté : il lira le certificat à son démarrage"
+
+front-up: ## Démarre ou recharge le frontal SNI de la VM, sur les ports 80 et 443 de l'hôte
+	docker compose -f infra/front/compose.yml up -d
+	docker compose -f infra/front/compose.yml exec -T front nginx -s reload
 
 e2e-install: ## Installe Playwright et Chromium pour les tests de bout en bout
 	cd $(E2E) && npm ci && npx playwright install chromium
