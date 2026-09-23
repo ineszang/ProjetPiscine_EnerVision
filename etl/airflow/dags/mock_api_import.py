@@ -1,7 +1,7 @@
 """DAG d'import périodique des données de l'API Mock EnerVision (issue #15).
 
 Orchestre le pipeline existant `app.etl.mock_api_import` sans dupliquer sa logique ETL.
-Chaque exécution traite l'heure précédant son déclenchement.
+Chaque exécution importe la mesure de l'heure pile qui précède son déclenchement.
 
 Le pipeline backend reste responsable de la validation, de la normalisation, du suivi de la
 qualité, de l'idempotence et du chargement dans PostgreSQL/TimescaleDB.
@@ -18,9 +18,9 @@ from airflow.timetables.trigger import CronTriggerTimetable
 # Le backend possède son propre environnement uv dans l'image Airflow (ADR 0008).
 COMMANDE_BACKEND = "cd /opt/backend && env -u VIRTUAL_ENV uv run --no-sync python -m"
 
-# Le pipeline backend et l'API acceptent au maximum 1 000 lectures par site.
-# Cette marge évite de perdre silencieusement une lecture si une heure en contient plus de 60.
-LIMITE_LECTURES = 1000
+# Contrainte : l'API Mock génère `limit` points répartis sur l'intervalle, le premier à son début.
+# Un seul, depuis l'heure pile, donne la mesure de :00 au pas du CSV que suppose `shift(168)`.
+LIMITE_LECTURES = 1
 
 # Deux reprises donnent trois tentatives au total. Même dans le pire cas, l'exécution reste
 # inférieure au pas horaire du DAG.
@@ -51,7 +51,7 @@ with DAG(
         task_id="import_mock_api",
         bash_command=(
             f"{COMMANDE_BACKEND} app.etl.mock_api_import "
-            "--start-time \"{{ data_interval_start.strftime('%Y-%m-%dT%H:%M:%S') }}\" "
+            "--start-time \"{{ data_interval_end.strftime('%Y-%m-%dT%H:00:00') }}\" "
             "--end-time \"{{ data_interval_end.strftime('%Y-%m-%dT%H:%M:%S') }}\" "
             f"--limit {LIMITE_LECTURES}"
         ),

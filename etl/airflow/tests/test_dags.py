@@ -113,12 +113,12 @@ def test_mock_api_import_calls_the_existing_backend_module(dagbag: DagBag) -> No
     assert "app.etl.mock_api_import" in commande
 
 
-def test_mock_api_import_uses_the_airflow_data_interval(dagbag: DagBag) -> None:
+def test_mock_api_import_asks_for_the_on_the_hour_reading(dagbag: DagBag) -> None:
     commande = dagbag.dags["mock_api_import"].get_task("import_mock_api").bash_command
 
-    assert "--start-time \"{{ data_interval_start.strftime('%Y-%m-%dT%H:%M:%S') }}\"" in commande
+    assert "--start-time \"{{ data_interval_end.strftime('%Y-%m-%dT%H:00:00') }}\"" in commande
     assert "--end-time \"{{ data_interval_end.strftime('%Y-%m-%dT%H:%M:%S') }}\"" in commande
-    assert "--limit 1000" in commande
+    assert commande.endswith("--limit 1")
 
 
 @pytest.mark.parametrize("task_id", ["detection", "recommandations"])
