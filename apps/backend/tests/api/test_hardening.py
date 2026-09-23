@@ -71,6 +71,20 @@ async def test_metrics_stay_open_when_no_token_is_configured(client: AsyncClient
     assert response.status_code == 200
 
 
+async def test_an_empty_metrics_token_means_no_token() -> None:
+    assert (await interroge({"metrics_token": ""}, "/metrics")).status_code == 200
+
+
+async def test_metrics_ignore_health_probes_but_count_business_routes(client: AsyncClient) -> None:
+    await client.get("/api/v1/health/live")
+    await client.get("/api/v1/sites")
+
+    exposition = (await client.get("/metrics")).text
+
+    assert 'handler="/api/v1/health/live"' not in exposition
+    assert 'handler="/api/v1/sites"' in exposition
+
+
 async def test_metrics_demand_the_token_once_one_is_configured() -> None:
     surcharges = {"metrics_token": "un-jeton-de-supervision-assez-long"}
 

@@ -44,6 +44,10 @@ jobs:
       - name: Applique les migrations
         run: docker compose exec -T backend alembic upgrade head
 
+      # Même cible que `make stack-up` en prod : les droits du rôle portent sur le schéma réel.
+      - name: Pose le rôle de supervision en lecture seule
+        run: make db-ensure-supervision
+
       - name: Sème le jeu de démonstration
         run: docker compose exec -T db psql -U enervision -d enervision -v ON_ERROR_STOP=1 < db/seeds/demo.sql
 

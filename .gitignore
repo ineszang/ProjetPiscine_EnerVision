@@ -60,8 +60,6 @@ secrets/
 data/raw/*
 !data/raw/.gitkeep
 *.sqlite3
-monitoring/grafana/data/
-monitoring/prometheus/data/
 
 # ML : jeu de donnees, modeles entraines et suivi MLflow local, tous generes/volumineux
 ml/data/

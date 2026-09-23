@@ -35,6 +35,19 @@ PG_TEST_DB ?= enervision_test
 TEST_DATABASE_URL ?= postgresql+asyncpg://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_TEST_DB)
 ML_TEST_DATABASE_URL ?= postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_TEST_DB)
 
+# Piege : ni make ni ces cibles ne lisent `.env` pour COMPOSE_PROFILES, que docker compose y lit
+# seul. `stack-up` le relit ici pour savoir s'il doit poser le role `supervision` apres migration.
+SUPERVISION := $(findstring monitoring,$(COMPOSE_PROFILES) $(call env-val,COMPOSE_PROFILES))
+SERVICES_SUPERVISION := prometheus alertmanager grafana postgres-exporter node-exporter cadvisor
+GRAFANA_PORT := $(or $(strip $(call env-val,GRAFANA_PORT)),3001)
+PROMETHEUS_PORT := $(or $(strip $(call env-val,PROMETHEUS_PORT)),9090)
+supervision-garde = for cle in APP_METRICS_TOKEN GRAFANA_ADMIN_PASSWORD SUPERVISION_DB_PASSWORD; do \
+		sed -n "s/^$$cle=//p" .env 2>/dev/null | tail -1 | grep -q . \
+			|| { echo "$$cle manquant dans .env, requis par la supervision (cf. .env.example)"; exit 1; }; \
+	done
+MONITORING := docker compose --profile monitoring
+PROMTOOL := $(MONITORING) run --rm --no-deps --entrypoint promtool prometheus
+
 # Piege : `e2e-prepare` ajoute trois sites `demo-*` et des comptes `test-*` a la base visee. Elle
 # vise la base de `make dev` ; ne jamais la lancer contre la recette ou la prod.
 E2E_COMPTES ?= $(CURDIR)/$(E2E)/.comptes.json
@@ -61,7 +74,8 @@ DEMO_NOW ?= 2024-12-31T00:00:00Z
         ml-lint ml-typecheck ml-test ml-check ml-train ml-score mlflow-up detect-alerts recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs \
         tls-selfsigned tls-acme tls-renew stack-up stack-down stack-logs \
-        e2e-install e2e-prepare e2e load-smoke load-test load-stress load-limits
+        e2e-install e2e-prepare e2e load-smoke load-test load-stress load-limits \
+        db-ensure-supervision monitoring-up monitoring-down monitoring-logs monitoring-check
 
 help: ## Liste les cibles disponibles
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -197,8 +211,10 @@ stack-up: ## Démarre la stack derrière le reverse proxy, puis migre la base. P
 		|| { echo "Aucun certificat dans infra/proxy/tls. Lancer d'abord make tls-selfsigned"; exit 1; }
 	@openssl x509 -in infra/proxy/tls/fullchain.pem -noout -checkhost "$(PUBLIC_HOST)" >/dev/null \
 		|| { echo "Le certificat ne couvre pas $(PUBLIC_HOST). Relancer make tls-selfsigned PUBLIC_HOST=$(PUBLIC_HOST) FORCE=1"; exit 1; }
+	@$(if $(SUPERVISION),$(supervision-garde),true)
 	$(COMPOSE_PROD) up -d --build
 	$(COMPOSE_PROD) exec -T backend alembic upgrade head
+	@$(if $(SUPERVISION),$(MAKE) --no-print-directory db-ensure-supervision,true)
 
 stack-down: ## Arrête la stack complète en conservant les données
 	$(COMPOSE_PROD) stop
@@ -241,6 +257,32 @@ load-stress: ## Monte le débit jusqu'à la rupture de l'API. Sur la VM, la prod
 
 load-limits: ## Vérifie par le proxy que nginx limite le débit d'une même adresse (429)
 	$(call k6-run,limitation-debit)
+
+# Piege : le mot de passe est lu dans `.env` par le shell et passe a psql sur son entree
+# standard. Developpe par make, il apparaitrait en clair dans la ligne de commande (`ps`).
+db-ensure-supervision: ## Crée ou réaligne le rôle `supervision`, en lecture seule, de Grafana et de l'exportateur
+	@mdp="$$(sed -n 's/^SUPERVISION_DB_PASSWORD=//p' .env 2>/dev/null | tail -1)"; \
+	[ -n "$$mdp" ] || { echo "SUPERVISION_DB_PASSWORD manquant dans .env"; exit 1; }; \
+	{ printf '\\set mot_de_passe %s\n' "$$mdp"; cat db/roles/supervision.sql; } \
+		| docker compose exec -T db psql -U $(PG_USER) -d $(PG_DB) -v ON_ERROR_STOP=1 -v base=$(PG_DB) -q
+
+monitoring-up: ## Démarre la supervision sur la stack en cours : Prometheus, Alertmanager, Grafana, exporteurs
+	@$(supervision-garde)
+	$(MONITORING) up -d --no-deps $(SERVICES_SUPERVISION)
+	@$(MAKE) --no-print-directory db-ensure-supervision
+	@echo "grafana -> http://localhost:$(GRAFANA_PORT)  prometheus -> http://localhost:$(PROMETHEUS_PORT)"
+
+monitoring-down: ## Arrête la supervision en conservant ses données
+	$(MONITORING) stop $(SERVICES_SUPERVISION)
+
+monitoring-logs: ## Suit les journaux de Prometheus, Alertmanager et Grafana
+	$(MONITORING) logs -f prometheus alertmanager grafana
+
+monitoring-check: ## Valide la configuration de supervision et joue les tests des règles d'alerte, comme la CI
+	$(PROMTOOL) check config /etc/prometheus/prometheus.yml
+	$(PROMTOOL) test rules /etc/prometheus/tests/enervision.test.yml
+	$(MONITORING) run --rm --no-deps --entrypoint amtool alertmanager check-config /etc/alertmanager/alertmanager.yml
+	@for tableau in monitoring/grafana/dashboards/*.json; do jq empty "$$tableau" || exit 1; done
 
 db-up: ## Démarre la base PostgreSQL TimescaleDB
 	docker compose up -d db

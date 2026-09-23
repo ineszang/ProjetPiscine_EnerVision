@@ -54,7 +54,7 @@ jobs:
           done
 
   compose:
-    name: Validation des fichiers Compose
+    name: Validation des fichiers Compose et de la supervision
     if: inputs.compose
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -71,7 +71,20 @@ jobs:
         run: docker compose config --quiet
 
       - name: Valide la stack déployée, profils compris
-        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile acme config --quiet
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile acme --profile monitoring --profile load config --quiet
+
+      # Mêmes commandes que `make monitoring-check` : images et montages viennent du fichier Compose.
+      - name: Valide la configuration de Prometheus et ses règles
+        run: docker compose --profile monitoring run --rm --no-deps --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml
+
+      - name: Joue les tests unitaires des règles d'alerte
+        run: docker compose --profile monitoring run --rm --no-deps --entrypoint promtool prometheus test rules /etc/prometheus/tests/enervision.test.yml
+
+      - name: Valide la configuration d'Alertmanager
+        run: docker compose --profile monitoring run --rm --no-deps --entrypoint amtool alertmanager check-config /etc/alertmanager/alertmanager.yml
+
+      - name: Valide les tableaux de bord Grafana
+        run: for tableau in monitoring/grafana/dashboards/*.json; do jq empty "$tableau"; done
 
   workflows:
     name: Analyse des workflows

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["local", "dev", "staging", "prod"]
@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool = False
     expose_api_docs: bool | None = None
     metrics_token: SecretStr | None = None
+
+    # Compose passe `APP_METRICS_TOKEN` vide quand aucun jeton n'est posé : vide vaut absent, sinon
+    # `/metrics` exigerait un `Bearer` sans valeur et plus rien ne pourrait le scruter.
+    @field_validator("metrics_token", mode="before")
+    @classmethod
+    def _jeton_vide_vaut_absent(cls, valeur: object) -> object:
+        return None if valeur == "" else valeur
 
     @property
     def allowed_origins(self) -> list[str]:

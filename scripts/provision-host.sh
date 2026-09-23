@@ -36,6 +36,7 @@ verifier_outils() {
 preparer() {
     local env="$1" branche="$2" hote="$3" origine="$4"
     local port_https="$5" port_http="$6" port_pg="$7" port_mailpit="$8" port_airflow="$9"
+    local profils="${10}" port_grafana="${11}" port_prometheus="${12}" port_alertmanager="${13}"
     local dossier="$RACINE/$env"
 
     if [[ -d "$dossier/.git" ]]; then
@@ -63,6 +64,13 @@ preparer() {
             -e "s|^COMPOSE_PROJECT_NAME=.*|COMPOSE_PROJECT_NAME=enervision-$env|" \
             -e "s|^PROXY_HTTP_PORT=.*|PROXY_HTTP_PORT=$port_http|" \
             -e "s|^PROXY_HTTPS_PORT=.*|PROXY_HTTPS_PORT=$port_https|" \
+            -e "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=$profils|" \
+            -e "s|^APP_METRICS_TOKEN=.*|APP_METRICS_TOKEN=$(secret)|" \
+            -e "s|^GRAFANA_ADMIN_PASSWORD=.*|GRAFANA_ADMIN_PASSWORD=$(secret | cut -c1-20)|" \
+            -e "s|^SUPERVISION_DB_PASSWORD=.*|SUPERVISION_DB_PASSWORD=$(secret)|" \
+            -e "s|^GRAFANA_PORT=.*|GRAFANA_PORT=$port_grafana|" \
+            -e "s|^PROMETHEUS_PORT=.*|PROMETHEUS_PORT=$port_prometheus|" \
+            -e "s|^ALERTMANAGER_PORT=.*|ALERTMANAGER_PORT=$port_alertmanager|" \
             "$dossier/.env.example" > "$brouillon"
         # Branche antérieure à l'ADR 0009 : ces clés manquent alors dans .env.example.
         for cle in "COMPOSE_PROJECT_NAME=enervision-$env" "PUBLIC_ORIGIN=$origine" \
@@ -90,9 +98,11 @@ preparer() {
 verifier_outils
 mkdir -p "$RACINE"
 
-#        env   branche  hôte                  origine                            https  http            pg    mailpit airflow
-preparer prod  main     enervision.local      https://enervision.local           443    80              5433  8025    8080
-preparer rec   dev      rec.enervision.local  https://rec.enervision.local:8443  8443   127.0.0.1:8081  5434  8026    8082
+# Supervision active en prod seulement (ADR 0016) ; les ports de la recette restent décalés au cas
+# où on l'y lancerait à la demande.
+#        env   branche  hôte                  origine                            https  http            pg    mailpit airflow profils    grafana prometheus alertmanager
+preparer prod  main     enervision.local      https://enervision.local           443    80              5433  8025    8080    monitoring 3001    9090       9093
+preparer rec   dev      rec.enervision.local  https://rec.enervision.local:8443  8443   127.0.0.1:8081  5434  8026    8082    ""         3002    9091       9094
 
 if [[ -n "$PROPRIETAIRE" && "$(id -u)" -eq 0 ]]; then
     chown -R "$PROPRIETAIRE" "$RACINE"
