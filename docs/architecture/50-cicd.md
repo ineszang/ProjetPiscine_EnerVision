@@ -131,13 +131,14 @@ entrant n'est ouvert.
 |---|---|---|---|
 | `push` sur `dev` | `rec` | `/srv/enervision/rec` | aucune : la recette suit `dev` |
 | `push` sur `main` | `prod` | `/srv/enervision/prod` | approbation d'un relecteur dans l'environnement `prod`, branche `main` seule autorisée |
+| `workflow_dispatch` sur toute autre branche | `dev` | `/srv/enervision/dev` | droit d'écriture sur le dépôt, seul à pouvoir lancer un workflow ([ADR 0017](../adr/0017-environnement-dev-a-la-demande.md)) |
 
 Le job aligne le clone sur la branche (`fetch`, `checkout`, `reset --hard`), lance
 `make stack-up`, qui reconstruit les images, redémarre les conteneurs puis applique les
 migrations Alembic dans le conteneur backend, et attend jusqu'à trois minutes que
 `/api/v1/health/ready` réponde derrière le proxy. Cette sonde ne vérifie que la connexion à la
 base et la présence de TimescaleDB : sans la migration, le déploiement serait vert sur une base
-sans schéma, et c'est pourquoi `make stack-up` la porte. Un groupe de concurrence par branche,
+sans schéma, et c'est pourquoi `make stack-up` la porte. Un groupe de concurrence par environnement,
 sans annulation, empêche deux déploiements simultanés du même environnement.
 
 Le job ne fait pas de `actions/checkout` dans son espace de travail, et c'est voulu : le dossier
@@ -157,7 +158,7 @@ passé à `scripts/provision-host.sh` fixe ce propriétaire.
 
 La machine se prépare avec `scripts/provision-host.sh`, qui vérifie Docker et Compose 2.24.4 ou
 plus, clone les deux branches, génère les secrets de chaque `.env` et les certificats
-auto-signés, et ne démarre rien. Le détail des deux environnements, ports et noms d'hôte, est
+auto-signés, et ne démarre rien. Le détail des trois environnements, ports et noms d'hôte, est
 dans [10-infra.md](10-infra.md).
 
 ## Ce qui bloque un merge
