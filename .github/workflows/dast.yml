@@ -97,7 +97,7 @@ jobs:
       # `apps/backend`, comme dans son Dockerfile. Les `uv run` suivants portent `--frozen
       # --no-sync` pour ne rien résoudre ni reconstruire (règle S8544).
       - name: Synchronise les dépendances sans dévier du verrou
-        run: uv sync --frozen --no-dev --no-install-project --no-build
+        run: uv sync --locked --no-dev --no-install-project --no-build
         working-directory: apps/backend
 
       - name: Active TimescaleDB sur la base du scan
@@ -299,9 +299,11 @@ jobs:
         if: always()
         run: |
           if [ -f zap-out/zap-report.md ]; then
-            awk '/^## Alert Detail/{exit} {print}' zap-out/zap-report.md >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Rapport complet (HTML/JSON/Markdown) dans l'artefact \`zap-report\`." >> "$GITHUB_STEP_SUMMARY"
+            {
+              awk '/^## Alert Detail/{exit} {print}' zap-out/zap-report.md
+              echo ""
+              echo "Rapport complet (HTML/JSON/Markdown) dans l'artefact \`zap-report\`."
+            } >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Aucun rapport ZAP produit, voir le journal du job." >> "$GITHUB_STEP_SUMMARY"
           fi

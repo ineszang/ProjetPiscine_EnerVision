@@ -1,0 +1,195 @@
+# Pourquoi : un seul point d'entrée pour toute la CI (ADR 0014) - workflow CI. Chaque composant
+# ne tourne que si ses fichiers changent, Sonar reprend les couvertures déjà produites au lieu de
+# tout rejouer, et le déploiement ne part que d'un commit dont la CI est verte.
+# Piège : le seul check à exiger dans les règles de branche est « CI ok ». Un job sauté par son
+# filtre ne publie pas les checks de son workflow, qui resteraient en attente s'ils étaient exigés.
+# Piège : sur un push vers dev ou main, tous les filtres valent vrai. paths-filter comparerait
+# sinon à la base de fusion avec main, et Sonar n'analyserait qu'une partie de la branche.
+# Piège : pas d'annulation des runs de push. Un run coupé en plein `make stack-up` laisserait la
+# stack à moitié redémarrée ; le groupe par SHA évite aussi de mettre `dev` en file derrière lui.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: Périmètre modifié
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.backend == 'true' }}
+      frontend: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.frontend == 'true' }}
+      ml: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.ml == 'true' }}
+      airflow: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.airflow == 'true' }}
+      terraform: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.terraform == 'true' }}
+      compose: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.compose == 'true' }}
+      workflows: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.workflows == 'true' }}
+      sonar: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.sonar == 'true' }}
+
+    steps:
+      # Sur une PR, la liste des fichiers vient de l'API : ni checkout ni historique requis.
+      - name: Calcule le périmètre de la PR
+        id: filtre
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            ci:
+              - ".github/workflows/ci.yml"
+            backend:
+              - "apps/backend/**"
+              - ".github/workflows/backend.yml"
+            frontend:
+              - "apps/frontend/**"
+              - ".github/workflows/frontend.yml"
+            ml:
+              - "ml/**"
+              - "apps/backend/alembic/**"
+              - "apps/backend/app/models/**"
+              - "apps/backend/tests/test_chaine_ml_api.py"
+              - "apps/backend/pyproject.toml"
+              - "apps/backend/uv.lock"
+              - ".github/workflows/ml.yml"
+            airflow:
+              - "etl/airflow/**"
+              - "ml/pyproject.toml"
+              - "ml/uv.lock"
+              - "ml/enervision_ml/**"
+              - "apps/backend/pyproject.toml"
+              - "apps/backend/uv.lock"
+              - "apps/backend/app/**"
+              - ".github/workflows/airflow.yml"
+            terraform:
+              - "infra/terraform/**"
+              - ".github/workflows/infra.yml"
+            compose:
+              - "docker-compose*.yml"
+              - ".env.example"
+              - ".github/workflows/infra.yml"
+            workflows:
+              - ".github/**"
+            sonar:
+              - "apps/backend/**"
+              - "apps/frontend/**"
+              - "ml/**"
+              - "etl/airflow/**"
+              - "sonar-project.properties"
+
+  backend:
+    name: Backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    uses: ./.github/workflows/backend.yml
+
+  frontend:
+    name: Frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/frontend.yml
+
+  ml:
+    name: ML
+    needs: changes
+    if: needs.changes.outputs.ml == 'true'
+    uses: ./.github/workflows/ml.yml
+
+  airflow:
+    name: Airflow
+    needs: changes
+    if: needs.changes.outputs.airflow == 'true'
+    uses: ./.github/workflows/airflow.yml
+
+  infra:
+    name: Infra
+    needs: changes
+    if: >-
+      needs.changes.outputs.terraform == 'true'
+      || needs.changes.outputs.compose == 'true'
+      || needs.changes.outputs.workflows == 'true'
+    uses: ./.github/workflows/infra.yml
+    with:
+      terraform: ${{ needs.changes.outputs.terraform == 'true' }}
+      compose: ${{ needs.changes.outputs.compose == 'true' }}
+      workflows: ${{ needs.changes.outputs.workflows == 'true' }}
+
+  # Ni dependabot[bot] ni une PR de fork ne reçoivent SONAR_TOKEN : le scan échouerait sans rien
+  # analyser. Tests et couverture restent joués par leurs jobs.
+  sonar:
+    name: SonarQube
+    needs: [changes, backend, frontend, ml]
+    if: >-
+      always() && !cancelled()
+      && !contains(needs.*.result, 'failure')
+      && needs.changes.outputs.sonar == 'true'
+      && github.actor != 'dependabot[bot]'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Un téléchargement par rapport : backend et ML nomment tous deux le leur `coverage.xml`.
+      - name: Couverture du backend
+        if: needs.backend.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: backend-coverage
+          path: apps/backend
+
+      - name: Couverture du pipeline ML
+        if: needs.ml.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: ml-coverage
+          path: ml
+
+      - name: Couverture du frontend
+        if: needs.frontend.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-coverage
+          path: apps/frontend/coverage/frontend
+
+      # Action tierce, épinglée sur le commit du tag (règle Sonar githubactions:S7637).
+      - name: Analyse SonarQube
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  ci-ok:
+    name: CI ok
+    needs: [changes, backend, frontend, ml, airflow, infra, sonar]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Refuse si un job a échoué ou a été annulé
+        env:
+          RESULTATS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTATS"
+          if grep -qE '"(failure|cancelled)"' <<<"$RESULTATS"; then
+            echo "::error::Au moins un job de la CI a échoué ou a été annulé."
+            exit 1
+          fi
+
