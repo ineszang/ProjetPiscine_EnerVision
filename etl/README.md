@@ -669,15 +669,15 @@ des recommandations (`alertes`, issue #116), l'import historique (`historical_im
 issue #119) et l'import périodique de l'API Mock (`mock_api_import`, issue #15).
 
 Le DAG `mock_api_import` s'exécute chaque heure, à la minute `:45`. Il appelle
-`app.etl.mock_api_import` avec un intervalle explicite d'une heure et une limite d'une lecture
-par site. L'API Mock génère autant de points que la limite demandée, répartis sur l'intervalle :
-un seul donne la mesure de :00, au pas horaire du dataset historique, que les features ML
-supposent en décalant par ligne. Les deux pipelines normalisent leurs données vers les tables communes `site` et
+`app.etl.mock_api_import` sur l'intervalle qui va de l'heure pile à son déclenchement, avec une
+limite d'une lecture par site. L'API Mock génère autant de points que la limite demandée,
+répartis sur l'intervalle et le premier à son début : un seul donne la mesure de :00, au pas
+horaire du dataset historique, que les features ML supposent en décalant par ligne. Les deux pipelines normalisent leurs données vers les tables communes `site` et
 `reading`, tout en conservant leur source (`csv` ou `api_history`). La réconciliation globale
 des deux sources reste à compléter dans l'issue #15.
 
 Le DAG `mock_api_import` exécute `app.etl.mock_api_import` toutes les heures. Chaque exécution
-traite l'intervalle Airflow précédent. Les deux pipelines normalisent leurs données vers les
+importe la mesure de l'heure pile qui précède son déclenchement. Les deux pipelines normalisent leurs données vers les
 tables communes `site` et `reading`, tout en conservant leur source (`csv` ou `api_history`).
 
 Airflow permet de planifier les traitements, gérer leur ordre d'exécution, suivre leur état et remonter les erreurs. Il ne remplace pas la logique ETL Python existante : les scripts actuels restent responsables de l'extraction, de la validation, de la transformation et du chargement. `etl/airflow/dags/ml_train.py`, `ml_score.py`, `alertes.py`, `historical_import.py` et
