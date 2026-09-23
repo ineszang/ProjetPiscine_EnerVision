@@ -39,6 +39,7 @@ jobs:
       terraform: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.terraform == 'true' }}
       compose: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.compose == 'true' }}
       workflows: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.workflows == 'true' }}
+      e2e: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.e2e == 'true' }}
       sonar: ${{ github.event_name != 'pull_request' || steps.filtre.outputs.ci == 'true' || steps.filtre.outputs.sonar == 'true' }}
 
     steps:
@@ -83,6 +84,20 @@ jobs:
               - ".github/workflows/infra.yml"
             workflows:
               - ".github/**"
+            e2e:
+              - "apps/frontend/**"
+              - "apps/backend/app/**"
+              - "apps/backend/alembic/**"
+              - "apps/backend/Dockerfile"
+              - "apps/backend/pyproject.toml"
+              - "apps/backend/uv.lock"
+              - "infra/proxy/**"
+              - "docker-compose*.yml"
+              - "db/**"
+              - "tests/**"
+              - "scripts/comptes-test.sh"
+              - "scripts/tls-selfsigned.sh"
+              - ".github/workflows/e2e.yml"
             sonar:
               - "apps/backend/**"
               - "apps/frontend/**"
@@ -126,6 +141,12 @@ jobs:
       terraform: ${{ needs.changes.outputs.terraform == 'true' }}
       compose: ${{ needs.changes.outputs.compose == 'true' }}
       workflows: ${{ needs.changes.outputs.workflows == 'true' }}
+
+  e2e:
+    name: E2E
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    uses: ./.github/workflows/e2e.yml
 
   # Ni dependabot[bot] ni une PR de fork ne reçoivent SONAR_TOKEN : le scan échouerait sans rien
   # analyser. Tests et couverture restent joués par leurs jobs.
@@ -177,7 +198,7 @@ jobs:
 
   ci-ok:
     name: CI ok
-    needs: [changes, backend, frontend, ml, airflow, infra, sonar]
+    needs: [changes, backend, frontend, ml, airflow, infra, e2e, sonar]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

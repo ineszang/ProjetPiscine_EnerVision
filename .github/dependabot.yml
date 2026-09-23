@@ -20,6 +20,17 @@ updates:
       - dependency-name: "@vitest/coverage-v8"
         update-types: ["version-update:semver-major"]
 
+  # Tests de bout en bout, paquet npm distinct du frontend
+  - package-ecosystem: "npm"
+    directory: "/tests/e2e"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+    groups:
+      e2e-dependencies:
+        patterns:
+          - "*"
+
   # Backend — uv (lit pyproject.toml / uv.lock)
   - package-ecosystem: "uv"
     directory: "/apps/backend"

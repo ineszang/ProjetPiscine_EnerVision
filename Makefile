@@ -2,6 +2,7 @@ BACKEND := apps/backend
 FRONTEND := apps/frontend
 ML := ml
 AIRFLOW := etl/airflow
+E2E := tests/e2e
 COMPOSE_PROD := docker compose -f docker-compose.yml -f docker-compose.prod.yml
 
 # Piège : sans `export`, une valeur passée en ligne de commande n'atteindrait pas docker compose.
@@ -34,6 +35,11 @@ PG_TEST_DB ?= enervision_test
 TEST_DATABASE_URL ?= postgresql+asyncpg://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_TEST_DB)
 ML_TEST_DATABASE_URL ?= postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@localhost:$(PG_PORT)/$(PG_TEST_DB)
 
+# Piege : `e2e-prepare` ajoute trois sites `demo-*` et des comptes `test-*` a la base visee. Elle
+# vise la base de `make dev` ; ne jamais la lancer contre la recette ou la prod.
+E2E_COMPTES ?= $(CURDIR)/$(E2E)/.comptes.json
+E2E_API ?= http://localhost:$(or $(strip $(call env-val,BACKEND_PORT)),8000)
+
 # Le jeu historique s'arrete au 31/12/2024 : score et detection ancres a l'horloge reelle ne
 # verraient qu'un parc muet depuis des mois. Cf. `--now` de enervision_ml.score.
 DEMO_NOW ?= 2024-12-31T00:00:00Z
@@ -47,10 +53,11 @@ DEMO_NOW ?= 2024-12-31T00:00:00Z
         migrate migrate-test bootstrap-admin services-up demo-data demo-data-force \
         ml-lint ml-typecheck ml-test ml-check ml-train ml-score mlflow-up detect-alerts recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs \
-        tls-selfsigned tls-acme tls-renew stack-up stack-down stack-logs
+        tls-selfsigned tls-acme tls-renew stack-up stack-down stack-logs \
+        e2e-install e2e-prepare e2e
 
 help: ## Liste les cibles disponibles
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 install: install-backend install-frontend install-ml install-airflow ## Installe les dépendances backend, frontend, ML et Airflow
 
@@ -204,6 +211,17 @@ tls-acme: ## Demande un certificat Let's Encrypt. PUBLIC_HOST public et ACME_EMA
 tls-renew: ## Renouvelle les certificats Let's Encrypt et recharge le proxy
 	$(COMPOSE_PROD) --profile acme run --rm certbot renew --deploy-hook /deploy-hook.sh
 	$(COMPOSE_PROD) exec proxy nginx -s reload
+
+e2e-install: ## Installe Playwright et Chromium pour les tests de bout en bout
+	cd $(E2E) && npm ci && npx playwright install chromium
+
+e2e-prepare: ## Sème le jeu de démonstration et crée les comptes de test sur la base de `make dev`
+	docker compose exec -T db psql -U $(PG_USER) -d $(PG_DB) -v ON_ERROR_STOP=1 < db/seeds/demo.sql
+	cd $(BACKEND) && BASE_URL=$(E2E_API) COMPTES_FICHIER=$(E2E_COMPTES) ADMIN_SUPPLEMENTAIRE=1 \
+		../../scripts/comptes-test.sh
+
+e2e: ## Joue les parcours Playwright. E2E_BASE_URL= optionnel (défaut http://localhost:4200)
+	cd $(E2E) && E2E_COMPTES=$(E2E_COMPTES) npx playwright test
 
 db-up: ## Démarre la base PostgreSQL TimescaleDB
 	docker compose up -d db

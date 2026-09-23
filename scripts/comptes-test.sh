@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Contrainte : réservé à une base JETABLE (CI, e2e, charge sur le poste) - comptes-test.sh. Crée
-# un administrateur par la CLI, puis un lecteur, un opérateur et un compte laissé sur son mot de
-# passe temporaire, et écrit leurs identifiants en JSON dans $COMPTES_FICHIER.
-# Piège : un compte neuf est en `must_change_password`, que toute route gardée refuse. Seul
-# `premiere_connexion` garde ce statut : c'est le parcours du premier login de l'e2e.
-# Piège : `create-admin` refuse un second administrateur actif. Sur une base qui en a déjà un
-# (recette, poste peuplé), créer les comptes depuis l'interface d'administration.
+# un administrateur par la CLI, puis un lecteur et un opérateur, et écrit leurs identifiants en
+# JSON dans $COMPTES_FICHIER.
+# Piège : un compte neuf est en `must_change_password`, que toute route gardée refuse. Chaque
+# compte passe donc le changement de mot de passe avant d'être écrit dans le fichier.
+# Piège : `create-admin` refuse un second administrateur actif. ADMIN_SUPPLEMENTAIRE=1 passe
+# `--force`, pour la base du poste ; jamais en recette, où les comptes se créent par l'interface.
 #
 # BASE_URL vise l'API (http://localhost:8000 par défaut, ou le proxy en https). APP_CLI lance la
 # CLI du backend : depuis apps/backend par défaut, ou `docker compose ... exec -T backend python
@@ -67,7 +67,9 @@ activer_compte() {
 
 EMAIL_ADMIN="test-admin-$SUFFIXE@enervision.fr"
 journal "création de l'administrateur $EMAIL_ADMIN"
-if ! SORTIE="$("${CLI[@]}" create-admin --email "$EMAIL_ADMIN" --generate)"; then
+OPTIONS_ADMIN=(--email "$EMAIL_ADMIN" --generate)
+[[ "${ADMIN_SUPPLEMENTAIRE:-0}" == "1" ]] && OPTIONS_ADMIN+=(--force)
+if ! SORTIE="$("${CLI[@]}" create-admin "${OPTIONS_ADMIN[@]}")"; then
     journal "la création de l'administrateur a échoué : $SORTIE"
     exit 1
 fi
@@ -80,24 +82,20 @@ JETON_ADMIN="$(changer_mot_de_passe "$JETON_ADMIN" "$MDP_TEMPORAIRE_ADMIN" "$MDP
 
 EMAIL_LECTEUR="test-lecteur-$SUFFIXE@enervision.fr"
 EMAIL_OPERATEUR="test-operateur-$SUFFIXE@enervision.fr"
-EMAIL_PREMIERE="test-premiere-connexion-$SUFFIXE@enervision.fr"
-journal "création du lecteur, de l'opérateur et du compte de première connexion"
+journal "création du lecteur et de l'opérateur"
 TEMPORAIRE_LECTEUR="$(creer_compte "$JETON_ADMIN" "$EMAIL_LECTEUR" lecteur)"
 MDP_LECTEUR="$(activer_compte "$EMAIL_LECTEUR" "$TEMPORAIRE_LECTEUR")"
 TEMPORAIRE_OPERATEUR="$(creer_compte "$JETON_ADMIN" "$EMAIL_OPERATEUR" operateur)"
 MDP_OPERATEUR="$(activer_compte "$EMAIL_OPERATEUR" "$TEMPORAIRE_OPERATEUR")"
-MDP_PREMIERE="$(creer_compte "$JETON_ADMIN" "$EMAIL_PREMIERE" lecteur)"
 
 umask 077
 jq -n \
     --arg ae "$EMAIL_ADMIN" --arg ap "$MDP_ADMIN" \
     --arg le "$EMAIL_LECTEUR" --arg lp "$MDP_LECTEUR" \
     --arg oe "$EMAIL_OPERATEUR" --arg op "$MDP_OPERATEUR" \
-    --arg pe "$EMAIL_PREMIERE" --arg pp "$MDP_PREMIERE" \
     '{
         admin: {email: $ae, password: $ap},
         lecteur: {email: $le, password: $lp},
-        operateur: {email: $oe, password: $op},
-        premiere_connexion: {email: $pe, password: $pp}
+        operateur: {email: $oe, password: $op}
     }' >"$COMPTES_FICHIER"
 journal "identifiants écrits dans $COMPTES_FICHIER"
