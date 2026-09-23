@@ -19,6 +19,9 @@ export class AuthService {
   // mémoire. Un rechargement de page le perd, c'est voulu par le contrat.
   private accessTokenSignal = signal<string | null>(null);
   private principalSignal = signal<Principal | null>(null);
+  // Pourquoi : redemander le mot de passe provisoire qu'on vient de vérifier laisse un gestionnaire
+  // de mots de passe y coller un ancien mot de passe du site, et `/auth/password` répond 401.
+  private provisionalPassword: string | null = null;
 
   readonly principal = this.principalSignal.asReadonly();
   readonly isAuthenticated = computed(() => this.principalSignal() !== null);
@@ -37,12 +40,26 @@ export class AuthService {
   clearSession(): void {
     this.accessTokenSignal.set(null);
     this.principalSignal.set(null);
+    this.provisionalPassword = null;
   }
 
   login(credentials: LoginRequest): Observable<TokenResponse> {
     return this.http
       .post<TokenResponse>(`${environment.apiUrl}/auth/login`, credentials, { withCredentials: true })
-      .pipe(tap((response) => this.setSession(response)));
+      .pipe(
+        tap((response) => {
+          this.setSession(response);
+          this.provisionalPassword = response.principal.must_change_password
+            ? credentials.password
+            : null;
+        })
+      );
+  }
+
+  takeProvisionalPassword(): string | null {
+    const password = this.provisionalPassword;
+    this.provisionalPassword = null;
+    return password;
   }
 
   // Un seul rafraîchissement en vol à la fois, partagé entre tous les

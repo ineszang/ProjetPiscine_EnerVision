@@ -12,7 +12,7 @@ test('impose le changement du mot de passe temporaire avant le tableau de bord',
   await expect(page).toHaveURL(/\/change-password$/);
   await expect(page.getByRole('heading', { name: 'Nouveau mot de passe' })).toBeVisible();
 
-  await page.getByLabel('Mot de passe actuel').fill(compte.password);
+  await expect(page.getByLabel('Mot de passe actuel')).toHaveCount(0);
   await page.getByLabel('Nouveau mot de passe').fill(nouveauMotDePasse());
   await page.getByRole('button', { name: 'Valider' }).click();
 
