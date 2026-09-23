@@ -23,7 +23,7 @@ RUN npm run build
 # ==================
 
 
-FROM dhi.io/nginx:1.28.0-alpine3.21-dev AS runner
+FROM nginx:1.31-alpine AS runner
 
 # Copie de la configuration de nginx
 COPY --chown=root:root --chmod=755 nginx.conf /etc/nginx/nginx.conf

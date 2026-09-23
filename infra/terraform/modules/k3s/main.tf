@@ -5,19 +5,26 @@ locals {
   kubeconfig_cmd = "${local.sudo_prefix}cat /etc/rancher/k3s/k3s.yaml"
 }
 
+# Piege : un provisioner `destroy` impose que tout le bloc `connection` ne lise que `self`, sinon
+# `terraform init` refuse le module. D'ou la connexion batie sur `triggers`, ou ne figurent que
+# l'adresse, le port, l'utilisateur et le chemin de la cle : jamais la cle ni un mot de passe.
 resource "null_resource" "k3s_install" {
   triggers = {
-    ssh_host            = var.ssh_host
-    k3s_version         = var.k3s_version
-    disable_components  = join(",", var.k3s_disable_components)
+    ssh_host           = var.ssh_host
+    ssh_port           = tostring(var.ssh_port)
+    ssh_user           = var.ssh_user
+    ssh_key_path       = var.ssh_private_key_path
+    sudo_prefix        = local.sudo_prefix
+    k3s_version        = var.k3s_version
+    disable_components = join(",", var.k3s_disable_components)
   }
 
   connection {
     type        = "ssh"
-    host        = var.ssh_host
-    port        = var.ssh_port
-    user        = var.ssh_user
-    private_key = file(var.ssh_private_key_path)
+    host        = self.triggers.ssh_host
+    port        = tonumber(self.triggers.ssh_port)
+    user        = self.triggers.ssh_user
+    private_key = file(pathexpand(self.triggers.ssh_key_path))
   }
 
   provisioner "remote-exec" {
@@ -33,7 +40,7 @@ resource "null_resource" "k3s_install" {
     when       = destroy
     on_failure = continue
     inline = [
-      "${local.sudo_prefix}sh -c 'test -x /usr/local/bin/k3s-uninstall.sh && /usr/local/bin/k3s-uninstall.sh || true'",
+      "${self.triggers.sudo_prefix}sh -c 'test -x /usr/local/bin/k3s-uninstall.sh && /usr/local/bin/k3s-uninstall.sh || true'",
     ]
   }
 }

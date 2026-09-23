@@ -29,10 +29,17 @@
 
   // Typo, rayons, ombre
   --font-family: 'Segoe UI', system-ui, sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.85rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.75rem;
+  --font-size-2xl: 2.25rem;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-pill: 999px;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 6px 16px rgba(0, 0, 0, 0.08);
 
   // Espacements
   --space-1: 0.35rem;

@@ -2,7 +2,15 @@
 # --autogenerate`, qui générerait alors un drop de sa table.
 
 from app.models.audit_log import AuditLog
-from app.models.energy import Alert, Dataset, Prediction, Reading, Recommendation, Site
+from app.models.energy import (
+    Alert,
+    Dataset,
+    DriftReport,
+    Prediction,
+    Reading,
+    Recommendation,
+    Site,
+)
 from app.models.login_attempt import LoginAttempt
 from app.models.password_reset_attempt import PasswordResetAttempt
 from app.models.password_reset_token import PasswordResetToken
@@ -14,6 +22,7 @@ __all__ = [
     "AppUser",
     "AuditLog",
     "Dataset",
+    "DriftReport",
     "LoginAttempt",
     "PasswordResetAttempt",
     "PasswordResetToken",

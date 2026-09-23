@@ -12,7 +12,7 @@ Les quatre couches existent désormais, portées par l'authentification.
 
 ```mermaid
 flowchart TB
-  ep["endpoints<br/>health, auth, users, sites, alerts,<br/>recommendations, stats, readings, sensors, predictions"]
+  ep["endpoints<br/>health, auth, users, sites, alerts,<br/>recommendations, stats, readings, sensors,<br/>predictions, monitoring"]
   sc["schemas<br/>Pydantic"]
   sv["services<br/>AuthService, UserService,<br/>SiteService, AlertService, RecommendationService,<br/>StatsService, ReadingService, SensorService, PredictionService"]
   rp["repositories<br/>user, refresh_token,<br/>login_attempt, audit_log,<br/>site, alert, recommendation, reading, prediction"]
@@ -103,7 +103,7 @@ démarre ne prouve rien sur la base, la première connexion réelle a lieu au pr
 | `APP_LOGIN_MAX_FAILURES_PER_IDENTIFIER` | `50` | Signature d'une attaque distribuée |
 | `APP_TRUST_PROXY_HEADERS` | `false` | À vrai derrière un proxy, sinon le compteur par IP devient global |
 | `APP_EXPOSE_API_DOCS` | déduit | Faux en `staging` et `prod` si non renseigné |
-| `APP_METRICS_TOKEN` | absent | Si présent, `/metrics` exige `Authorization: Bearer` |
+| `APP_METRICS_TOKEN` | absent | Si présent et non vide, `/metrics` exige `Authorization: Bearer`. Vide vaut absent |
 
 Cinq gardes refusent de démarrer plutôt que de laisser passer une erreur silencieuse :
 secret de moins de 32 caractères ou laissé à sa valeur d'exemple, `debug` en `staging` ou
@@ -151,6 +151,7 @@ Deux fichiers d'environnement, deux usages : `.env` à la racine alimente `docke
 | GET | `/api/v1/readings` | Historique des lectures, filtrable par `site_id`, fenêtre `start`/`end` (24h par défaut, 90 jours maximum) et paginé par `limit`/`offset`. `lecteur` | 400, 401, 403, 422, 500 |
 | GET | `/api/v1/sensors/status` | État de santé des capteurs par site, dérivé de la dernière lecture. `admin` | 401, 403, 500 |
 | GET | `/api/v1/predictions` | Dernière prévision de consommation par site, calculée hors ligne par le pipeline de scoring (`ml/`). `lecteur` | 401, 403, 500 |
+| GET | `/api/v1/monitoring/drift` | Dernier rapport de dérive par site, plus la ligne globale. `operateur` | 401, 403, 422, 500 |
 | GET | `/metrics` | Format Prometheus, hors du schéma. Jeton requis si `APP_METRICS_TOKEN` est posé | |
 | GET | `/docs`, `/redoc`, `/openapi.json` | Hors du schéma. Fermés en `staging` et en `prod` | |
 
@@ -222,6 +223,30 @@ métier, portée par le service) plutôt que `422` (réservé à la validation s
 par exemple `limit` hors bornes). Un datetime sans fuseau dans `start`/`end` est traité comme de
 l'UTC plutôt que rejeté : le comparer tel quel à `reading.timestamp` (`timestamptz`) échouerait
 côté pilote, en `500` plutôt qu'un refus propre.
+
+### Surveillance de dérive
+
+`DriftService.evaluate()` joint `prediction` et `reading` sur `(site_id, target_at = timestamp)`
+et compare deux fenêtres vives de 168 h, la récente et celle qui la précède. Il rend une ligne par
+site plus une ligne globale, que `DriftRepository.enregistre()` écrit dans `drift_report` avec
+`ON CONFLICT DO NOTHING` sur `uq_drift_report_window` : rejouer la commande sur la même fenêtre
+n'ajoute rien.
+
+| Métrique | Ce qu'elle dit |
+|---|---|
+| `mae` | Erreur moyenne en kWh, la métrique même qu'optimise LightGBM |
+| `bias` | Erreur moyenne **signée** : c'est elle qui distingue un modèle plus bruyant d'un modèle qui se trompe systématiquement du même côté. Lue et servie, elle ne fait basculer le verdict que sous `--bias-threshold`, faute d'un seuil en kWh transposable d'un site à l'autre ([ADR 0013](../adr/0013-surveillance-de-derive-dans-le-backend.md)) |
+| `mape` | Comparable entre sites de tailles différentes, hors réalisés nuls |
+| `coverage_ratio` | Part des prévisions disponibles qui ont trouvé leur réalisé : mesure le pipeline, pas le modèle |
+| `insufficient_data_ratio` | Part des sites privés d'historique suffisant |
+| `model_references` | Les modèles vus dans la fenêtre : une MAE qui saute à l'instant où le modèle change est une régression de réentraînement, pas une dérive |
+
+Le verdict a trois valeurs, `stable`, `derive` et `indetermine` : sous un nombre minimal
+d'observations, le service dit qu'il ne sait pas plutôt que de rendre un chiffre trompeur. La
+fenêtre est fermée à droite par un délai de grâce de 2 h, le temps que l'ingestion livre le
+réalisé de la dernière heure. `python -m app.monitoring.drift` l'exécute, le DAG `derive`
+l'ordonnance, et `GET /api/v1/monitoring/drift` sert le dernier rapport de chaque site. Les
+arbitrages sont dans l'[ADR 0013](../adr/0013-surveillance-de-derive-dans-le-backend.md).
 
 ### Détection d'alertes internes
 
@@ -331,8 +356,10 @@ pas prise :
 | `license_info` | Aucune licence n'est choisie |
 | `contact` | Aucun canal de support n'existe |
 
-Deux schémas de sécurité sont déclarés : `Jeton d'accès` pour le porteur JWT, et
-`Cookie de rafraîchissement` pour `/auth/refresh` et `/auth/logout`. **Le second est purement
+Deux schémas de sécurité sont déclarés : `JetonAcces` pour le porteur JWT, et
+`CookieRafraichissement` pour `/auth/refresh` et `/auth/logout`, des noms ASCII délibérés (issue
+#41 : un outillage tiers comme ZAP peut mal analyser un nom de schéma accentué dans le contrat).
+**Le second est purement
 documentaire** : son `auto_error=False` garantit qu'il ne décide d'aucun refus. Le passer à vrai
 ferait répondre 403 avant d'atteindre `lit_le_cookie()`, et `/auth/refresh` cesserait de rendre le
 401 sur lequel le frontend déclenche sa déconnexion.
@@ -396,8 +423,13 @@ Le reste, par ordre de surface :
   écriture des journaux. C'est la troisième ligne de défense : la première est de ne rien passer
   de secret au logger, la deuxième de ne jamais mettre un jeton dans une URL.
 - En-têtes posés par l'application : `X-Content-Type-Options`, `X-Frame-Options`,
-  `Referrer-Policy`, plus `Cache-Control: no-store` sur `/auth/*`. HSTS et CSP appartiennent au
-  terminateur TLS, que l'application ne connaît pas : le reverse proxy les pose
+  `Referrer-Policy`, `Cross-Origin-Resource-Policy: same-origin`, plus `Cache-Control: no-store`
+  sur `/auth/*`. Le CORP est fixé à `same-origin` parce qu'aucun client légitime ne charge l'API
+  en `no-cors` (image, script, média) depuis une autre origine : le frontend l'appelle en relatif
+  (`/api/v1`), sur sa propre origine, via `proxy.conf.json` en dev et le reverse proxy nginx
+  (`infra/proxy/conf.d/enervision.conf`) en recette et en production. Les appels `HttpClient`, en
+  mode `cors`, n'y sont de toute façon pas soumis. HSTS et CSP appartiennent au terminateur TLS, que
+  l'application ne connaît pas : le reverse proxy les pose
   ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)).
 - Le conteneur tourne en utilisateur non-root, avec un `HEALTHCHECK` sur `/api/v1/health/live`.
 - TLS, limitation de débit au frontal et journal d'accès sont portés par le reverse proxy.
@@ -408,7 +440,17 @@ Le reste, par ordre de surface :
 
 - Journalisation par `dictConfig` : format console en développement, JSON dès `APP_ENV=prod`.
   `sqlalchemy.engine` est forcé à `WARNING` pour ne pas noyer les journaux.
-- `/metrics` au format Prometheus. **Aucun collecteur ne le lit** : `monitoring/` est vide.
+- `/metrics` au format Prometheus (`prometheus-fastapi-instrumentator`), scruté toutes les 15 s
+  par Prometheus sous le profil `monitoring` ([60-observabilite.md](60-observabilite.md)).
+  - **Séries publiées.** `http_requests_total` par route, méthode et classe de statut, et
+    `http_request_duration_seconds` par route, avec des seaux de 50 ms à 2,5 s autour du seuil
+    de charge de 500 ms (ADR 0015). Aussi `http_request_duration_highr_seconds`, fin mais sans
+    libellé de route, et les métriques du processus.
+  - **Exclusions.** Les sondes `/health/*` et `/metrics` lui-même sont exclus : la sonde Docker
+    de 30 s fausserait débit et latences.
+  - **Un registre par application** (`_registre_de_metriques()` dans `main.py`). Le registre
+    global de `prometheus_client` n'accepte chaque métrique qu'une fois : toute application créée
+    après la première, dans les tests notamment, ne mesurait rien.
 
 ## Tests
 

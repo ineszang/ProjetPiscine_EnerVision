@@ -2,28 +2,20 @@ name: ML
 
 # Piège : la version de Python vient de ml/.python-version, et doit rester en 3.14 (cf.
 # .github/workflows/backend.yml, même contrainte).
+# Pourquoi : aucun déclencheur propre. ci.yml l'appelle aussi quand les migrations ou les modèles
+# du backend changent, dont dépend le job `integration` (ADR 0014).
 
 on:
-  push:
-    paths:
-      - "ml/**"
-      - ".github/workflows/ml.yml"
-  pull_request:
-    paths:
-      - "ml/**"
-      - ".github/workflows/ml.yml"
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: ml-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   verification:
     name: Lint, typage et tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ml
@@ -32,17 +24,19 @@ jobs:
       - name: Récupère le dépôt
         uses: actions/checkout@v7
 
+      # Action tierce, épinglée sur le commit du tag (règle Sonar githubactions:S7637).
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: ml/uv.lock
+          prune-cache: false
 
       - name: Installe l'interpréteur déclaré par .python-version
         run: uv python install
 
-      - name: Synchronise les dépendances sans dévier du verrou
-        run: uv sync --all-groups --frozen
+      - name: Synchronise les dépendances sur le verrou
+        run: uv sync --all-groups --locked
 
       - name: Vérifie le formatage
         run: uv run ruff format --check .
@@ -53,14 +47,103 @@ jobs:
       - name: Typage
         run: uv run mypy enervision_ml tests
 
-      # Aucun test ne touche PostgreSQL ni MLflow distant : tout tourne sur donnees
-      # synthetiques ou un magasin SQLite local jetable (cf. ml/tests/test_train.py).
-      - name: Tests
-        run: uv run pytest
+      # Les tests exigeant une base portent le marqueur `integration`, écarté par défaut et
+      # joué par le job `integration` ci-dessous.
+      - name: Tests et couverture
+        run: uv run pytest --cov-report=xml
+
+      - name: Verse la couverture pour Sonar
+        uses: actions/upload-artifact@v7
+        with:
+          name: ml-coverage
+          path: ml/coverage.xml
+          if-no-files-found: error
+
+  # Piège : le schéma de la base ML est celui du backend (apps/backend/alembic, propriétaire du
+  # schéma). Le reconstruire ici à la main rendrait ce job vert sur une base qui n'est pas la nôtre.
+  integration:
+    name: ML - DB et chaîne ML - DB - API
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      db:
+        image: timescale/timescaledb-ha:pg17
+        env:
+          POSTGRES_USER: enervision
+          POSTGRES_PASSWORD: change_me
+          POSTGRES_DB: enervision_test
+        ports:
+          - "5433:5432"
+        options: >-
+          --health-cmd "pg_isready -U enervision -d enervision_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 40s
+
+    env:
+      # Deux variables, deux dialectes : Alembic et l'API parlent asyncpg, le pipeline ML parle
+      # psycopg en synchrone. Cf. docs/ML-START.md, section 1.
+      DATABASE_URL: postgresql+asyncpg://enervision:change_me@localhost:5433/enervision_test
+      ML_DATABASE_URL: postgresql+psycopg://enervision:change_me@localhost:5433/enervision_test
+      APP_SECRET_KEY: secret-de-test-assez-long-pour-le-validateur
+      PGPASSWORD: change_me
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      - name: Installe uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            ml/uv.lock
+            apps/backend/uv.lock
+          prune-cache: false
+
+      - name: Installe l'interpréteur déclaré par .python-version
+        working-directory: ml
+        run: uv python install
+
+      - name: Synchronise le pipeline ML sur le verrou
+        working-directory: ml
+        run: uv sync --all-groups --locked
+
+      # Le backend est installé ici parce qu'il porte les migrations, seule source du schéma, et
+      # le test de chaîne, qui interroge l'API.
+      - name: Synchronise le backend sur le verrou
+        working-directory: apps/backend
+        run: uv sync --all-groups --locked
+
+      # db/init/110-test-database.sql n'est pas monté ici, et sans l'extension la première
+      # révision Alembic refuse de s'appliquer.
+      - name: Active TimescaleDB sur la base de test
+        run: psql -h localhost -p 5433 -U enervision -d enervision_test -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
+
+      - name: Applique les migrations du backend, propriétaire du schéma
+        working-directory: apps/backend
+        run: uv run alembic upgrade head
+
+      # Couverture désactivée : ce job ne joue qu'une partie de la suite, son taux n'aurait pas
+      # de sens (même raison que backend.yml).
+      - name: Tests ML exigeant une base
+        working-directory: ml
+        run: uv run pytest -m integration --no-cov
+
+      # Lance les vrais binaires enervision_ml.train et .score en sous-processus, comme les DAGs
+      # ml_train et ml_score, puis relit le résultat par GET /api/v1/predictions.
+      - name: Chaîne complète ML vers DB vers API
+        working-directory: apps/backend
+        env:
+          ML_PYTHON: ${{ github.workspace }}/ml/.venv/bin/python
+        run: uv run pytest -m chaine --no-cov
 
   sast:
     name: Analyse statique de sécurité
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: ml
@@ -72,7 +155,9 @@ jobs:
       # Pourquoi : pas de cache ici. uvx n'installe pas le projet, le verrou n'alimente donc
       # aucune clé de cache ; la seule roue téléchargée est celle de Bandit.
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: false
 
       - name: Analyse le code livré (bloquant à partir de MEDIUM)
         run: uvx bandit==1.9.4 --recursive enervision_ml --severity-level medium --confidence-level medium

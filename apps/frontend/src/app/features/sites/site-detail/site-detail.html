@@ -81,5 +81,16 @@
     }
   }
 
+  <section class="recommendations-section">
+    <h2>Recommandations</h2>
+    <app-recommendation-list [siteId]="siteId() ?? null" [sites]="siteAsList()" />
+    <a
+      routerLink="/recommendations"
+      [queryParams]="{ site: siteId() }"
+      class="ev-link recommendations-section__link"
+      >Voir dans la vue recommandations</a
+    >
+  </section>
+
   <a routerLink="/sites" class="ev-link">Retour aux sites</a>
 </div>

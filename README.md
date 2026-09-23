@@ -23,11 +23,12 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Backend    | FastAPI, Python 3.14                | `apps/backend`      | En place    |
 | Frontend   | Angular 22, Node 26                 | `apps/frontend`     | En place |
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | En place    |
-| ETL        | Apache Airflow                      | `etl/airflow`       | Trois DAGs    |
+| ETL        | Apache Airflow                      | `etl/airflow`       | Cinq DAGs     |
 | Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
 | Reverse proxy | Nginx, TLS                       | `infra/proxy`       | En place      |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | En place |
-| Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | A initialiser |
+| Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | En place, profil Compose |
+| Tests e2e et de charge | Playwright, k6              | `tests`             | En place |
 | ML         | LightGBM, MLflow                    | `ml`                | En place |
 
 Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Le frontend
@@ -48,9 +49,10 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 ├── db/
 │   ├── init/           Bootstrap PostgreSQL + TimescaleDB
 │   ├── migrations/     Migrations SQL versionnees
-│   └── seeds/          Jeux de donnees de reference
+│   ├── roles/          Roles PostgreSQL hors schema (supervision)
+│   └── seeds/          Jeu de demonstration des tests
 ├── etl/airflow/
-│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes)
+│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes, imports, dérive)
 │   ├── plugins/        Operateurs et hooks maison
 │   ├── include/        Requetes SQL et ressources des DAGs
 │   └── tests/          Tests d'integrite des DAGs
@@ -64,6 +66,9 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   ├── prometheus/     Collecte et regles d'alerte
 │   ├── grafana/        Provisioning et dashboards
 │   └── alertmanager/   Routage des alertes
+├── tests/
+│   ├── e2e/            Parcours Playwright contre la stack
+│   └── load/           Scenarios de charge k6
 ├── docs/               ADR et vues d'architecture
 └── scripts/            Outillage local
 ```
@@ -77,12 +82,29 @@ Prerequis : uv, Docker, Node 24 LTS (npm fourni). Le poste doit disposer de Pyth
 cp .env.example .env                               # variables de docker-compose
 cp apps/backend/.env.example apps/backend/.env     # variables du backend hors conteneur
 
-make db-up     # PostgreSQL + TimescaleDB, publie sur le port 5433
-make install   # dependances du backend et du frontend
-make migrate   # applique les migrations Alembic
-make dev       # backend sur http://localhost:8000 (docs sur /docs), frontend sur http://localhost:4200
+make install   # dependances du backend, du frontend, du ML et des DAGs
+make dev       # toute la stack, voir ci-dessous
 make check     # lint + typage + tests
 ```
+
+`make dev` enchaine tout : demarrage des services conteneurises (base sur le port 5433, Mailpit,
+Airflow), migrations Alembic, peuplement de demonstration si les alertes manquent, puis backend
+et frontend en rechargement a chaud sur le poste.
+
+| Service | Adresse |
+|---|---|
+| Backend | <http://localhost:8000> (documentation sur `/docs`) |
+| Frontend | <http://localhost:4200> |
+| Airflow | <http://localhost:8080> (`AIRFLOW_ADMIN_USERNAME` / `AIRFLOW_ADMIN_PASSWORD` du `.env`) |
+| Mailpit | <http://localhost:8025> |
+
+Le `.env` doit porter les cles Airflow avant le premier `make dev` : `AIRFLOW_FERNET_KEY`,
+`AIRFLOW_API_SECRET_KEY`, `AIRFLOW_JWT_SECRET`, `AIRFLOW_APP_SECRET_KEY` et
+`AIRFLOW_ADMIN_PASSWORD`. Sans elles `airflow-init` refuse de demarrer, et `airflow-apiserver`,
+`airflow-scheduler` et `airflow-dag-processor` avec lui.
+
+Les cibles d'origine restent disponibles pour ne demarrer qu'une partie : `make db-up`,
+`make airflow-up`, `make dev-backend`, `make dev-frontend`.
 
 `make help` liste les cibles disponibles.
 
@@ -90,12 +112,23 @@ Deux fichiers d'environnement, deux usages : `.env` a la racine alimente `docker
 `apps/backend/.env` alimente le backend lance sur le poste. Le port 5433 est publie plutot que
 5432, souvent deja pris par une autre base.
 
-La boucle de developpement est `make db-up` puis `make dev` : seule la base tourne en
-conteneur, le backend et le frontend tournent tous les deux sur le poste, lances ensemble par
-`make dev` (logs entrelaces dans le meme terminal, Ctrl+C arrete les deux). `make dev-backend`
-et `make dev-frontend` restent disponibles pour lancer un seul des deux. Le service `backend`
-du `docker-compose.yml` sert la stack complete et la recette, et n'embarque pas le source, donc
-toute modification y demande un `docker compose up -d --build backend`.
+Le backend et le frontend tournent sur le poste, lances ensemble par `make dev` (logs
+entrelaces dans le meme terminal, Ctrl+C arrete les deux) ; la base, Mailpit et Airflow tournent
+en conteneur. Le service `backend` du `docker-compose.yml` sert la stack complete et la recette,
+et n'embarque pas le source, donc toute modification y demande un
+`docker compose up -d --build backend`.
+
+### Donnees de demonstration
+
+Le jeu historique s'arrete au 31/12/2024. `make demo-data` renseigne les tables que les vues
+alertes, recommandations et previsions lisent, en ancrant le scoring et la detection a cette
+date (`DEMO_NOW`) plutot qu'a l'horloge reelle, qui ne verrait qu'un parc muet depuis des mois.
+La cible ne fait rien si des alertes existent deja ; `make demo-data-force` rejoue les trois
+etapes, toutes idempotentes en base.
+
+Un volume `pgdata` cree avant `db/init/120-airflow-database.sql` n'a pas de base `airflow` :
+`db/init` ne rejoue qu'a la premiere initialisation. `make db-ensure-airflow`, appelee par
+`make dev` et `make airflow-up`, la cree au besoin, sans detruire les donnees applicatives.
 
 Verifier que la base repond et que l'extension est chargee :
 
@@ -117,6 +150,27 @@ Le navigateur avertit d'un émetteur inconnu : Let's Encrypt reste hors d'attein
 nom de domaine public ne résout vers la machine. Routage, mode ACME et renouvellement dans
 [`infra/proxy/README.md`](infra/proxy/README.md) ; la décision et ses motifs dans
 [l'ADR 0007](docs/adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
+
+Sur la VM ENI, deux environnements cohabitent, recette sur `dev` et production sur `main`,
+chacun dans son dossier et son projet Compose : `scripts/provision-host.sh` les prépare, le
+workflow `deploy.yml` les redéploie par un runner auto-hébergé, une fois la CI du commit poussé
+verte ([ADR 0014](docs/adr/0014-pipeline-ci-unique-et-deploiement-conditionne.md)). Ports, noms
+d'hôte et garde-fous dans [`docs/architecture/10-infra.md`](docs/architecture/10-infra.md) et
+[l'ADR 0009](docs/adr/0009-deux-environnements-compose-sur-la-vm-eni.md).
+
+## Tests de bout en bout, charge et supervision
+
+| Besoin | Commandes | Détail |
+|---|---|---|
+| Parcours utilisateur (Playwright) | `make e2e-install`, puis `make e2e-prepare e2e` contre `make dev` | [`tests/e2e/README.md`](tests/e2e/README.md) |
+| Tir de charge (k6) | `make load-smoke`, `load-test`, `load-stress`, `load-limits` | [`tests/load/README.md`](tests/load/README.md) |
+| Supervision | `make monitoring-up`, Grafana sur <http://localhost:3001> | [`monitoring/README.md`](monitoring/README.md) |
+
+La CI joue les parcours, un tir de fumée et le contrôle de la limitation de débit à chaque PR
+qui touche l'application, contre la stack de prod derrière le proxy
+([ADR 0015](docs/adr/0015-tests-e2e-et-de-charge-contre-la-stack-compose.md)). La supervision
+est active en prod, à la demande ailleurs
+([ADR 0016](docs/adr/0016-supervision-en-profil-compose.md)).
 
 ## Conventions
 

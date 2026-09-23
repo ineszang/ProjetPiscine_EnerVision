@@ -22,6 +22,12 @@ apps/frontend/.angular/
 npm-debug.log*
 yarn-error.log*
 
+# Tests de bout en bout et de charge : rapports générés et identifiants des comptes de test
+playwright-report/
+blob-report/
+tests/e2e/.comptes.json
+tests/load/results/
+
 # Terraform
 .terraform/
 # .terraform.lock.hcl est versionne (pas ignore) pour figer les versions de provider entre contributeurs/CI
@@ -40,7 +46,6 @@ kubeconfig
 # Airflow
 etl/airflow/logs/
 airflow.db
-airflow-webserver.pid
 standalone_admin_password.txt
 
 # Environnement et secrets
@@ -55,8 +60,6 @@ secrets/
 data/raw/*
 !data/raw/.gitkeep
 *.sqlite3
-monitoring/grafana/data/
-monitoring/prometheus/data/
 
 # ML : jeu de donnees, modeles entraines et suivi MLflow local, tous generes/volumineux
 ml/data/
@@ -64,7 +67,8 @@ ml/models/*
 !ml/models/.gitkeep
 ml/mlruns/
 ml/mlartifacts/
-ml/mlflow.db
+ml/mlflow.db*
+ml/.env
 
 # Airflow : base sqlite locale generee par les tests d'integrite des DAGs (etl/airflow/tests)
 etl/airflow/tests/.airflow_home/

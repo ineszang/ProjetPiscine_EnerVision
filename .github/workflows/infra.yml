@@ -1,0 +1,102 @@
+name: Infra
+
+# Pourquoi : rien de ce qui décrit l'infrastructure ne s'exécute avant le déploiement. Terraform est
+# resté cassé sans que rien ne le dise, faute de job qui le joue : ce workflow n'applique rien, il
+# vérifie le Terraform, les fichiers Compose et les workflows eux-mêmes - jobs terraform, compose,
+# workflows. ci.yml choisit par ses entrées ceux qui tournent (ADR 0014).
+# Piège : la boucle Terraform parcourt `environments/*`, pour qu'une racine ajoutée soit couverte
+# sans toucher à ce fichier.
+
+on:
+  workflow_call:
+    inputs:
+      terraform:
+        type: boolean
+        default: false
+      compose:
+        type: boolean
+        default: false
+      workflows:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Formatage et validation Terraform
+    if: inputs.terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      # Action tierce, épinglée sur le commit du tag (règle Sonar githubactions:S7637).
+      - name: Installe Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.3
+          terraform_wrapper: false
+
+      - name: Vérifie le formatage
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: Valide chaque racine
+        run: |
+          for racine in infra/terraform/environments/*/; do
+            echo "::group::${racine}"
+            terraform -chdir="${racine}" init -backend=false -input=false
+            terraform -chdir="${racine}" validate
+            echo "::endgroup::"
+          done
+
+  compose:
+    name: Validation des fichiers Compose et de la supervision
+    if: inputs.compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      # Compose interpole tout le fichier : les `:?` exigent une valeur, pas un vrai secret.
+      - name: Prépare un .env d'exemple
+        run: cp .env.example .env
+
+      - name: Valide la stack de développement
+        run: docker compose config --quiet
+
+      - name: Valide la stack déployée, profils compris
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile acme --profile monitoring --profile load config --quiet
+
+      # Mêmes commandes que `make monitoring-check` : images et montages viennent du fichier Compose.
+      - name: Valide la configuration de Prometheus et ses règles
+        run: docker compose --profile monitoring run --rm --no-deps --entrypoint promtool prometheus check config /etc/prometheus/prometheus.yml
+
+      - name: Joue les tests unitaires des règles d'alerte
+        run: docker compose --profile monitoring run --rm --no-deps --entrypoint promtool prometheus test rules /etc/prometheus/tests/enervision.test.yml
+
+      - name: Valide la configuration d'Alertmanager
+        run: docker compose --profile monitoring run --rm --no-deps --entrypoint amtool alertmanager check-config /etc/alertmanager/alertmanager.yml
+
+      - name: Valide les tableaux de bord Grafana
+        run: for tableau in monitoring/grafana/dashboards/*.json; do jq empty "$tableau"; done
+
+  workflows:
+    name: Analyse des workflows
+    if: inputs.workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Récupère le dépôt
+        uses: actions/checkout@v7
+
+      # Image épinglée par tag, comme les images des fichiers Compose. Elle embarque shellcheck,
+      # qui analyse aussi les blocs `run:`.
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.12 -color

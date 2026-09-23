@@ -48,7 +48,8 @@ Statut : `Fait`.
   et refuse de s'appliquer si l'extension TimescaleDB manque.
 - Les révisions suivantes créent les tables liées à l'authentification :
   `app_user`, `login_attempt`, `audit_log` et `refresh_token`.
-- La révision `e6d2026091501` crée les six tables Data et déclare l'hypertable `reading`.
+- La révision `e6d2026091501` crée six des sept tables Data et déclare l'hypertable `reading`.
+- La révision `d3f1a2b7c904` ajoute `drift_report`, la septième.
 - La révision `c0adab96238c` ajoute les tables `password_reset_attempt`
   et `password_reset_token`.
 
@@ -261,8 +262,8 @@ Cette modélisation prend en compte :
 - leurs métadonnées JSON ;
 - les données de l'API Mock.
 
-Elle comprend six tables Data, depuis le stockage des mesures jusqu'aux recommandations proposées
-à l'utilisateur.
+Elle comprend sept tables Data, depuis le stockage des mesures jusqu'aux recommandations
+proposées à l'utilisateur, et jusqu'au suivi de la dérive du modèle.
 
 ### Schéma de données
 
@@ -286,10 +287,21 @@ Chaque table remplit un rôle précis dans le traitement et l'exploitation des d
 | `prediction` | Conserver les prévisions, leur période cible et la référence du modèle utilisé | Traitements ML d'EnerVision |
 | `alert` | Enregistrer les alertes, leur type, leur gravité et leur message | API Mock `/alerts` et détections EnerVision |
 | `recommendation` | Proposer des actions et expliquer la règle qui les motive | Règles métier d'EnerVision |
+| `drift_report` | Suivre l'écart entre prévisions et réalisé, par site et tous sites confondus | Surveillance de dérive d'EnerVision |
 
+Le scoring (`ml_score`) charge le modèle depuis un fichier local (`models/lightgbm-consumption.txt`)
+et trace son empreinte SHA-256 dans `prediction.model_reference`. Il ne lit aucune version depuis
+le Model Registry MLflow (`ml/`) : ce registre sert aujourd'hui à la traçabilité des
+entraînements, pas au déploiement du modèle de scoring.
 Les anomalies historiques décrites dans les JSON sont conservées dans `dataset.metadata`.
 
 Elles servent à l'analyse des données et ne sont pas considérées comme des alertes actuelles.
+
+Les lignes de `drift_report` sont écrites par `app.monitoring.drift`, ordonnancé par le DAG
+`derive`. Une ligne dont le `site_id` est `NULL` porte le résultat global, tous sites confondus :
+c'est pourquoi l'unicité passe par un index sur `coalesce(site_id, '')` et non par une contrainte,
+qui ne dédoublonnerait jamais deux lignes globales. Le calcul, ses seuils et ce qu'il refuse de
+comparer sont dans l'[ADR 0013](../adr/0013-surveillance-de-derive-dans-le-backend.md).
 
 Les lignes de `recommendation` sont écrites par le moteur de règles du backend
 (`app/services/recommendation_rules.py`), déclenché par `POST /api/v1/recommendations/generate`,
@@ -304,6 +316,7 @@ n'ajoute aucune ligne.
 - Les mesures API ne sont pas rattachées à un dataset historique.
 - Une alerte peut être associée à une prévision du même site.
 - Une alerte peut donner lieu à plusieurs recommandations.
+- Un site possède plusieurs rapports de dérive ; un rapport global n'est rattaché à aucun site.
 
 ## Ingestion des données historiques
 

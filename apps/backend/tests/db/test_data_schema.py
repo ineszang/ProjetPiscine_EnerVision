@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -9,7 +9,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.core.config import get_settings
-from app.models.energy import Alert, Dataset, Prediction, Reading, Recommendation, Site
+from app.models.energy import (
+    Alert,
+    Dataset,
+    DriftReport,
+    Prediction,
+    Reading,
+    Recommendation,
+    Site,
+)
 
 pytestmark = pytest.mark.integration
 MOMENT = datetime(2024, 1, 1, tzinfo=UTC)
@@ -262,6 +270,65 @@ async def test_recommendation_is_unique_when_alert_and_rule_match(
         explanation="Pic détecté",
         rule_reference="spike-v1",
     )
+    await data_connection.execute(statement)
+
+    savepoint = data_connection.begin_nested()
+
+    with pytest.raises(IntegrityError):
+        async with savepoint:
+            await data_connection.execute(statement)
+
+
+def _rapport(**remplacements: object) -> dict[str, object]:
+    defauts: dict[str, object] = {
+        "site_id": None,
+        "window_start": MOMENT,
+        "window_end": MOMENT,
+        "n_observations": 12,
+        "model_references": ["lightgbm-aaa"],
+        "status": "stable",
+        "reason": None,
+    }
+    return {**defauts, **remplacements}
+
+
+async def test_drift_report_rejects_an_unknown_status(data_connection: AsyncConnection) -> None:
+    statement = insert(DriftReport).values(**_rapport(status="douteux", reason="x"))
+    savepoint = data_connection.begin_nested()
+
+    with pytest.raises(IntegrityError):
+        async with savepoint:
+            await data_connection.execute(statement)
+
+
+async def test_drift_report_rejects_a_drift_without_a_reason(
+    data_connection: AsyncConnection,
+) -> None:
+    statement = insert(DriftReport).values(**_rapport(status="derive"))
+    savepoint = data_connection.begin_nested()
+
+    with pytest.raises(IntegrityError):
+        async with savepoint:
+            await data_connection.execute(statement)
+
+
+async def test_drift_report_accepts_one_global_row_without_a_site(
+    data_connection: AsyncConnection,
+) -> None:
+    identifiant = (
+        await data_connection.execute(
+            insert(DriftReport).values(**_rapport()).returning(DriftReport.drift_report_id)
+        )
+    ).scalar_one()
+
+    assert identifiant is not None
+
+
+async def test_drift_report_is_unique_when_window_and_site_match(
+    data_connection: AsyncConnection,
+) -> None:
+    fenetre = MOMENT + timedelta(days=1)
+    statement = insert(DriftReport).values(**_rapport(window_end=fenetre))
     await data_connection.execute(statement)
 
     savepoint = data_connection.begin_nested()

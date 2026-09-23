@@ -43,6 +43,10 @@ NUMERIC_COLUMNS = [
     "capacity_kw",
 ]
 
+# Piege : `is_working_hours` est nullable et entre dans les features. Toujours `float64`, jamais
+# `bool` : `astype(bool)` ferait un `True` d'une absence, et les deux chargeurs divergeraient.
+FLAG_COLUMNS = ["is_working_hours"]
+
 _READING_QUERY = text(
     """
     SELECT
@@ -76,7 +80,7 @@ _RECENT_READING_QUERY = text(
         s.capacity_kw
     FROM reading r
     JOIN site s ON s.site_id = r.site_id
-    WHERE r.timestamp >= :since
+    WHERE r.timestamp >= :since AND r.timestamp <= :until
     ORDER BY r.site_id, r.timestamp
     """
 )
@@ -90,22 +94,34 @@ def load_from_database(connection: Connectable) -> pd.DataFrame:
     return _typer(frame[OUTPUT_COLUMNS])
 
 
-def load_recent_from_database(connection: Connectable, *, since: datetime) -> pd.DataFrame:
-    """Lit `reading` + `site` depuis `since` seulement, pour le scoring.
+def load_recent_from_database(
+    connection: Connectable, *, since: datetime, until: datetime
+) -> pd.DataFrame:
+    """Lit `reading` + `site` sur la fenetre `[since, until]`, pour le scoring.
 
-    Piege evite : un `SELECT` sans borne sur l'hypertable complete juste pour scorer le prochain
-    pas horaire serait la meme erreur que celle corrigee sur `GET /readings` (fenetre non
+    Piege evite cote bas : un `SELECT` sans borne sur l'hypertable complete juste pour scorer le
+    prochain pas horaire serait la meme erreur que celle corrigee sur `GET /readings` (fenetre non
     plafonnee sur une table pouvant porter des annees d'historique).
+
+    Piege evite cote haut : `until` est obligatoire, et c'est ce qui donne son sens a `--now`.
+    Sans lui, `build_scoring_frame` repartait de la derniere lecture de toute la table quel que
+    soit l'instant demande, donc `target_at` valait toujours "fin du jeu + 1h" et l'age de la
+    derniere lecture devenait negatif sans que rien ne le signale.
     """
-    frame = pd.read_sql(_RECENT_READING_QUERY, connection, params={"since": since})
+    frame = pd.read_sql(_RECENT_READING_QUERY, connection, params={"since": since, "until": until})
     return _typer(frame[OUTPUT_COLUMNS])
 
 
 def load_from_csv(csv_path: Path) -> pd.DataFrame:
-    """Lit le jeu de donnees CSV historique (chemin de demarrage, hors base)."""
+    """Lit le jeu de donnees CSV historique (chemin de demarrage, hors base).
+
+    `is_working_hours` passe par `_typer` comme le chemin base, et non par un `astype(bool)` : le
+    fichier livre porte cette colonne en `0`/`1`, donc une case vide arrive en `NaN` et `astype`
+    la rendrait `True` sans rien signaler. Les deux chargeurs rendent ainsi le meme schema, ce que
+    `docs/ML-START.md` promet.
+    """
     frame = pd.read_csv(csv_path, parse_dates=["timestamp"])
     frame["capacity_kw"] = float("nan")
-    frame["is_working_hours"] = frame["is_working_hours"].astype(bool)
 
     return _typer(frame[OUTPUT_COLUMNS])
 
@@ -120,6 +136,10 @@ def _typer(frame: pd.DataFrame) -> pd.DataFrame:
     n'importe quelle autre colonne mesuree entierement absente sur une fenetre de scoring, pas
     seulement `capacity_kw`.
 
+    Les colonnes de `FLAG_COLUMNS` sont en outre ramenees a `float64` : ce sont des drapeaux
+    nullables, et c'est le seul dtype qui survive a l'absence sans inventer de valeur. Sans cela,
+    le meme chargeur rendrait `bool`, `int64` ou `float64` selon le contenu de la fenetre lue.
+
     Piege additionnel : `NUMERIC_COLUMNS` inclut `consumption_kwh`, la cible du modele, pas
     seulement des variables explicatives. Une valeur non numerique y devient donc silencieusement
     `NaN` aussi bien a l'entrainement (ou `train.py` l'exclura ensuite via son `dropna`) qu'au
@@ -128,4 +148,6 @@ def _typer(frame: pd.DataFrame) -> pd.DataFrame:
     typee = frame.copy()
     for colonne in NUMERIC_COLUMNS:
         typee[colonne] = pd.to_numeric(typee[colonne], errors="coerce")
+    for colonne in FLAG_COLUMNS:
+        typee[colonne] = pd.to_numeric(typee[colonne], errors="coerce").astype("float64")
     return typee

@@ -6,42 +6,20 @@ name: Airflow
 # Docker, dans son propre environnement (cf. etl/airflow/Dockerfile).
 #
 # Piège : l'image COPY les fichiers de dépendances et le code de ml/ et de apps/backend/. Une
-# modification de l'un ou de l'autre peut donc casser sa construction, d'où ces chemins dans
-# les déclencheurs, alors même que ce workflow ne teste ni le modèle ni l'API.
+# modification de l'un ou de l'autre peut donc casser sa construction : le filtre `airflow` de
+# ci.yml, qui appelle ce workflow, inclut ces chemins alors qu'il ne teste ni le modèle ni l'API.
 
 on:
-  push:
-    paths:
-      - "etl/airflow/**"
-      - "ml/pyproject.toml"
-      - "ml/uv.lock"
-      - "ml/enervision_ml/**"
-      - "apps/backend/pyproject.toml"
-      - "apps/backend/uv.lock"
-      - "apps/backend/app/**"
-      - ".github/workflows/airflow.yml"
-  pull_request:
-    paths:
-      - "etl/airflow/**"
-      - "ml/pyproject.toml"
-      - "ml/uv.lock"
-      - "ml/enervision_ml/**"
-      - "apps/backend/pyproject.toml"
-      - "apps/backend/uv.lock"
-      - "apps/backend/app/**"
-      - ".github/workflows/airflow.yml"
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: airflow-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   verification:
     name: Lint et intégrité des DAGs
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: etl/airflow
@@ -50,17 +28,19 @@ jobs:
       - name: Récupère le dépôt
         uses: actions/checkout@v7
 
+      # Action tierce, épinglée sur le commit du tag (règle Sonar githubactions:S7637).
       - name: Installe uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: etl/airflow/uv.lock
+          prune-cache: false
 
       - name: Installe l'interpréteur déclaré par .python-version
         run: uv python install
 
-      - name: Synchronise les dépendances sans dévier du verrou
-        run: uv sync --all-groups --frozen
+      - name: Synchronise les dépendances sur le verrou
+        run: uv sync --all-groups --locked
 
       - name: Vérifie le formatage
         run: uv run ruff format --check .
@@ -76,6 +56,7 @@ jobs:
   image:
     name: Construction de l'image
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Récupère le dépôt
@@ -92,11 +73,12 @@ jobs:
           bash -c "cd /opt/ml && env -u VIRTUAL_ENV uv run --no-sync python -m enervision_ml.train --help"
 
       # `--help` sort par argparse avant `get_settings()` : ni base ni secret requis, et
-      # l'import du module prouve que l'environnement /opt/backend est complet. Les deux
-      # commandes du DAG `alertes` sont couvertes, `app.cli` tirant tout FastAPI derrière lui.
-      - name: Vérifie que les deux commandes du DAG alertes s'importent sans réseau
+      # l'import des modules prouve que l'environnement /opt/backend est complet.
+      - name: Vérifie que les quatre commandes backend s'importent sans réseau
         run: >
           docker run --rm --network none enervision-airflow:ci
           bash -c "cd /opt/backend
           && env -u VIRTUAL_ENV uv run --no-sync python -m app.detection.internal_alerts --help
-          && env -u VIRTUAL_ENV uv run --no-sync python -m app.cli generate-recommendations --help"
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.cli generate-recommendations --help
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.etl.historical_import --help
+          && env -u VIRTUAL_ENV uv run --no-sync python -m app.etl.mock_api_import --help"

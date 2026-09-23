@@ -20,7 +20,7 @@
   @if (data(); as d) {
     <div class="sites-grid">
       @for (site of d.sites; track site.site_id) {
-        <ev-card class="site-card">
+        <ev-card class="site-card" data-testid="site-card">
           <div class="site-card__header">
             <span class="site-card__name">{{ site.site_name }}</span>
             <ev-badge [tone]="badgeToneForOverall(site.overall)">{{ site.overall }}</ev-badge>

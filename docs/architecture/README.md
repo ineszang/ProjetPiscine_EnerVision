@@ -15,12 +15,12 @@ contredisent, c'est l'ADR qui fait foi et la vue qui est en retard.
 | [31-contrat-authentification.md](31-contrat-authentification.md) | Ce que le frontend doit savoir pour coder la connexion |
 | [32-design-systeme-frontend.md](32-design-systeme-frontend.md) | Tokens CSS, composants `ev-*` partagés, règle anti-couleur-en-dur |
 | [40-data.md](40-data.md) | Frontières `db/` et `alembic/`, cycle de vie d'une mesure, modèle |
-| [50-cicd.md](50-cicd.md) | Workflows, gates bloquantes, SonarCloud, Dependabot, ce qui manque |
+| [50-cicd.md](50-cicd.md) | Orchestrateur `ci.yml`, gates bloquantes, e2e et charge, SonarCloud, Dependabot, ce qui manque |
+| [60-observabilite.md](60-observabilite.md) | Métriques, Prometheus, alertes, tableaux de bord Grafana, ce qui manque |
 
-La CI/CD a désormais son document : cinq workflows et seize jobs, c'est assez de matière pour
-qu'une section de plus dans une autre vue devienne illisible. L'observabilité, elle, n'en a
-toujours pas : `monitoring/` ne contient que des `.gitkeep`. Elle en sortira le jour où elle aura
-de la matière. Un fichier vide de plus n'aide personne.
+La CI/CD a son document : un orchestrateur et ses workflows de composant, c'est assez de
+matière pour qu'une section de plus dans une autre vue devienne illisible. L'observabilité a le
+sien depuis l'issue #26, qui lui a donné de la matière : collecte, alertes et tableaux de bord.
 
 L'orchestration Airflow, elle, en a depuis les issues #115 et #116 : trois DAGs, leur image et
 leurs contraintes sont décrits dans [10-infra.md](10-infra.md).

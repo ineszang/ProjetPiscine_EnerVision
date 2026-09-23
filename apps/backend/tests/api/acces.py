@@ -56,6 +56,7 @@ ROLE_MINIMUM: Final[dict[Route, Role]] = {
     ("GET", "/api/v1/readings"): Role.LECTEUR,
     ("GET", "/api/v1/predictions"): Role.LECTEUR,
     ("GET", "/api/v1/sensors/status"): Role.ADMIN,
+    ("GET", "/api/v1/monitoring/drift"): Role.OPERATEUR,
     ("GET", "/api/v1/users"): Role.ADMIN,
     ("POST", "/api/v1/users"): Role.ADMIN,
     ("PATCH", "/api/v1/users/{user_id}"): Role.ADMIN,
