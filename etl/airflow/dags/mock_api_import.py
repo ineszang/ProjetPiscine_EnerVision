@@ -18,9 +18,9 @@ from airflow.timetables.trigger import CronTriggerTimetable
 # Le backend possède son propre environnement uv dans l'image Airflow (ADR 0008).
 COMMANDE_BACKEND = "cd /opt/backend && env -u VIRTUAL_ENV uv run --no-sync python -m"
 
-# Le pipeline backend et l'API acceptent au maximum 1 000 lectures par site.
-# Cette marge évite de perdre silencieusement une lecture si une heure en contient plus de 60.
-LIMITE_LECTURES = 1000
+# Contrainte : l'API Mock génère `limit` points répartis sur l'intervalle. Un seul donne la mesure
+# de :00, au pas horaire du CSV que les features ML supposent (`shift(168)` compte des lignes).
+LIMITE_LECTURES = 1
 
 # Deux reprises donnent trois tentatives au total. Même dans le pire cas, l'exécution reste
 # inférieure au pas horaire du DAG.
