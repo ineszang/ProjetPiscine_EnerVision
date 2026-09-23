@@ -15,10 +15,10 @@ set -euo pipefail
 
 DEPOT="${REPO_URL:-https://github.com/ineszang/ProjetPiscine_EnerVision.git}"
 RACINE="${RACINE:-/srv/enervision}"
-DOMAINE="${DOMAINE:-enervision-g3.duckdns.org}"
+DOMAINE="${DOMAINE:-enervision-g3.dedyn.io}"
 ADRESSE="${PUBLIC_IP:-$(hostname -I | awk '{print $1}')}"
 PROPRIETAIRE="${PROPRIETAIRE:-${SUDO_USER:-}}"
-JETON_DUCKDNS="$RACINE/duckdns.token"
+JETON_DESEC="$RACINE/desec.token"
 COMPOSE_MINIMALE="2.24.4"
 
 erreur() { echo "erreur : $*" >&2; exit 1; }
@@ -130,11 +130,26 @@ preparer() {
         | grep -q " does match"; then
         (cd "$dossier" && PUBLIC_HOST="$hote" PUBLIC_IP="$ADRESSE" ./scripts/tls-selfsigned.sh --force)
     fi
-    if [[ -r "$JETON_DUCKDNS" && "$hote" == *.duckdns.org ]]; then
-        make -C "$dossier" --no-print-directory tls-duckdns PUBLIC_HOST="$hote" \
+    if [[ -r "$JETON_DESEC" && "$hote" == *.dedyn.io ]]; then
+        make -C "$dossier" --no-print-directory tls-desec PUBLIC_HOST="$hote" \
             || echo "$env : pas de certificat Let's Encrypt, l'auto-signé reste en place" >&2
     fi
     echo "$env : $dossier sur $branche, https://$hote"
+}
+
+# Le jeton passe par `curl --config -`, donc par l'entrée standard et jamais par `argv`.
+publier_dns() {
+    [[ -r "$JETON_DESEC" ]] || { echo "pas de jeton $JETON_DESEC : ni DNS ni Let's Encrypt"; return 0; }
+    local enregistrements
+    enregistrements="[{\"subname\": \"\", \"type\": \"A\", \"ttl\": 3600, \"records\": [\"$ADRESSE\"]},
+        {\"subname\": \"*\", \"type\": \"A\", \"ttl\": 3600, \"records\": [\"$ADRESSE\"]}]"
+    if printf 'header = "Authorization: Token %s"\n' "$(tr -d '[:space:]' < "$JETON_DESEC")" \
+        | curl -fsS --max-time 20 --config - -X PATCH -H "Content-Type: application/json" \
+            --data "$enregistrements" "https://desec.io/api/v1/domains/$DOMAINE/rrsets/" >/dev/null; then
+        echo "DNS : $DOMAINE et *.$DOMAINE visent $ADRESSE"
+    else
+        echo "DNS : deSEC refuse la mise à jour de $DOMAINE, enregistrements inchangés" >&2
+    fi
 }
 
 planifier_renouvellement() {
@@ -142,7 +157,7 @@ planifier_renouvellement() {
     cat > /etc/cron.d/enervision-tls <<CRON
 # Renouvellement Let's Encrypt des trois environnements (ADR 0018), écrit par provision-host.sh.
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-23 4 * * * $PROPRIETAIRE for e in prod rec dev; do make -C $RACINE/\$e --no-print-directory tls-duckdns; done 2>&1 | logger -t enervision-tls
+23 4 * * * $PROPRIETAIRE for e in prod rec dev; do make -C $RACINE/\$e --no-print-directory tls-desec; done 2>&1 | logger -t enervision-tls
 CRON
     chmod 644 /etc/cron.d/enervision-tls
     echo "renouvellement planifié : /etc/cron.d/enervision-tls"
@@ -150,6 +165,7 @@ CRON
 
 verifier_outils
 mkdir -p "$RACINE"
+publier_dns
 
 # Supervision active en prod seulement (ADR 0016). Le frontal (infra/front) publie 80 et 443 et
 # relaie vers les ports `front` ; les stacks ne publient plus rien hors de la boucle locale.
@@ -176,6 +192,6 @@ L'installer sous le propriétaire de $RACINE, sinon git refuse ces dépôts et l
 échappe : relancer au besoin ce script avec PROPRIETAIRE=<utilisateur du runner>.
 Données historiques : git ne porte pas data/raw, déposer les fichiers dans chaque dossier avant
 de déclencher le DAG historical_import.
-Noms et certificats : l'enregistrement DuckDNS de $DOMAINE doit viser $ADRESSE, et son jeton
-se trouver dans $JETON_DUCKDNS (600, propriétaire du runner). Sans jeton : auto-signé.
+Noms et certificats : le jeton deSEC de $DOMAINE doit se trouver dans $JETON_DESEC (600,
+propriétaire du runner). Sans lui, ni enregistrement DNS ni Let's Encrypt : auto-signé.
 FIN

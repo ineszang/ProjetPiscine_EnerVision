@@ -78,12 +78,12 @@ Renouvellement, à passer en tâche planifiée sur la machine :
 
 ### Let's Encrypt par DNS-01, le mode de la VM
 
-La VM n'a qu'une IP privée : le défi HTTP-01 y est impossible. Ses trois noms sont chez DuckDNS,
+La VM n'a qu'une IP privée : le défi HTTP-01 y est impossible. Ses trois noms sont chez deSEC,
 dont l'API pose l'enregistrement TXT du défi DNS-01, et acme.sh le fait sans rien ouvrir
-([ADR 0018](../../docs/adr/0018-noms-duckdns-certificats-dns01-et-frontal-sni.md)).
+([ADR 0018](../../docs/adr/0018-noms-desec-certificats-dns01-et-frontal-sni.md)).
 
 ```bash
-make tls-duckdns        # PUBLIC_HOST lu dans .env, jeton dans ../duckdns.token (600)
+make tls-desec          # PUBLIC_HOST lu dans .env, jeton dans ../desec.token (600)
 ```
 
 La cible est rejouable : acme.sh ne renouvelle qu'à trente jours de l'échéance, installe le
