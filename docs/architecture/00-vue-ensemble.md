@@ -80,7 +80,7 @@ API Mock est accepté comme définitivement perdu, aucune mesure réelle n'exist
 période. `mock_api_import` refuse toute fenêtre qui recouvrirait des lectures déjà importées du
 CSV plutôt que de laisser les deux sources dupliquer silencieusement un même instant, et le
 pipeline ML déduplique par construction (`DISTINCT ON`, source `csv` préférée) au cas où un
-recouvrement se produirait malgré tout — voir [40-data.md](40-data.md).
+recouvrement se produirait malgré tout, voir [40-data.md](40-data.md).
 
 Les liens de la supervision sont en trait plein depuis le 23/09 (issue #26) : Prometheus scrute
 `/metrics` avec un jeton, Grafana lit Prometheus et, par un rôle en lecture seule, les tables

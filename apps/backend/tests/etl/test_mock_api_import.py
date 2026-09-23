@@ -1,6 +1,6 @@
 import json
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -110,8 +110,8 @@ async def test_fetch_readings_sends_expected_query_parameters() -> None:
 
     transport = MockTransport(handler)
 
-    start_time = datetime.fromisoformat("2024-06-15T12:00:00")
-    end_time = datetime.fromisoformat("2024-06-15T13:00:00")
+    start_time = datetime.fromisoformat("2024-06-15T12:00:00+00:00")
+    end_time = datetime.fromisoformat("2024-06-15T13:00:00+00:00")
 
     async with AsyncClient(
         transport=transport,
@@ -127,9 +127,59 @@ async def test_fetch_readings_sends_expected_query_parameters() -> None:
 
     assert len(readings) == 1
     assert captured_params["site_id"] == "SITE001"
-    assert captured_params["start_time"] == "2024-06-15T12:00:00"
-    assert captured_params["end_time"] == "2024-06-15T13:00:00"
+    assert captured_params["start_time"] == "2024-06-15T12:00:00+00:00"
+    assert captured_params["end_time"] == "2024-06-15T13:00:00+00:00"
     assert captured_params["limit"] == "60"
+
+
+async def test_fetch_readings_discards_a_reading_outside_the_requested_window() -> None:
+    # Le garde-fou `refuse_if_overlaps_historical_dataset` ne vérifie que la fenêtre demandée :
+    # une réponse dont un `timestamp` déborde de `[start_time, end_time)` (bug du mock, ou
+    # hostile) contournerait ce contrôle si elle atteignait la base telle quelle.
+    dans_la_fenetre = make_reading()
+    dans_la_fenetre["timestamp"] = "2024-06-15T12:00:00Z"
+
+    hors_fenetre = make_reading()
+    hors_fenetre["timestamp"] = "2023-01-01T00:00:00Z"
+
+    def handler(request: Request) -> Response:
+        return Response(status_code=200, json=[dans_la_fenetre, hors_fenetre])
+
+    async with AsyncClient(
+        transport=MockTransport(handler),
+        base_url="https://mock.test",
+    ) as client:
+        readings = await fetch_readings(
+            client=client,
+            site_id="SITE001",
+            start_time=datetime.fromisoformat("2024-06-15T12:00:00+00:00"),
+            end_time=datetime.fromisoformat("2024-06-15T13:00:00+00:00"),
+            limit=2,
+        )
+
+    assert readings == [dans_la_fenetre]
+
+
+async def test_fetch_readings_discards_a_reading_with_an_unparseable_timestamp() -> None:
+    invalide = make_reading()
+    invalide["timestamp"] = "pas une date"
+
+    def handler(request: Request) -> Response:
+        return Response(status_code=200, json=[invalide])
+
+    async with AsyncClient(
+        transport=MockTransport(handler),
+        base_url="https://mock.test",
+    ) as client:
+        readings = await fetch_readings(
+            client=client,
+            site_id="SITE001",
+            start_time=datetime.fromisoformat("2024-06-15T12:00:00+00:00"),
+            end_time=datetime.fromisoformat("2024-06-15T13:00:00+00:00"),
+            limit=1,
+        )
+
+    assert readings == []
 
 
 async def test_fetch_readings_rejects_non_list_response() -> None:
@@ -152,8 +202,8 @@ async def test_fetch_readings_rejects_non_list_response() -> None:
             await fetch_readings(
                 client=client,
                 site_id="SITE001",
-                start_time=datetime.fromisoformat("2024-06-15T12:00:00"),
-                end_time=datetime.fromisoformat("2024-06-15T13:00:00"),
+                start_time=datetime.fromisoformat("2024-06-15T12:00:00+00:00"),
+                end_time=datetime.fromisoformat("2024-06-15T13:00:00+00:00"),
                 limit=60,
             )
 
@@ -175,8 +225,8 @@ async def test_fetch_readings_raises_on_http_error() -> None:
             await fetch_readings(
                 client=client,
                 site_id="SITE999",
-                start_time=datetime.fromisoformat("2024-06-15T12:00:00"),
-                end_time=datetime.fromisoformat("2024-06-15T13:00:00"),
+                start_time=datetime.fromisoformat("2024-06-15T12:00:00+00:00"),
+                end_time=datetime.fromisoformat("2024-06-15T13:00:00+00:00"),
                 limit=60,
             )
 
@@ -363,8 +413,8 @@ async def test_refuse_if_overlaps_historical_dataset_lets_a_clear_window_through
 
     await mock_api_import.refuse_if_overlaps_historical_dataset(
         connection,
-        datetime.fromisoformat("2026-01-01T00:00:00"),
-        datetime.fromisoformat("2026-01-01T01:00:00"),
+        datetime.fromisoformat("2026-01-01T00:00:00+00:00"),
+        datetime.fromisoformat("2026-01-01T01:00:00+00:00"),
     )
 
     connection.execute.assert_awaited_once()
@@ -377,9 +427,55 @@ async def test_refuse_if_overlaps_historical_dataset_rejects_a_window_already_in
     with pytest.raises(ValueError, match="doublon inter-source"):
         await mock_api_import.refuse_if_overlaps_historical_dataset(
             connection,
-            datetime.fromisoformat("2023-06-15T12:00:00"),
-            datetime.fromisoformat("2023-06-15T13:00:00"),
+            datetime.fromisoformat("2023-06-15T12:00:00+00:00"),
+            datetime.fromisoformat("2023-06-15T13:00:00+00:00"),
         )
+
+
+def test_limit_for_window_returns_one_per_hour() -> None:
+    limite = mock_api_import.limit_for_window(
+        datetime.fromisoformat("2026-09-02T12:00:00+00:00"),
+        datetime.fromisoformat("2026-09-23T12:00:00+00:00"),
+    )
+
+    assert limite == 21 * 24
+
+
+def test_limit_for_window_rejects_a_partial_hour() -> None:
+    with pytest.raises(ValueError, match="nombre entier d'heures"):
+        mock_api_import.limit_for_window(
+            datetime.fromisoformat("2026-09-02T12:00:00+00:00"),
+            datetime.fromisoformat("2026-09-02T12:30:00+00:00"),
+        )
+
+
+def test_limit_for_window_rejects_a_window_above_the_api_cap() -> None:
+    with pytest.raises(ValueError, match="au-delà du plafond"):
+        mock_api_import.limit_for_window(
+            datetime.fromisoformat("2020-01-01T00:00:00+00:00"),
+            datetime.fromisoformat("2020-03-01T00:00:00+00:00"),
+        )
+
+
+def _mock_engine(*, overlap_count: int = 0) -> tuple[MagicMock, AsyncMock]:
+    """Engine dont `.connect()` (garde-fou) et `.begin()` (écriture) rendent tous deux la même
+    connexion, dont `scalar_one()` renvoie `overlap_count` : `import_mock_api_history` ouvre
+    désormais le garde-fou via `.connect()`, y compris en dry-run."""
+    connection = AsyncMock()
+    connection.execute.return_value.scalar_one = MagicMock(return_value=overlap_count)
+
+    def _context() -> MagicMock:
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=connection)
+        context.__aexit__ = AsyncMock(return_value=None)
+        return context
+
+    engine = MagicMock()
+    engine.connect.return_value = _context()
+    engine.begin.return_value = _context()
+    engine.dispose = AsyncMock()
+
+    return engine, connection
 
 
 async def test_import_mock_api_history_dry_run_does_not_write(
@@ -421,22 +517,24 @@ async def test_import_mock_api_history_dry_run_does_not_write(
         ),
     )
 
-    create_engine_mock = MagicMock()
+    engine, connection = _mock_engine(overlap_count=0)
 
     monkeypatch.setattr(
         mock_api_import,
         "create_async_engine",
-        create_engine_mock,
+        MagicMock(return_value=engine),
     )
 
     await mock_api_import.import_mock_api_history(
-        start_time=datetime.fromisoformat("2024-06-15T12:00:00"),
-        end_time=datetime.fromisoformat("2024-06-15T13:00:00"),
-        limit=60,
+        start_time=datetime.fromisoformat("2024-06-15T12:00:00+00:00"),
+        end_time=datetime.fromisoformat("2024-06-15T13:00:00+00:00"),
         dry_run=True,
     )
 
-    create_engine_mock.assert_not_called()
+    # Le garde-fou tourne quand même (lecture seule), mais aucune écriture n'a lieu.
+    connection.execute.assert_awaited_once()
+    engine.begin.assert_not_called()
+    engine.dispose.assert_awaited_once()
 
 
 async def test_import_mock_api_history_loads_data(
@@ -478,24 +576,8 @@ async def test_import_mock_api_history_loads_data(
         ),
     )
 
-    connection = AsyncMock()
-    connection.execute.return_value.scalar_one = MagicMock(return_value=0)
-
-    transaction_context = MagicMock()
-    transaction_context.__aenter__ = AsyncMock(
-        return_value=connection,
-    )
-    transaction_context.__aexit__ = AsyncMock(
-        return_value=None,
-    )
-
-    engine = MagicMock()
-    engine.begin.return_value = transaction_context
-    engine.dispose = AsyncMock()
-
-    create_engine_mock = MagicMock(
-        return_value=engine,
-    )
+    engine, connection = _mock_engine(overlap_count=0)
+    create_engine_mock = MagicMock(return_value=engine)
 
     upsert_sites_mock = AsyncMock()
 
@@ -512,9 +594,8 @@ async def test_import_mock_api_history_loads_data(
     )
 
     await mock_api_import.import_mock_api_history(
-        start_time=datetime.fromisoformat("2024-06-15T12:00:00"),
-        end_time=datetime.fromisoformat("2024-06-15T13:00:00"),
-        limit=60,
+        start_time=datetime.fromisoformat("2024-06-15T12:00:00+00:00"),
+        end_time=datetime.fromisoformat("2024-06-15T13:00:00+00:00"),
         dry_run=False,
     )
 
@@ -528,6 +609,7 @@ async def test_import_mock_api_history_loads_data(
         [make_site()],
     )
 
+    # Un appel pour le garde-fou (via .connect()), un pour READING_INSERT (via .begin()).
     assert connection.execute.await_count == 2
     dernier_appel = connection.execute.await_args_list[-1]
     assert dernier_appel.args[0] is READING_INSERT
@@ -537,49 +619,29 @@ async def test_import_mock_api_history_loads_data(
 async def test_import_mock_api_history_refuses_when_it_overlaps_the_historical_dataset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def handler(request: Request) -> Response:
-        if request.url.path == "/api/v1/sites":
-            return Response(status_code=200, json=[make_site()])
-
-        if request.url.path == "/api/v1/readings":
-            return Response(status_code=200, json=[make_reading()])
-
-        return Response(status_code=404)
-
-    client = AsyncClient(transport=MockTransport(handler), base_url="https://mock.test")
-
-    monkeypatch.setattr(mock_api_import, "create_mock_api_client", lambda: client)
     monkeypatch.setattr(
         mock_api_import,
         "get_settings",
         lambda: SimpleNamespace(database_url="postgresql+asyncpg://test:test@localhost/test"),
     )
 
-    connection = AsyncMock()
-    connection.execute.return_value.scalar_one = MagicMock(return_value=3)
-
-    transaction_context = MagicMock()
-    transaction_context.__aenter__ = AsyncMock(return_value=connection)
-    transaction_context.__aexit__ = AsyncMock(return_value=None)
-
-    engine = MagicMock()
-    engine.begin.return_value = transaction_context
-    engine.dispose = AsyncMock()
-
+    engine, connection = _mock_engine(overlap_count=3)
     monkeypatch.setattr(mock_api_import, "create_async_engine", MagicMock(return_value=engine))
-    upsert_sites_mock = AsyncMock()
-    monkeypatch.setattr(mock_api_import, "upsert_sites", upsert_sites_mock)
+
+    # Le garde-fou tourne avant tout appel à l'API Mock : create_mock_api_client() ne doit
+    # jamais être invoqué pour une fenêtre refusée.
+    create_client_mock = MagicMock()
+    monkeypatch.setattr(mock_api_import, "create_mock_api_client", create_client_mock)
 
     with pytest.raises(ValueError, match="doublon inter-source"):
         await mock_api_import.import_mock_api_history(
-            start_time=datetime.fromisoformat("2023-06-15T12:00:00"),
-            end_time=datetime.fromisoformat("2023-06-15T13:00:00"),
-            limit=60,
+            start_time=datetime.fromisoformat("2023-06-15T12:00:00+00:00"),
+            end_time=datetime.fromisoformat("2023-06-15T13:00:00+00:00"),
             dry_run=False,
         )
 
     connection.execute.assert_awaited_once()
-    upsert_sites_mock.assert_not_awaited()
+    create_client_mock.assert_not_called()
     engine.dispose.assert_awaited_once()
 
 
@@ -591,6 +653,23 @@ def test_parse_datetime_accepts_z_suffix() -> None:
     assert result == datetime.fromisoformat(
         "2024-06-15T12:00:00+00:00",
     )
+
+
+def test_parse_datetime_attaches_utc_to_a_naive_string() -> None:
+    # `--start-time`/`--end-time` du DAG sont formatés sans fuseau (Jinja `strftime`) : sans ce
+    # comportement, l'encodeur `timestamptz` d'asyncpg lirait le datetime naïf dans le fuseau
+    # *local du processus*, pas UTC, et le garde-fou comparerait une autre fenêtre que celle
+    # envoyée à l'API.
+    result = mock_api_import.parse_datetime("2024-06-15T12:00:00")
+
+    assert result == datetime.fromisoformat("2024-06-15T12:00:00+00:00")
+    assert result.tzinfo is UTC
+
+
+def test_parse_datetime_keeps_a_non_utc_offset_as_is() -> None:
+    result = mock_api_import.parse_datetime("2024-06-15T12:00:00+02:00")
+
+    assert result == datetime.fromisoformat("2024-06-15T12:00:00+02:00")
 
 
 def test_parse_args_reads_cli_parameters(
@@ -605,8 +684,6 @@ def test_parse_args_reads_cli_parameters(
             "2024-06-15T12:00:00Z",
             "--end-time",
             "2024-06-15T13:00:00Z",
-            "--limit",
-            "60",
             "--dry-run",
         ],
     )
@@ -619,32 +696,7 @@ def test_parse_args_reads_cli_parameters(
     assert args.end_time == datetime.fromisoformat(
         "2024-06-15T13:00:00+00:00",
     )
-    assert args.limit == 60
     assert args.dry_run is True
-
-
-def test_main_rejects_limit_out_of_bounds(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "mock_api_import",
-            "--start-time",
-            "2024-06-15T12:00:00Z",
-            "--end-time",
-            "2024-06-15T13:00:00Z",
-            "--limit",
-            "0",
-        ],
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="--limit doit être compris entre 1 et 1000",
-    ):
-        mock_api_import.main()
 
 
 def test_main_rejects_invalid_period(
@@ -659,8 +711,6 @@ def test_main_rejects_invalid_period(
             "2024-06-15T14:00:00Z",
             "--end-time",
             "2024-06-15T13:00:00Z",
-            "--limit",
-            "60",
         ],
     )
 
@@ -689,7 +739,6 @@ def test_main_runs_import(
         lambda: SimpleNamespace(
             start_time=start_time,
             end_time=end_time,
-            limit=60,
             dry_run=True,
         ),
     )
@@ -705,7 +754,6 @@ def test_main_runs_import(
     import_mock.assert_awaited_once_with(
         start_time=start_time,
         end_time=end_time,
-        limit=60,
         dry_run=True,
     )
 
@@ -750,8 +798,8 @@ async def test_fetch_readings_rejects_a_response_above_the_requested_limit() -> 
             await fetch_readings(
                 client=client,
                 site_id="SITE001",
-                start_time=datetime.fromisoformat("2024-06-15T12:00:00"),
-                end_time=datetime.fromisoformat("2024-06-15T13:00:00"),
+                start_time=datetime.fromisoformat("2024-06-15T12:00:00+00:00"),
+                end_time=datetime.fromisoformat("2024-06-15T13:00:00+00:00"),
                 limit=2,
             )
 
