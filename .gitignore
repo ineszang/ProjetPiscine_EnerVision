@@ -83,3 +83,6 @@ infra/proxy/acme/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Docker garage
+garage/garage.toml
