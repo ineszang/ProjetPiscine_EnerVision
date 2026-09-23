@@ -16,6 +16,9 @@ EN_TETES: Final[dict[str, str]] = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
+    # same-origin : le frontend ne consomme l'API qu'au travers d'un proxy same-origin
+    # (proxy.conf.json en dev, ingress /api en prod, cf. docs/architecture/20-backend.md).
+    "Cross-Origin-Resource-Policy": "same-origin",
 }
 
 PREFIXE_AUTHENTIFICATION: Final = "/auth"

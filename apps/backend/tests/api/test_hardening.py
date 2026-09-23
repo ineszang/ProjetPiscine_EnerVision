@@ -23,8 +23,9 @@ async def interroge(
         ("x-content-type-options", "nosniff"),
         ("x-frame-options", "DENY"),
         ("referrer-policy", "no-referrer"),
+        ("cross-origin-resource-policy", "same-origin"),
     ],
-    ids=["nosniff", "anti_iframe", "referrer"],
+    ids=["nosniff", "anti_iframe", "referrer", "corp"],
 )
 async def test_every_response_carries_the_security_headers(
     client: AsyncClient, entete: str, valeur: str
