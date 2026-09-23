@@ -193,3 +193,8 @@ jobs:
             exit 1
           fi
 
+  deploy:
+    name: Déploiement
+    needs: ci-ok
+    if: ${{ !cancelled() && needs.ci-ok.result == 'success' && github.event_name == 'push' }}
+    uses: ./.github/workflows/deploy.yml
