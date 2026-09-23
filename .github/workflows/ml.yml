@@ -26,7 +26,7 @@ jobs:
 
       # Action tierce, épinglée sur le commit du tag (règle Sonar githubactions:S7637).
       - name: Installe uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: ml/uv.lock
@@ -95,7 +95,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Installe uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -155,7 +155,7 @@ jobs:
       # Pourquoi : pas de cache ici. uvx n'installe pas le projet, le verrou n'alimente donc
       # aucune clé de cache ; la seule roue téléchargée est celle de Bandit.
       - name: Installe uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: false
 
