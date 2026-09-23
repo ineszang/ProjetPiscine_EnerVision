@@ -424,9 +424,11 @@ Le reste, par ordre de surface :
   de secret au logger, la deuxième de ne jamais mettre un jeton dans une URL.
 - En-têtes posés par l'application : `X-Content-Type-Options`, `X-Frame-Options`,
   `Referrer-Policy`, `Cross-Origin-Resource-Policy: same-origin`, plus `Cache-Control: no-store`
-  sur `/auth/*`. Le CORP est fixé à `same-origin` parce que le frontend ne consomme l'API qu'au
-  travers d'un proxy same-origin (`proxy.conf.json` en dev, ingress `/api` en prod), jamais
-  directement cross-origin depuis le navigateur. HSTS et CSP appartiennent au terminateur TLS, que
+  sur `/auth/*`. Le CORP est fixé à `same-origin` parce qu'aucun client légitime ne charge l'API
+  en `no-cors` (image, script, média) depuis une autre origine : le frontend l'appelle en relatif
+  (`/api/v1`), sur sa propre origine, via `proxy.conf.json` en dev et le reverse proxy nginx
+  (`infra/proxy/conf.d/enervision.conf`) en recette et en production. Les appels `HttpClient`, en
+  mode `cors`, n'y sont de toute façon pas soumis. HSTS et CSP appartiennent au terminateur TLS, que
   l'application ne connaît pas : le reverse proxy les pose
   ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)).
 - Le conteneur tourne en utilisateur non-root, avec un `HEALTHCHECK` sur `/api/v1/health/live`.
