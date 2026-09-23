@@ -193,6 +193,23 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # Pourquoi : sur le réseau du projet, k6 joint `backend:8000` sans passer par nginx, dont la
+  # limite par adresse (20 req/s) fausserait la mesure de l'API. `make load-*` le lance (ADR 0015).
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: ["load"]
+    volumes:
+      - ./tests/load:/scripts:ro
+      - ./tests/load/results:/results
+    environment:
+      K6_BASE_URL: ${K6_BASE_URL:-http://backend:8000}
+      K6_PROXY_URL: ${K6_PROXY_URL:-https://proxy}
+      K6_EMAIL: ${K6_EMAIL:-}
+      K6_PASSWORD: ${K6_PASSWORD:-}
+      K6_RESUME: ${K6_RESUME:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
   pgdata:
   airflow_logs:

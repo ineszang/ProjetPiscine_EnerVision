@@ -40,6 +40,13 @@ ML_TEST_DATABASE_URL ?= postgresql+psycopg://$(PG_USER):$(PG_PASSWORD)@localhost
 E2E_COMPTES ?= $(CURDIR)/$(E2E)/.comptes.json
 E2E_API ?= http://localhost:$(or $(strip $(call env-val,BACKEND_PORT)),8000)
 
+# Piege : `run` ne demarre que k6, la stack doit deja tourner. `--user` fait ecrire les rapports
+# de tests/load/results avec l'uid du poste, pas celui de l'image (12345), qui n'y a pas acces.
+k6-run = mkdir -p tests/load/results && $(COMPOSE_PROD) --profile load run --rm \
+	--user "$$(id -u):$$(id -g)" -e K6_WEB_DASHBOARD=true \
+	-e K6_WEB_DASHBOARD_EXPORT=/results/$(1)-$$(date +%Y%m%dT%H%M%S).html \
+	k6 run /scripts/$(1).js
+
 # Le jeu historique s'arrete au 31/12/2024 : score et detection ancres a l'horloge reelle ne
 # verraient qu'un parc muet depuis des mois. Cf. `--now` de enervision_ml.score.
 DEMO_NOW ?= 2024-12-31T00:00:00Z
@@ -54,7 +61,7 @@ DEMO_NOW ?= 2024-12-31T00:00:00Z
         ml-lint ml-typecheck ml-test ml-check ml-train ml-score mlflow-up detect-alerts recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs \
         tls-selfsigned tls-acme tls-renew stack-up stack-down stack-logs \
-        e2e-install e2e-prepare e2e
+        e2e-install e2e-prepare e2e load-smoke load-test load-stress load-limits
 
 help: ## Liste les cibles disponibles
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -222,6 +229,18 @@ e2e-prepare: ## Sème le jeu de démonstration et crée les comptes de test sur 
 
 e2e: ## Joue les parcours Playwright. E2E_BASE_URL= optionnel (défaut http://localhost:4200)
 	cd $(E2E) && E2E_COMPTES=$(E2E_COMPTES) npx playwright test
+
+load-smoke: ## Tir k6 d'une minute. K6_EMAIL= et K6_PASSWORD= d'un lecteur, K6_BASE_URL= optionnel
+	$(call k6-run,smoke)
+
+load-test: ## Charge nominale k6, 50 utilisateurs pendant 8 minutes. Rapport HTML dans tests/load/results
+	$(call k6-run,charge)
+
+load-stress: ## Monte le débit jusqu'à la rupture de l'API. Sur la VM, la prod partage la machine
+	$(call k6-run,stress)
+
+load-limits: ## Vérifie par le proxy que nginx limite le débit d'une même adresse (429)
+	$(call k6-run,limitation-debit)
 
 db-up: ## Démarre la base PostgreSQL TimescaleDB
 	docker compose up -d db
