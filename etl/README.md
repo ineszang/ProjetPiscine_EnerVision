@@ -668,11 +668,16 @@ le pipeline ML (`ml_train` et `ml_score`, issue #115), la détection d'alertes e
 des recommandations (`alertes`, issue #116), l'import historique (`historical_import`,
 issue #119) et l'import périodique de l'API Mock (`mock_api_import`, issue #15).
 
-Le DAG `mock_api_import` s'exécute chaque heure, à la minute `:45`. Il appelle
-`app.etl.mock_api_import` avec un intervalle explicite d'une heure et une limite de 1 000 lectures
-par site. Les deux pipelines normalisent leurs données vers les tables communes `site` et
-`reading`, tout en conservant leur source (`csv` ou `api_history`). La réconciliation globale
-des deux sources reste à compléter dans l'issue #15.
+Le DAG `mock_api_import` s'exécute chaque heure, à la minute `:45`, sur un intervalle explicite
+d'une heure. L'API Mock génère autant de points que la limite demandée, répartis sur
+l'intervalle : `app.etl.mock_api_import.limit_for_window()` dérive donc `limit` de la fenêtre
+reçue (une lecture par site pour cette fenêtre d'1h) plutôt que de dépendre d'une valeur fixée à
+la main côté DAG, et refuse une fenêtre qui ne couvre pas un nombre entier d'heures. La fenêtre
+`[:45, :45)` place cette lecture à :45, pas à :00 (l'API place son premier point au début de la
+fenêtre demandée), un décalage constant sans effet sur les lags positionnels ML ni sur les
+jointures en aval. Les deux pipelines normalisent leurs données vers les tables communes `site` et
+`reading`, tout en conservant leur source (`csv` ou `api_history`). La réconciliation entre les
+deux sources (issue #15) est close : voir `docs/architecture/40-data.md`.
 
 Le DAG `mock_api_import` exécute `app.etl.mock_api_import` toutes les heures. Chaque exécution
 traite l'intervalle Airflow précédent. Les deux pipelines normalisent leurs données vers les
