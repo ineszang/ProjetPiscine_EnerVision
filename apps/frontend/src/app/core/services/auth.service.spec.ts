@@ -43,6 +43,31 @@ describe('AuthService', () => {
     expect(service.isAuthenticated()).toBe(true);
   });
 
+  it('garde le mot de passe provisoire pour un seul changement quand il doit être changé', () => {
+    service.login({ email: 'a@a.com', password: 'Provisoire' }).subscribe();
+    httpMock.expectOne(`${environment.apiUrl}/auth/login`).flush({
+      ...tokenResponse,
+      principal: { ...tokenResponse.principal, must_change_password: true },
+    });
+
+    expect(service.takeProvisionalPassword()).toBe('Provisoire');
+    expect(service.takeProvisionalPassword()).toBeNull();
+  });
+
+  it('ne garde aucun mot de passe quand il est déjà définitif, ni après la fin de session', () => {
+    service.login({ email: 'a@a.com', password: 'Definitif' }).subscribe();
+    httpMock.expectOne(`${environment.apiUrl}/auth/login`).flush(tokenResponse);
+    expect(service.takeProvisionalPassword()).toBeNull();
+
+    service.login({ email: 'a@a.com', password: 'Provisoire' }).subscribe();
+    httpMock.expectOne(`${environment.apiUrl}/auth/login`).flush({
+      ...tokenResponse,
+      principal: { ...tokenResponse.principal, must_change_password: true },
+    });
+    service.clearSession();
+    expect(service.takeProvisionalPassword()).toBeNull();
+  });
+
   it('efface la session au logout', () => {
     service.login({ email: 'a@a.com', password: 'secret' }).subscribe();
     httpMock.expectOne(`${environment.apiUrl}/auth/login`).flush(tokenResponse);
