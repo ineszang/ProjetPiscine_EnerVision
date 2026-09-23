@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 30
     environment:
       name: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
-      url: ${{ github.ref_name == 'main' && 'https://enervision-g3.dedyn.io' || github.ref_name == 'dev' && 'https://rec.enervision-g3.dedyn.io' || 'https://dev.enervision-g3.dedyn.io' }}
+      url: ${{ github.ref_name == 'main' && 'https://enervision-g3.dynv6.net' || github.ref_name == 'dev' && 'https://rec.enervision-g3.dynv6.net' || 'https://dev.enervision-g3.dynv6.net' }}
     env:
       ENVIRONNEMENT: ${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'dev' && 'rec' || 'dev' }}
       PORT_HTTPS: ${{ github.ref_name == 'main' && '10443' || github.ref_name == 'dev' && '8443' || '9443' }}
@@ -55,7 +55,7 @@ jobs:
 
           echo "::group::Reconstruit et redémarre la stack"
           # Un `.env` pas encore réaligné par provision-host.sh porte encore un nom en `.local`.
-          if [ -r ../desec.token ] && grep -q '^PUBLIC_HOST=.*\.dedyn\.io$' .env; then make tls-desec; fi
+          if [ -r ../dns.token ] && ! grep -q '^PUBLIC_HOST=.*\.local$' .env; then make tls-dns01; fi
           make stack-up
           if [ "${ENVIRONNEMENT}" = prod ]; then make front-up; fi
           echo "::endgroup::"

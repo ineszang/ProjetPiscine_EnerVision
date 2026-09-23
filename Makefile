@@ -73,7 +73,7 @@ DEMO_NOW ?= 2024-12-31T00:00:00Z
         migrate migrate-test bootstrap-admin services-up demo-data demo-data-force \
         ml-lint ml-typecheck ml-test ml-check ml-train ml-score mlflow-up detect-alerts recommendations \
         airflow-lint airflow-test airflow-check airflow-up airflow-down airflow-logs \
-        tls-selfsigned tls-acme tls-renew tls-desec front-up stack-up stack-down stack-logs \
+        tls-selfsigned tls-acme tls-renew tls-dns01 front-up stack-up stack-down stack-logs \
         e2e-install e2e-prepare e2e load-smoke load-test load-stress load-limits \
         db-ensure-supervision monitoring-up monitoring-down monitoring-logs monitoring-check
 
@@ -236,20 +236,22 @@ tls-renew: ## Renouvelle les certificats Let's Encrypt et recharge le proxy
 	$(COMPOSE_PROD) exec proxy nginx -s reload
 
 # Pourquoi : la VM n'a qu'une IP privée, que Let's Encrypt ne joint pas ; le défi DNS-01 passe
-# par l'API deSEC (ADR 0018). Le jeton transite par l'environnement, jamais par `argv`.
+# par l'API du fournisseur DNS, dynv6 par défaut (ADR 0018). Le jeton ne passe jamais par `argv`.
 ACME_SH := neilpang/acme.sh:3.1.6
-DESEC_TOKEN_FILE ?= $(abspath $(CURDIR)/../desec.token)
-acme-sh = docker run --rm --user "$$(id -u):$$(id -g)" -e DEDYN_TOKEN -e AUTO_UPGRADE=0 \
+DNS01_API ?= dns_dynv6
+DNS01_JETON_VAR ?= DYNV6_TOKEN
+DNS01_JETON_FICHIER ?= $(abspath $(CURDIR)/../dns.token)
+acme-sh = docker run --rm --user "$$(id -u):$$(id -g)" -e $(DNS01_JETON_VAR) -e AUTO_UPGRADE=0 \
 	-v "$(CURDIR)/infra/proxy/acme:/acme.sh" -v "$(CURDIR)/infra/proxy/tls:/tls" $(ACME_SH)
 
 # acme.sh sort en 2 quand le certificat n'est pas encore à renouveler, et recopie le jeton dans
 # acme/account.conf : d'où le chmod, qui le soustrait aux autres comptes de la machine.
-tls-desec: ## Certificat Let's Encrypt par DNS-01 deSEC, renouvelé seulement à échéance
-	@case "$(PUBLIC_HOST)" in *.dedyn.io) ;; *) echo "PUBLIC_HOST=$(PUBLIC_HOST) n'est pas un nom deSEC"; exit 1 ;; esac
-	@test -r "$(DESEC_TOKEN_FILE)" || { echo "Jeton deSEC illisible : $(DESEC_TOKEN_FILE)"; exit 1; }
+tls-dns01: ## Certificat Let's Encrypt par DNS-01, renouvelé seulement à échéance. Jeton : ../dns.token
+	@case "$(PUBLIC_HOST)" in *.local | localhost) echo "PUBLIC_HOST=$(PUBLIC_HOST) n'est pas un nom public"; exit 1 ;; esac
+	@test -r "$(DNS01_JETON_FICHIER)" || { echo "Jeton DNS illisible : $(DNS01_JETON_FICHIER)"; exit 1; }
 	@mkdir -p infra/proxy/acme && chmod 700 infra/proxy/acme
-	@DEDYN_TOKEN="$$(tr -d '[:space:]' < "$(DESEC_TOKEN_FILE)")"; export DEDYN_TOKEN; \
-		$(acme-sh) --issue --server letsencrypt --dns dns_desec -d "$(PUBLIC_HOST)"; \
+	@$(DNS01_JETON_VAR)="$$(tr -d '[:space:]' < "$(DNS01_JETON_FICHIER)")"; export $(DNS01_JETON_VAR); \
+		$(acme-sh) --issue --server letsencrypt --dns $(DNS01_API) -d "$(PUBLIC_HOST)"; \
 		code=$$?; chmod -R go-rwx infra/proxy/acme; [ $$code -eq 0 ] || [ $$code -eq 2 ] || exit $$code
 	@$(acme-sh) --install-cert --ecc -d "$(PUBLIC_HOST)" \
 		--fullchain-file /tls/fullchain.pem --key-file /tls/privkey.pem

@@ -238,7 +238,7 @@ Deux conséquences se propagent jusqu'à l'application, et elles ne se devinent 
 Statut : `En cours`. Décision et motifs dans
 l'[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md), étendue à un troisième
 environnement par l'[ADR 0017](../adr/0017-environnement-dev-a-la-demande.md) ; noms,
-certificats et frontal sans port dans l'[ADR 0018](../adr/0018-noms-desec-certificats-dns01-et-frontal-sni.md).
+certificats et frontal sans port dans l'[ADR 0018](../adr/0018-noms-publics-certificats-dns01-et-frontal-sni.md).
 La VM `eadl-2025-nantes-g3` porte le développement, la recette et la production, chacun dans son
 clone du dépôt, son `.env` et son projet Compose. Le nom de projet préfixe volumes, réseau et
 conteneurs : rien n'est partagé. `scripts/provision-host.sh` prépare les trois dossiers, génère
@@ -248,20 +248,20 @@ les secrets et les certificats, et ne démarre rien.
 |---|---|---|---|
 | Branche, environnement GitHub | toute branche lancée à la main, `dev` | `dev`, `rec` | `main`, `prod` |
 | Dossier, projet Compose | `/srv/enervision/dev`, `enervision-dev` | `/srv/enervision/rec`, `enervision-rec` | `/srv/enervision/prod`, `enervision-prod` |
-| URL | `https://dev.enervision-g3.dedyn.io` | `https://rec.enervision-g3.dedyn.io` | `https://enervision-g3.dedyn.io` |
+| URL | `https://dev.enervision-g3.dynv6.net` | `https://rec.enervision-g3.dynv6.net` | `https://enervision-g3.dynv6.net` |
 | Proxy HTTP, HTTPS, PROXY protocol, sur `127.0.0.1` | `8083`, `9443`, `9444` | `8081`, `8443`, `8444` | `10080`, `10443`, `10444` |
 | PostgreSQL, Mailpit, Airflow, sur `127.0.0.1` | `5435`, `8027`, `8084` | `5434`, `8026`, `8082` | `5433`, `8025`, `8080` |
 | Supervision (profil `monitoring`) | à la demande, `make monitoring-up` | à la demande, `make monitoring-up` | active, `COMPOSE_PROFILES=monitoring` |
 | Grafana, Prometheus, Alertmanager, sur `127.0.0.1` | `3003`, `9092`, `9095` | `3002`, `9091`, `9094` | `3001`, `9090`, `9093` |
 
-Les trois noms sont publics chez deSEC et visent l'IP privée de la VM : rien à déclarer sur
+Les trois noms sont publics chez dynv6 et visent l'IP privée de la VM : rien à déclarer sur
 les postes du réseau de l'école, et rien n'est joignable hors de ce réseau. Trois noms distincts
 sont nécessaires : le cookie `__Secure-ev_refresh` est posé par hôte, pas par port.
 
 Aucune stack ne publie hors de la boucle locale. Le frontal `infra/front`, sur le réseau de
 l'hôte, écoute 80 et 443 : il redirige le premier, et aiguille le second d'après le nom demandé
 (SNI) vers l'écouteur PROXY protocol de la stack visée, sans déchiffrer le TLS. Chaque stack
-garde son certificat Let's Encrypt, obtenu par défi DNS-01 (`make tls-desec`) et renouvelé à
+garde son certificat Let's Encrypt, obtenu par défi DNS-01 (`make tls-dns01`) et renouvelé à
 chaque déploiement ainsi que chaque nuit par `/etc/cron.d/enervision-tls`.
 
 Le déploiement est décrit dans [50-cicd.md](50-cicd.md) : un runner GitHub Actions installé sur

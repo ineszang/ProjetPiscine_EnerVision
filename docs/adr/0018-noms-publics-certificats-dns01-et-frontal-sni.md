@@ -1,4 +1,4 @@
-# 0018 - Noms deSEC, certificats Let's Encrypt par DNS-01 et frontal SNI sans port
+# 0018 - Noms publics, certificats Let's Encrypt par DNS-01 et frontal SNI sans port
 
 - Statut : accepté
 - Date : 2026-09-23
@@ -15,19 +15,19 @@ poste.
 Contraintes : la VM n'a qu'une IP privée, `10.101.200.37`, que ni Internet ni Let's Encrypt ne
 joignent, et le réseau de l'école ne doit pas être touché. Vérifications faites le 23/09 : les
 résolveurs de l'école rendent bien une adresse privée pour un nom public, la VM sort en HTTPS
-vers Let's Encrypt et vers l'API de deSEC, mais le filtrage de l'école bloque duckdns.org, site
+vers Let's Encrypt et vers l'API de dynv6, mais le filtrage de l'école bloque duckdns.org, site
 et API, depuis les postes comme depuis la VM.
 
 ## Décision
 
-**Des noms publics qui visent l'IP privée.** `enervision-g3.dedyn.io`, zone gratuite de deSEC,
-porte la prod, et un enregistrement joker `*` porte `rec.` et `dev.`. `provision-host.sh` publie
-ces deux enregistrements par l'API deSEC : le DNS est décrit par le code comme le reste. Tout
+**Des noms publics qui visent l'IP privée.** `enervision-g3.dynv6.net`, zone gratuite de dynv6,
+porte la prod, et deux enregistrements A portent `rec.` et `dev.`. `provision-host.sh` les publie
+par l'API dynv6 : le DNS est décrit par le code comme le reste. Tout
 poste du réseau de l'école les résout sans configuration ; hors de ce réseau, l'IP ne mène
 nulle part.
 
-**Des certificats Let's Encrypt par défi DNS-01.** Le défi passe par l'API deSEC, qui pose
-l'enregistrement TXT : Let's Encrypt n'a jamais à joindre la VM. `make tls-desec` (acme.sh
+**Des certificats Let's Encrypt par défi DNS-01.** Le défi passe par l'API dynv6, qui pose
+l'enregistrement TXT : Let's Encrypt n'a jamais à joindre la VM. `make tls-dns01` (acme.sh
 épinglé) le joue dans chaque stack ; il ne renouvelle qu'à échéance, d'où son rejeu à chaque
 déploiement et chaque nuit par cron. Un certificat par environnement plutôt qu'un joker : chaque
 stack garde le sien, et la clé de la prod n'est pas lisible depuis le clone de dev.
@@ -43,6 +43,10 @@ utilisateur bloquerait la connexion de tous. Chaque proxy de stack reçoit donc 
 écouteur dédié, 4443, qui exige l'en-tête PROXY protocol et en tire l'IP du client. Le 443 de
 la stack reste sans PROXY protocol, pour les postes de développement et la sonde du déploiement.
 
+**Le fournisseur est un paramètre.** `DNS01_API` et `DNS01_JETON_VAR` nomment le greffon acme.sh,
+le jeton vit dans `dns.token` quel que soit le fournisseur : passer à un domaine acheté chez
+Cloudflare ou OVH ne demande que ces deux variables et `domaine`, plus `publier_dns()`.
+
 **`scripts/provision-host.sh` fait foi pour l'adressage et les secrets.** Un `.env` existant
 garde ses secrets, reçoit ceux qui lui manquent et voit hôte, ports et profils réalignés sur le
 tableau du script. C'est ce qui permet de migrer trois `.env` nés avant ce changement, et le
@@ -54,6 +58,8 @@ clone de la prod, en retard sur `main`, sans dépendre de son `.env.example`.
   avertissements, précisément ce qu'il fallait supprimer.
 - **DuckDNS** : premier choix, inscription en un clic, mais bloqué par le filtrage de l'école :
   sans son API, pas de défi DNS-01.
+- **deSEC (`dedyn.io`)** : joignable et associatif, mais les inscriptions de nouveaux domaines
+  `dedyn.io` étaient fermées le 23/09 ; il reste le bon choix pour un domaine acheté.
 - **nip.io ou sslip.io** : résolution sans compte, mais aucun moyen d'y obtenir un certificat.
 - **Services à certificat joker public (traefik.me, local-ip.co)** : leur clé privée est publiée
   par conception, n'importe qui peut usurper ces noms.
@@ -72,12 +78,12 @@ clone de la prod, en retard sur `main`, sans dépendre de son `.env.example`.
   aux services homonymes, tombe : le frontal ne joint que des ports de la boucle locale.
 - Sans le frontal, plus rien n'est joignable sur la VM. `deploy.yml` le relance à chaque
   déploiement de la prod, et son `restart: unless-stopped` le ramène après un redémarrage.
-- Le jeton deSEC vit dans `/srv/enervision/desec.token`, jamais dans git, GitHub ni le state
+- Le jeton dynv6 vit dans `/srv/enervision/dns.token`, jamais dans git, GitHub ni le state
   Terraform ; acme.sh en garde une copie dans `infra/proxy/acme/`, retirée à la lecture des
   autres comptes. Qui le détient peut repointer les trois noms.
-- deSEC devient une dépendance : s'il tombe, les noms cessent de résoudre et les
+- dynv6 devient une dépendance : s'il tombe, les noms cessent de résoudre et les
   renouvellements échouent. Les certificats valent 90 jours, la marge est large.
-- Un filtrage de l'école qui viendrait à bloquer deSEC arrêterait les renouvellements, pas les
+- Un filtrage de l'école qui viendrait à bloquer dynv6 arrêterait les renouvellements, pas les
   noms : la résolution passe par les serveurs DNS de l'école, pas par le site.
 - Les noms sont publics mais ne mènent qu'à une IP privée : ils révèlent l'existence de la VM,
   pas son contenu.

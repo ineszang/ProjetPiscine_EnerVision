@@ -78,15 +78,16 @@ Renouvellement, à passer en tâche planifiée sur la machine :
 
 ### Let's Encrypt par DNS-01, le mode de la VM
 
-La VM n'a qu'une IP privée : le défi HTTP-01 y est impossible. Ses trois noms sont chez deSEC,
+La VM n'a qu'une IP privée : le défi HTTP-01 y est impossible. Ses trois noms sont chez dynv6,
 dont l'API pose l'enregistrement TXT du défi DNS-01, et acme.sh le fait sans rien ouvrir
-([ADR 0018](../../docs/adr/0018-noms-desec-certificats-dns01-et-frontal-sni.md)).
+([ADR 0018](../../docs/adr/0018-noms-publics-certificats-dns01-et-frontal-sni.md)).
 
 ```bash
-make tls-desec          # PUBLIC_HOST lu dans .env, jeton dans ../desec.token (600)
+make tls-dns01          # PUBLIC_HOST lu dans .env, jeton dans ../dns.token (600)
 ```
 
-La cible est rejouable : acme.sh ne renouvelle qu'à trente jours de l'échéance, installe le
+Autre fournisseur : `DNS01_API` et `DNS01_JETON_VAR` nomment le greffon acme.sh et sa variable
+(`dns_cf` et `CF_Token` pour Cloudflare, par exemple). La cible est rejouable : acme.sh ne renouvelle qu'à trente jours de l'échéance, installe le
 résultat dans `tls/` et recharge le proxy s'il tourne. Son état vit dans `acme/`, ignoré par git.
 `deploy.yml` la rejoue avant chaque `make stack-up`, et `/etc/cron.d/enervision-tls` chaque nuit.
 

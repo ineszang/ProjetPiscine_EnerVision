@@ -15,10 +15,10 @@ set -euo pipefail
 
 DEPOT="${REPO_URL:-https://github.com/ineszang/ProjetPiscine_EnerVision.git}"
 RACINE="${RACINE:-/srv/enervision}"
-DOMAINE="${DOMAINE:-enervision-g3.dedyn.io}"
+DOMAINE="${DOMAINE:-enervision-g3.dynv6.net}"
 ADRESSE="${PUBLIC_IP:-$(hostname -I | awk '{print $1}')}"
 PROPRIETAIRE="${PROPRIETAIRE:-${SUDO_USER:-}}"
-JETON_DESEC="$RACINE/desec.token"
+JETON_DNS="$RACINE/dns.token"
 COMPOSE_MINIMALE="2.24.4"
 
 erreur() { echo "erreur : $*" >&2; exit 1; }
@@ -130,26 +130,45 @@ preparer() {
         | grep -q " does match"; then
         (cd "$dossier" && PUBLIC_HOST="$hote" PUBLIC_IP="$ADRESSE" ./scripts/tls-selfsigned.sh --force)
     fi
-    if [[ -r "$JETON_DESEC" && "$hote" == *.dedyn.io ]]; then
-        make -C "$dossier" --no-print-directory tls-desec PUBLIC_HOST="$hote" \
+    if [[ -r "$JETON_DNS" && "$hote" != *.local ]]; then
+        make -C "$dossier" --no-print-directory tls-dns01 PUBLIC_HOST="$hote" \
             || echo "$env : pas de certificat Let's Encrypt, l'auto-signé reste en place" >&2
     fi
     echo "$env : $dossier sur $branche, https://$hote"
 }
 
-# Le jeton passe par `curl --config -`, donc par l'entrée standard et jamais par `argv`.
+# Pourquoi : dynv6 est le fournisseur que le filtrage de l'école laisse passer (ADR 0018). Le
+# jeton passe par l'environnement du seul processus Python, jamais par `argv`.
 publier_dns() {
-    [[ -r "$JETON_DESEC" ]] || { echo "pas de jeton $JETON_DESEC : ni DNS ni Let's Encrypt"; return 0; }
-    local enregistrements
-    enregistrements="[{\"subname\": \"\", \"type\": \"A\", \"ttl\": 3600, \"records\": [\"$ADRESSE\"]},
-        {\"subname\": \"*\", \"type\": \"A\", \"ttl\": 3600, \"records\": [\"$ADRESSE\"]}]"
-    if printf 'header = "Authorization: Token %s"\n' "$(tr -d '[:space:]' < "$JETON_DESEC")" \
-        | curl -fsS --max-time 20 --config - -X PATCH -H "Content-Type: application/json" \
-            --data "$enregistrements" "https://desec.io/api/v1/domains/$DOMAINE/rrsets/" >/dev/null; then
-        echo "DNS : $DOMAINE et *.$DOMAINE visent $ADRESSE"
-    else
-        echo "DNS : deSEC refuse la mise à jour de $DOMAINE, enregistrements inchangés" >&2
-    fi
+    [[ -r "$JETON_DNS" ]] || { echo "pas de jeton $JETON_DNS : ni DNS ni Let's Encrypt"; return 0; }
+    DNS_TOKEN="$(tr -d '[:space:]' < "$JETON_DNS")" python3 - "$DOMAINE" "$ADRESSE" rec dev <<'PY' \
+        || echo "DNS : dynv6 refuse la mise à jour de $DOMAINE, enregistrements inchangés" >&2
+import json, os, sys, urllib.request
+
+domaine, adresse, *sous_noms = sys.argv[1:]
+
+def appel(methode, chemin, corps=None):
+    requete = urllib.request.Request(
+        f"https://dynv6.com/api/v2/{chemin}", method=methode,
+        data=None if corps is None else json.dumps(corps).encode(),
+        headers={"Authorization": f"Bearer {os.environ['DNS_TOKEN']}",
+                 "Content-Type": "application/json", "Accept": "application/json"})
+    with urllib.request.urlopen(requete, timeout=20) as reponse:
+        contenu = reponse.read()
+    return json.loads(contenu) if contenu else None
+
+zone = appel("GET", f"zones/by-name/{domaine}")
+if zone.get("ipv4address") != adresse:
+    appel("PATCH", f"zones/{zone['id']}", {"ipv4address": adresse})
+existants = {(r["type"], r["name"]): r for r in appel("GET", f"zones/{zone['id']}/records")}
+for nom in sous_noms:
+    actuel = existants.get(("A", nom))
+    if actuel is None:
+        appel("POST", f"zones/{zone['id']}/records", {"type": "A", "name": nom, "data": adresse})
+    elif actuel["data"] != adresse:
+        appel("PATCH", f"zones/{zone['id']}/records/{actuel['id']}", {"data": adresse})
+print(f"DNS : {domaine}, {', '.join(sous_noms)} visent {adresse}")
+PY
 }
 
 planifier_renouvellement() {
@@ -157,7 +176,7 @@ planifier_renouvellement() {
     cat > /etc/cron.d/enervision-tls <<CRON
 # Renouvellement Let's Encrypt des trois environnements (ADR 0018), écrit par provision-host.sh.
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-23 4 * * * $PROPRIETAIRE for e in prod rec dev; do make -C $RACINE/\$e --no-print-directory tls-desec; done 2>&1 | logger -t enervision-tls
+23 4 * * * $PROPRIETAIRE for e in prod rec dev; do make -C $RACINE/\$e --no-print-directory tls-dns01; done 2>&1 | logger -t enervision-tls
 CRON
     chmod 644 /etc/cron.d/enervision-tls
     echo "renouvellement planifié : /etc/cron.d/enervision-tls"
@@ -192,6 +211,6 @@ L'installer sous le propriétaire de $RACINE, sinon git refuse ces dépôts et l
 échappe : relancer au besoin ce script avec PROPRIETAIRE=<utilisateur du runner>.
 Données historiques : git ne porte pas data/raw, déposer les fichiers dans chaque dossier avant
 de déclencher le DAG historical_import.
-Noms et certificats : le jeton deSEC de $DOMAINE doit se trouver dans $JETON_DESEC (600,
+Noms et certificats : le jeton dynv6 de la zone $DOMAINE doit se trouver dans $JETON_DNS (600,
 propriétaire du runner). Sans lui, ni enregistrement DNS ni Let's Encrypt : auto-signé.
 FIN
