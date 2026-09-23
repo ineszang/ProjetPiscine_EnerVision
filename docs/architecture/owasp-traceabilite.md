@@ -39,7 +39,7 @@ lecture seule ; plusieurs lignes resteront à compléter une fois les endpoints 
 | Cinq gardes de configuration qui refusent le démarrage plutôt que de dégrader silencieusement | `app/core/config.py` | A05 |
 | Documentation interactive fermée hors développement, `/metrics` derrière un jeton, sonde qui ne publie plus de version | `app/main.py`, `app/api/security.py` | A05 |
 | Scan dynamique OWASP ZAP de l'API authentifiée (compte `lecteur` jetable), non bloquant, configuration par défaut du backend uniquement (ni TLS ni en-têtes du reverse proxy) | `.github/workflows/dast.yml`, `scripts/dast-token.sh` | A05, API8 Security Misconfiguration |
-| En-têtes `nosniff`, `DENY`, `no-referrer`, et `no-store` sur les routes d'authentification | `app/api/middleware.py` | A05 |
+| En-têtes `nosniff`, `DENY`, `no-referrer`, `Cross-Origin-Resource-Policy: same-origin`, et `no-store` sur les routes d'authentification | `app/api/middleware.py` | A05 |
 | Refus de rétrograder ou désactiver le dernier administrateur actif | `app/services/user.py` | A04 Insecure Design |
 | Amorçage du premier administrateur hors dépôt, mot de passe jamais dans `argv` ni dans Git | `app/cli.py` | A02, A05 |
 | Réponse de l'API Mock bornée avant écriture : timeout, plafond de sites et de mesures, bornes physiques par grandeur, recopie des seuls champs attendus | `app/etl/mock_api_import.py` | API10 Unsafe Consumption of APIs |
