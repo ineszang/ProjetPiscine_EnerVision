@@ -114,7 +114,7 @@ jobs:
       - name: Fumée S3 sur Garage, SSE-C compris
         run: |
           set -a; . ./.env; set +a
-          uvx --with boto3==1.43.101 pytest==9.1.1 tests/garage -q
+          uvx --no-build --with boto3==1.43.101 pytest==9.1.1 tests/garage -q
 
       - name: Journaux de Garage en cas d'échec
         if: failure()

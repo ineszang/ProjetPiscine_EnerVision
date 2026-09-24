@@ -144,7 +144,10 @@ def test_serialize_csv_gzip_writes_jsonb_and_arrays_as_sorted_json() -> None:
 def test_serialize_csv_gzip_is_byte_for_byte_reproducible() -> None:
     lignes = [make_row(), make_row(reading_id=2)]
 
-    assert serialize_csv_gzip(lignes) == serialize_csv_gzip(lignes)
+    premier = serialize_csv_gzip(lignes)
+    second = serialize_csv_gzip(lignes)
+
+    assert premier == second
 
 
 def test_serialize_csv_gzip_refuses_an_empty_export() -> None:
@@ -254,10 +257,10 @@ def test_decode_sse_key_decodes_the_base64_key() -> None:
 
 
 def test_decode_sse_key_refuses_a_key_of_the_wrong_length() -> None:
-    courte = base64.b64encode(b"trop-courte").decode("ascii")
+    courte = SecretStr(base64.b64encode(b"trop-courte").decode("ascii"))
 
     with pytest.raises(ValueError, match="exactement 32 octets"):
-        decode_sse_key(SecretStr(courte))
+        decode_sse_key(courte)
 
 
 @pytest.mark.parametrize(
@@ -265,15 +268,18 @@ def test_decode_sse_key_refuses_a_key_of_the_wrong_length() -> None:
     ["s3_endpoint_url", "s3_access_key", "s3_secret_key", "s3_bucket"],
 )
 def test_build_archive_store_refuses_a_missing_setting(manquant: str) -> None:
+    reglages = settings_s3(**{manquant: None})
+
     with pytest.raises(ValueError, match="APP_S3_ENDPOINT_URL"):
-        build_archive_store(settings_s3(**{manquant: None}))
+        build_archive_store(reglages)
 
 
 def test_build_archive_store_refuses_a_sse_key_of_the_wrong_length() -> None:
     courte = base64.b64encode(b"trop-courte").decode("ascii")
+    reglages = settings_s3(s3_sse_key=SecretStr(courte))
 
     with pytest.raises(ValueError, match="exactement 32 octets"):
-        build_archive_store(settings_s3(s3_sse_key=SecretStr(courte)))
+        build_archive_store(reglages)
 
 
 def test_build_archive_store_configures_the_client_from_the_settings(
@@ -549,11 +555,10 @@ async def test_archive_reading_chunks_in_dry_run_neither_writes_nor_drops(
 
 async def test_archive_reading_chunks_keeps_the_chunk_when_the_read_back_differs() -> None:
     engine, store, journal = make_archive(corrompt=True)
+    borne = datetime(2023, 10, 1, tzinfo=UTC)
 
     with pytest.raises(RuntimeError, match="sha256 sha-corrompu au lieu de"):
-        await archive_reading_chunks(
-            engine, store, older_than=datetime(2023, 10, 1, tzinfo=UTC), dry_run=False
-        )
+        await archive_reading_chunks(engine, store, older_than=borne, dry_run=False)
 
     assert "put" in journal
     assert "drop" not in journal
@@ -622,15 +627,18 @@ def test_build_parser_reads_the_bound_and_the_dry_run() -> None:
 
 
 def test_build_parser_refuses_a_non_integer_bound() -> None:
+    parser = build_parser()
+
     with pytest.raises(SystemExit):
-        build_parser().parse_args(["--older-than-days", "un-an"])
+        parser.parse_args(["--older-than-days", "un-an"])
 
 
 def test_build_parser_answers_help_without_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("APP_SECRET_KEY", raising=False)
+    parser = build_parser()
 
     with pytest.raises(SystemExit) as sortie:
-        build_parser().parse_args(["--help"])
+        parser.parse_args(["--help"])
 
     assert sortie.value.code == 0
 

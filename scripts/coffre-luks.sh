@@ -98,7 +98,8 @@ poser_image() {
 }
 
 fstab_contient() {
-    awk -v cible="$1" '$1 !~ /^#/ && $2 == cible { trouve = 1 } END { exit !trouve }' /etc/fstab
+    local cible="$1"
+    awk -v cible="$cible" '$1 !~ /^#/ && $2 == cible { trouve = 1 } END { exit !trouve }' /etc/fstab
 }
 
 poser_persistance() {
@@ -132,8 +133,14 @@ CONF
     systemctl daemon-reload
 }
 
-empreinte() { find "$1" -type f -printf '%s\n' | awk '{ n++; s += $1 } END { printf "%d fichiers, %d octets", n, s }'; }
-libre() { df -B1 --output=avail "$1" | tail -1 | tr -d ' '; }
+empreinte() {
+    local dossier="$1"
+    find "$dossier" -type f -printf '%s\n' | awk '{ n++; s += $1 } END { printf "%d fichiers, %d octets", n, s }'
+}
+libre() {
+    local dossier="$1"
+    df -B1 --output=avail "$dossier" | tail -1 | tr -d ' '
+}
 
 expliquer_migration() {
     cat <<FIN
