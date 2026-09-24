@@ -1,0 +1,23 @@
+# gitleaks (image zricethezav/gitleaks:latest, sha256:c00b6bd0aeb3) · 2026-09-24 14:48 CEST
+# Commande : docker run --rm -v <depot>:/repo:ro zricethezav/gitleaks:latest git /repo --log-opts="--all" --redact --report-format json
+# Périmètre : toutes les branches locales et distantes, 342 commits hors merges (487 avec merges), commit de tête 9f343e9
+# Champs Author et Email retirés de cette copie (anonymisation). Valeurs caviardées par --redact.
+
+Résultat brut : 339 commits scannés, ~3,43 Mo, 8 constats, tous de la règle generic-api-key.
+
+- generic-api-key · apps/backend/tests/etl/test_reading_retention.py:74 · commit fa815f49 · 2026-09-24 · extrait caviardé : s3_access_key": "REDACTED"
+- generic-api-key · apps/frontend/src/app/features/auth/change-password/change-password.spec.ts:90 · commit c2f360c5 · 2026-09-23 · extrait caviardé : current_password: 'REDACTED'
+- generic-api-key · apps/backend/tests/repositories/test_drift.py:110 · commit 9bf2f271 · 2026-09-22 · extrait caviardé : api_current", REDACTED
+- generic-api-key · apps/backend/tests/repositories/test_drift.py:113 · commit 9bf2f271 · 2026-09-22 · extrait caviardé : api_history", REDACTED
+- generic-api-key · apps/backend/tests/repositories/test_reading.py:202 · commit c059f838 · 2026-09-18 · extrait caviardé : api_history", REDACTED
+- generic-api-key · apps/backend/tests/repositories/test_reading.py:205 · commit c059f838 · 2026-09-18 · extrait caviardé : api_current", REDACTED
+- generic-api-key · apps/backend/tests/repositories/test_reading.py:98 · commit b433e01f · 2026-09-18 · extrait caviardé : api_history", REDACTED
+- generic-api-key · apps/backend/tests/repositories/test_reading.py:101 · commit b433e01f · 2026-09-18 · extrait caviardé : api_current", REDACTED
+
+Tri manuel : les 8 constats sont des faux positifs.
+- 6 constats (test_drift.py, test_reading.py), déjà triés le 23/09 : la règle generic-api-key prend pour une clé la valeur qui suit un identifiant commençant par « api_ ». Les lignes visées sont des appels de fabrique de test du type creer_lecture(..., source="api_history", consumption_kwh=20.0) : « api_history » et « api_current » sont deux des trois valeurs admises pour la colonne source de reading (contrainte ck_reading_source, apps/backend/app/models/energy.py), pas des secrets.
+- apps/backend/tests/etl/test_reading_retention.py:74 : identifiant de clé S3 factice (« GK » suivi de 10 chiffres) construit par la fabrique de test settings_s3(), à côté de SecretStr("un-secret-garage") ; aucun Garage réel ne l'accepte, les vraies clés sont générées sur la machine par scripts/provision-host.sh.
+- apps/frontend/src/app/features/auth/change-password/change-password.spec.ts:90 : mot de passe provisoire simulé d'un test unitaire Angular (valeur attendue par un mock de AuthService), sans compte réel derrière.
+
+Contrôle complémentaire : git log --all -- .env apps/backend/.env ml/.env etl/airflow/.env '*.pem' '*.key' '*terraform.tfvars' '*.tfstate' '*.tfstate.backup' dns.token renvoie 0 commit : aucun fichier de secrets, certificat, clé, state Terraform ni jeton DNS n'a jamais été versionné.
+Seul fichier de configuration sensible versionné : infra/garage/garage.toml (commit e53c7e4, 24/09), par conception : relu ligne à ligne, il ne porte aucun secret, Garage lit GARAGE_RPC_SECRET, GARAGE_ADMIN_TOKEN et GARAGE_METRICS_TOKEN dans son environnement (ADR 0019).

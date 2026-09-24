@@ -1,0 +1,27 @@
+# pip-audit (méthode du job security-audit de backend.yml : verrou figé, sans dépendances de dev) · 2026-09-24 14:45 CEST · commit 9f343e9
+
+## apps/backend/uv.lock
+paquets figés : 50
+Installed 28 packages in 17ms
+WARNING:pip_audit._cli:--no-deps is supported, but users are encouraged to fully hash their pinned dependencies
+WARNING:pip_audit._cli:Consider using a tool like `pip-compile`: https://pip-tools.readthedocs.io/en/latest/#using-hashes
+No known vulnerabilities found
+exit=0
+
+## ml/uv.lock
+paquets figés : 94
+WARNING:pip_audit._cli:--no-deps is supported, but users are encouraged to fully hash their pinned dependencies
+WARNING:pip_audit._cli:Consider using a tool like `pip-compile`: https://pip-tools.readthedocs.io/en/latest/#using-hashes
+No known vulnerabilities found
+exit=0
+
+## etl/airflow/uv.lock
+paquets figés : 128
+WARNING:pip_audit._cli:--no-deps is supported, but users are encouraged to fully hash their pinned dependencies
+WARNING:pip_audit._cli:Consider using a tool like `pip-compile`: https://pip-tools.readthedocs.io/en/latest/#using-hashes
+Found 2 known vulnerabilities in 1 package
+Name                          Version ID            Fix Versions
+----------------------------- ------- ------------- ------------
+apache-airflow-providers-smtp 2.3.2   PYSEC-2026-24 3.0.0
+apache-airflow-providers-smtp 2.3.2   PYSEC-2026-24 3.0.0
+exit=1

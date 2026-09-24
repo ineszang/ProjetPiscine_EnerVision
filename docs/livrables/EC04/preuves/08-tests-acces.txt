@@ -1,0 +1,7 @@
+# Tests d'accès et d'authentification du backend · 2026-09-24 14:50 CEST · commit 9f343e9
+# Commande : uv run --frozen pytest tests/api/test_matrice_acces.py tests/api/test_route_protection.py tests/api/test_authorization.py tests/api/test_hardening.py tests/api/test_auth.py tests/core/test_security.py -m 'not integration' --no-cov
+# Les tests marqués integration (mêmes matrices avec de vrais jetons et une vraie base) tournent en CI sur TimescaleDB, pas ici.
+
+........................................................................ [ 83%]
+..............                                                           [100%]
+86 passed, 5 deselected in 3.36s

@@ -488,7 +488,7 @@ Quatre fichiers méritent d'être connus avant de toucher à l'authentification 
 - **Rôles PostgreSQL cantonnés** pour l'ETL et le travail d'apprentissage, plus le `REVOKE` sur
   `audit_log`. Dette assumée, décrite dans les ADR 0003 et 0004.
 - **Pagination et fenêtrage** : posés sur `GET /readings` (fenêtre plafonnée à 90 jours,
-  `limit`/`offset` plafonné à 2000), mais toujours en `limit`/`offset` simple — pas de curseur ni
+  `limit`/`offset` plafonné à 2000), mais toujours en `limit`/`offset` simple : pas de curseur ni
   de plan de secours si un `offset` élevé sur une fenêtre dense devient lent en pratique.
   `statement_timeout` reste absent au niveau de la connexion, donc rien n'empêche une requête
   individuelle de tourner longtemps si les plafonds au-dessus d'elle s'avéraient insuffisants.

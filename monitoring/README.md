@@ -18,7 +18,7 @@ Les interfaces n'écoutent que sur `127.0.0.1`. Depuis un poste, on passe par un
 comme pour Airflow :
 
 ```bash
-ssh -L 3001:127.0.0.1:3001 -L 9090:127.0.0.1:9090 enervision@10.101.200.37
+ssh -L 3001:127.0.0.1:3001 -L 9090:127.0.0.1:9090 enervision@<IP-VM-G3>
 ```
 
 ## Démarrer

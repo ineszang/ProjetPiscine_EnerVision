@@ -136,8 +136,10 @@ origine, en HTTPS**. C'est cela, et rien d'autre, qui rend le cookie `__Secure-e
 utilisable : servi en HTTP simple ou depuis une autre origine, il n'est jamais posé et
 l'authentification ne survit pas à un rechargement de page.
 
-Ce qui reste à surveiller : le certificat est auto-signé tant qu'aucun domaine public ne résout
-vers la machine. Un navigateur qui refuse l'exception refusera aussi le cookie.
+Sur la machine, le certificat vient de Let's Encrypt par DNS-01
+([ADR 0018](../adr/0018-noms-publics-certificats-dns01-et-frontal-sni.md)) : le navigateur n'a
+aucune exception à accepter. Sur le poste, il reste auto-signé, et un navigateur qui refuse
+l'exception refusera aussi le cookie.
 
 Et au moins une fois avant la soutenance, lancer le front **sans le proxy**, en cross-origin
 réel : c'est le seul moyen d'exercer le préflight CORS et `SameSite`, que la même origine masque.

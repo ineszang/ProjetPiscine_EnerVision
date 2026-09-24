@@ -5,8 +5,8 @@
 # moyen de dépublier 8000 et 3000 : sans lui, l'API resterait joignable en clair à côté du proxy.
 # Piège : pas de `:?` sur `PUBLIC_HOST`. Compose interpole tout le fichier, y compris pour
 # `stop` et `logs` : la garde vit dans `make stack-up`, qui la compare au certificat servi.
-# Pourquoi : ports du proxy et origine publique en variables, pour que deux environnements
-# cohabitent sur la même machine, chacun dans son projet Compose (ADR 0009).
+# Pourquoi : ports du proxy et origine publique en variables, pour que trois environnements
+# cohabitent sur la même machine, chacun dans son projet Compose (ADR 0009, 0017).
 
 name: enervision
 

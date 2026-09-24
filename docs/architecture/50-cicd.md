@@ -6,14 +6,15 @@ vérifié, ce qui bloque, et ce qui ne l'est pas.
 | Étage | Sert à | Statut |
 |---|---|---|
 | Intégration continue | Interdire le merge d'un code qui casse la qualité, les tests ou la sécurité | `Fait` |
-| Livraison continue | Déployer chaque branche d'intégration sur son environnement de la VM ENI | `En cours` |
+| Livraison continue | Déployer chaque branche d'intégration sur son environnement de la VM ENI | `Fait` |
 
 Le **D** de CI/CD est écrit depuis le 21/09 : `deploy.yml` déploie `dev` en recette et `main` en
 production sur la VM de l'école, par un runner auto-hébergé (issue #21,
 [ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)). Depuis le 23/09, il ne part
 plus qu'une fois la CI du commit verte ([ADR 0014](../adr/0014-pipeline-ci-unique-et-deploiement-conditionne.md)).
-Il n'a encore rien déployé : le runner n'est pas enregistré sur la machine. Statut à
-basculer sur `Fait` au premier déploiement vert. Sa limite, nommée ici plutôt que découverte en
+Le runner est enregistré sur la machine (`null_resource.runner_github` dans le state
+Terraform) et l'environnement `prod` compte sept déploiements entre le 23/09 11h37 et le 24/09
+11h12, le dernier sur le commit gelé. Sa limite, nommée ici plutôt que découverte en
 soutenance : les images sont construites sur la machine à chaque déploiement, aucun artefact
 n'est publié puis promu d'un environnement à l'autre.
 
@@ -103,7 +104,7 @@ n'est ouvert. Il n'a pas de déclencheur propre en dehors de `workflow_dispatch`
 | Événement | Environnement GitHub | Dossier sur la VM | Garde |
 |---|---|---|---|
 | `push` sur `dev`, « CI ok » vert | `rec` | `/srv/enervision/rec` | aucune de plus : la recette suit `dev` |
-| `push` sur `main`, « CI ok » vert | `prod` | `/srv/enervision/prod` | approbation d'un relecteur dans l'environnement `prod`, branche `main` seule autorisée |
+| `push` sur `main`, « CI ok » vert | `prod` | `/srv/enervision/prod` | branche `main` seule autorisée ; **aucun relecteur requis** (relevé par l'API le 24/09), l'approbation prévue n'est pas activée |
 | `workflow_dispatch` sur toute autre branche | `dev` | `/srv/enervision/dev` | droit d'écriture sur le dépôt, seul à pouvoir lancer un workflow ([ADR 0017](../adr/0017-environnement-dev-a-la-demande.md)) |
 
 Le job aligne le clone sur **le commit testé** (`fetch`, `checkout`, `reset --hard $GITHUB_SHA`),
@@ -134,20 +135,23 @@ de `pull_request` dans `deploy.yml` ne suffit donc pas. Ce qui protège vraiment
 
 - le dépôt exige l'approbation des workflows de tous les contributeurs externes (Settings,
   Actions, « Require approval for all external contributors ») ;
-- les environnements `rec` et `prod` n'acceptent que leur branche (`dev`, `main` avec un
-  relecteur), ce qui bloque un job qui les déclare avant qu'il atteigne le runner ;
+- l'environnement `prod` n'accepte que `main`, ce qui bloque un job qui le déclare depuis une
+  autre branche avant qu'il atteigne le runner. `rec` et `dev` n'ont, eux, aucune règle
+  (relevé par l'API le 24/09) ;
 - le runner tourne sous un utilisateur dédié membre du groupe `docker`, jamais root.
 
-Les deux réglages de dépôt restent à activer par l'administratrice. Tous les autres workflows
-restent sur `ubuntu-latest`.
+Restent à activer par l'administratrice : l'approbation des workflows de contributeurs
+externes (non vérifiable sans droit d'administration), un relecteur requis sur `prod`, et la
+restriction de `rec` à `dev`. Tous les autres workflows restent sur `ubuntu-latest`.
 
-Cet utilisateur dédié doit posséder `/srv/enervision` : sinon git refuse les deux clones pour
+Cet utilisateur dédié doit posséder `/srv/enervision` : sinon git refuse les clones pour
 propriété douteuse et le `.env` en `600` lui échappe. `PROPRIETAIRE=<utilisateur du runner>`
 passé à `scripts/provision-host.sh` fixe ce propriétaire.
 
 La machine se prépare avec `scripts/provision-host.sh`, qui vérifie Docker et Compose 2.24.4 ou
-plus, clone les deux branches, génère les secrets de chaque `.env` et les certificats
-auto-signés, et ne démarre rien. Le détail des trois environnements, ports et noms d'hôte, est
+plus, prépare les trois clones (`prod` sur `main`, `rec` et `dev` sur `dev`), génère les secrets
+de chaque `.env`, obtient les certificats Let's Encrypt par DNS-01 (un auto-signé ne reste en
+place qu'en cas d'échec) et planifie leur renouvellement, et ne démarre rien. Le détail des trois environnements, ports et noms d'hôte, est
 dans [10-infra.md](10-infra.md).
 
 ## Ce qui bloque un merge
@@ -171,6 +175,8 @@ dans [10-infra.md](10-infra.md).
 | Formatage et validité Terraform | infra | `fmt -check -recursive`, puis `init` et `validate` par racine | Bloque |
 | Verrous uv à jour | backend, ml, airflow | `uv sync --locked` : un `uv.lock` qui ne suit plus `pyproject.toml` échoue | Bloque |
 | Fichiers Compose | infra | `docker compose config` sur la stack de dev et la stack déployée, tous profils | Bloque |
+| Frontal SNI | infra | `docker compose config` et `nginx -t` de `infra/front` | Bloque |
+| Stockage objet | infra | fumée S3 sur Garage démarré par Compose : aller-retour, suppression, lecture refusée sans clé SSE-C (`tests/garage`) | Bloque |
 | Supervision | infra | `promtool check config`, `promtool test rules` (un cas par alerte), `amtool check-config`, JSON des tableaux | Bloque |
 | Workflows | infra | `actionlint`, shellcheck compris sur les blocs `run:` | Bloque |
 | Parcours de bout en bout | e2e | 18 parcours Playwright contre la stack de prod (proxy TLS) | Bloque |
@@ -187,8 +193,8 @@ Deux seuils portent une décision qu'il faut savoir défendre :
   sans bloquer. Sans cette seconde passe, un constat LOW disparaîtrait du journal sans trace. Le
   revers à connaître : cette seconde étape porte `continue-on-error`, donc le job reste **vert**
   même quand elle relève quelque chose ; un LOW ne se voit qu'en ouvrant le journal. Au
-  21/09/2026, les deux modules sont à **zéro constat, tous niveaux confondus**, sur 5 904 lignes
-  analysées.
+  24/09/2026, les deux modules sont à **zéro constat, tous niveaux confondus**, sur 6 858 lignes
+  analysées (6 136 pour le backend, 722 pour le ML).
 - **La version de Bandit est épinglée** (`uvx bandit==1.9.4`) dans les deux jobs. Sans épingle,
   une nouvelle version passerait la CI au rouge sans qu'une seule ligne du dépôt ait changé, et
   le rejeu à l'identique promis plus bas n'existerait pas.
@@ -209,7 +215,7 @@ partie de la suite, et son taux n'aurait aucun sens face au seuil de 85 %.
 
 ### Pourquoi le job d'intégration ML installe aussi le backend
 
-Le schéma de la base n'a qu'une source, les six révisions Alembic de `apps/backend/alembic` : le
+Le schéma de la base n'a qu'une source, les sept révisions Alembic de `apps/backend/alembic` : le
 backend est propriétaire du schéma, `ml/` n'en est que consommateur. Reconstruire ce schéma à la
 main dans le job ML donnerait un job vert sur une base qui n'est pas la nôtre, exactement l'erreur
 qu'évite déjà le choix de l'image `timescaledb-ha` plutôt qu'un `postgres` nu. Le job installe
@@ -281,7 +287,7 @@ les tests ne se merge pas.
 | Préfixes de branche | `feat/`, `fix/`, `chore/`, `docs/`, `test/` |
 | Messages de commit | Conventional Commits |
 | Branche d'intégration | `dev` ; `main` est la branche par défaut du dépôt public |
-| Revue | Toute PR passe par une revue écrite avant merge |
+| Revue | Relecture écrite par un autre membre avant merge : 55 PR de fonctionnalité sur 62 au gel (89 %). Convention d'équipe, non imposée par une protection de branche |
 | ADR | Toute décision structurante porte son ADR dans la même PR |
 | Vues d'architecture | Toute PR qui change un composant met à jour sa vue **dans la même PR** |
 
@@ -354,7 +360,7 @@ du runner qui l'a écrit, sans remappage automatique.
   depuis le début. Corrigé par `sudo chown 1000:1000` du fichier avant de le passer à `644`.
 - Ce `chown` déplace la propriété du fichier hors de l'utilisateur du runner : un `chmod` qui
   suit sans `sudo` échoue alors (« Operation not permitted »), et le `-e` implicite des étapes
-  bash de GitHub Actions arrête toute l'étape avant même `docker run` — un scan « réussi » en une
+  bash de GitHub Actions arrête toute l'étape avant même `docker run` : un scan « réussi » en une
   fraction de seconde, sans le moindre journal ni rapport produit. Les deux commandes doivent
   passer par `sudo`.
 
@@ -427,6 +433,9 @@ voir `tests/load/README.md`.
 | Tir de charge nominal automatisé | #47 | Seul le smoke tourne en CI ; la charge à 50 utilisateurs se lance à la main en recette (`make load-test`), rec et prod partageant la VM |
 | Cache de couches Docker en CI | aucune | Le job E2E reconstruit les images backend et frontend à chaque run, deux à quatre minutes de plus |
 | Scan d'image de conteneur | aucune | Les images sont construites par le job E2E, pas analysées |
+| Scan de secrets et d'IaC en CI | aucune | gitleaks, Trivy et Checkov ne tournent qu'à la main, pour le rapport de sécurisation : un secret commité ne serait vu qu'au passage suivant |
+| `pip-audit` sur les verrous ML et Airflow, `npm audit` sur `tests/e2e` | aucune | Seuls les verrous du backend et du frontend sont audités en CI : la CVE-2026-41016 d'`apache-airflow-providers-smtp`, relevée le 23/09, y reste invisible |
+| Approbation humaine avant la production | aucune | L'environnement `prod` n'exige aucun relecteur : un push sur `main` au CI vert part en production sans autre garde |
 
 ## Reproduire la CI en local
 
@@ -437,7 +446,7 @@ Les tests d'intégration demandent une base **migrée**, et `db/init` ne crée `
 vide :
 
 ```bash
-make db-up migrate-test     # la base de test reçoit les six révisions Alembic
+make db-up migrate-test     # la base de test reçoit les sept révisions Alembic
 make test-integration       # backend, marqueur `integration`
 make ml-test-integration    # pipeline ML, marqueur `integration`
 make test-chaine            # vrais binaires ML puis relecture par l'API, marqueur `chaine`
