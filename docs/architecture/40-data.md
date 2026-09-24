@@ -74,10 +74,10 @@ Les mécanismes d'ingestion sont maintenant implémentés pour les deux sources 
 - le dataset historique CSV/JSON avec `historical_import.py` ;
 - l'API Mock avec `mock_api_import.py`.
 
-Les traitements sont actuellement exécutables directement depuis le backend.
+Les traitements restent exécutables directement depuis le backend, et Airflow les orchestre :
+`historical_import` se lance à la demande, `mock_api_import` chaque heure à la minute 45.
 
-L'orchestration avec Apache Airflow reste une cible, tout comme les agrégats continus et la
-compression. La rétention est faite : le DAG `retention` exporte chaque chunk de `reading` plus
+Les agrégats continus et la compression restent des cibles. La rétention est faite : le DAG `retention` exporte chaque chunk de `reading` plus
 vieux que `READING_RETENTION_DAYS` vers Garage, puis le supprime.
 
 ```mermaid
@@ -88,8 +88,8 @@ flowchart LR
   hist --> hy[("Hypertable reading")]
   api --> hy
 
-  airflow["Airflow"] -.-> hist
-  airflow -.-> api
+  airflow["Airflow"] --> hist
+  airflow --> api
 
   hy -.-> agg[("Agrégat continu")]
   hy -.-> comp["Compression"]
@@ -542,7 +542,7 @@ Cinq garde-fous, tous dans `mock_api_import.py` :
 | Garde-fou | Mise en œuvre |
 |---|---|
 | Timeout | `APP_MOCK_API_TIMEOUT_SECONDS`, dix secondes par défaut |
-| Taille de tableau plafonnée | `MAX_SITES` sites, et au plus `--limit` mesures par site |
+| Taille de tableau plafonnée | `MAX_SITES` sites, et au plus `limit` mesures par site, dérivé de la fenêtre par `limit_for_window()` |
 | Bornes physiques | `PHYSICAL_BOUNDS`, une plage par grandeur |
 | Frontière d'anti-corruption | `build_site_row()` et `build_reading_row()`, qui ne recopient que les champs attendus |
 | Refus de recouvrir l'historique | `refuse_if_overlaps_historical_dataset()`, voir ci-dessous |
@@ -622,9 +622,10 @@ imputed_values = NULL
 imputation_method = NULL
 ```
 
-### Validation de l'import API Mock
+### Validation initiale de l'import API Mock (18/09)
 
-Un scénario de validation a été exécuté pour les 7 sites sur la période :
+Un premier scénario de validation a été exécuté le 18/09, avant la clôture de la réconciliation
+(#15), pour les 7 sites sur la période :
 
 ```text
 15/06/2024 12:00 UTC
@@ -645,6 +646,10 @@ Résultat :
 60 lectures par site
 420 lectures récupérées
 ```
+
+Ce scénario ne se rejoue plus tel quel depuis le 23/09 : la fenêtre recouvre le dataset
+historique, donc `refuse_if_overlaps_historical_dataset()` la refuse, et `limit` n'est plus
+fourni par l'appelant (une lecture par heure, voir plus haut).
 
 Les données ont été chargées dans PostgreSQL/TimescaleDB puis contrôlées directement en base.
 
@@ -673,9 +678,9 @@ Les tests automatisés couvrent également :
 - la conservation des données sources ;
 - l'idempotence en base.
 
-## Évolution prévue
+## Orchestration par Airflow
 
-La prochaine étape consiste à orchestrer les deux mécanismes d'ingestion avec Apache Airflow.
+Les deux mécanismes d'ingestion sont orchestrés par Apache Airflow (`etl/airflow/dags`) :
 
 ```text
 CSV / JSON ----------------+
@@ -696,18 +701,11 @@ historical_import.py               mock_api_import.py
                 PostgreSQL / TimescaleDB
 ```
 
-Airflow servira à :
+`historical_import` n'a pas de planification (lancement à la demande) ; `mock_api_import` tourne
+chaque heure à la minute 45. Airflow planifie, ordonne, suit l'état et remonte les erreurs ; il ne
+remplace pas la logique ETL : les scripts Python restent responsables de l'extraction, de la
+validation, de la transformation et du chargement, appelés tels quels par des `BashOperator`.
 
-- planifier les traitements ;
-- définir leur ordre d'exécution ;
-- suivre leur état ;
-- gérer et remonter les erreurs ;
-- faciliter les exécutions récurrentes.
-
-Airflow ne remplacera pas la logique ETL déjà implémentée.
-
-Les scripts Python resteront responsables de l'extraction, de la validation, de la transformation
-et du chargement des données.
-
-Le pipeline servira ensuite de base à la préparation des données nécessaires au modèle
-de Machine Learning.
+Le même Airflow porte la suite de la chaîne : entraînement et scoring du modèle (`ml_train`,
+`ml_score`), alertes et recommandations (`alertes`), dérive (`derive`) et rétention
+(`retention`), soit sept DAGs.

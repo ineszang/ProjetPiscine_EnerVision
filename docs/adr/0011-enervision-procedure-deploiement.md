@@ -1,7 +1,7 @@
 # EnerVision · procédure de déploiement (22/09/2026)
 
 Terraform provisionne la machine, GitHub Actions déploie (ADR 0010). Deux environnements Compose
-sur la VM ENI `10.101.200.37` : `rec` sur la branche `dev`, `prod` sur `main` (ADR 0009).
+sur la VM ENI `<IP-VM-G3>` : `rec` sur la branche `dev`, `prod` sur `main` (ADR 0009).
 
 | | recette | production |
 |---|---|---|
@@ -13,7 +13,7 @@ sur la VM ENI `10.101.200.37` : `rec` sur la branche `dev`, `prod` sur `main` (A
 
 ## 0. Avant toute commande
 
-1. **Clé SSH déposée** sur la VM : `ssh-copy-id -i ~/.ssh/id_ed25519.pub root@10.101.200.37`.
+1. **Clé SSH déposée** sur la VM : `ssh-copy-id -i ~/.ssh/id_ed25519.pub root@<IP-VM-G3>`.
    Terraform ne gère **pas** l'authentification par mot de passe (elle finirait dans le state).
 2. **L'utilisateur propriétaire existe déjà** sur la VM (ex. `enervision`) : il possède
    `/srv/enervision` et fait tourner le runner. Terraform échoue tôt s'il manque, il ne le crée pas.
@@ -42,7 +42,7 @@ runner_version = "2.330.0"      # épingler depuis github.com/actions/runner/rel
 runner_token   = "..."          # jeton d'1 h, à retirer du fichier après l'apply
 ```
 
-Défauts utiles : `ssh_host = "10.101.200.37"`, `ssh_user = "root"`,
+Défauts utiles : `ssh_host = "<IP-VM-G3>"`, `ssh_user = "root"`,
 `ssh_private_key_path = "~/.ssh/id_ed25519"`, `racine = "/srv/enervision"`,
 `runner_labels = "eni-g3"` (ciblé par `deploy.yml`), `runner_dossier = "/opt/actions-runner"`.
 
@@ -134,7 +134,7 @@ curl -k https://localhost/api/v1/health/ready         # production, sur la VM
 Depuis un poste, ajouter à `/etc/hosts` :
 
 ```
-10.101.200.37 enervision.local rec.enervision.local
+<IP-VM-G3> enervision.local rec.enervision.local
 ```
 
 Les deux noms sont obligatoires : le cookie `__Secure-ev_refresh` est posé par hôte et non par

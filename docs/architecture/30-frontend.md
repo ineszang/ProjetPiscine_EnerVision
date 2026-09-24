@@ -4,8 +4,9 @@ Application Angular 22, 100 % standalone, testée avec Vitest. Source dans `apps
 
 ## État actuel
 
-Statut : `En cours`. L'application sert le tableau de bord, la liste et le détail des sites, la
-supervision des capteurs (admin) et le flux des alertes actives, tous branchés sur l'API réelle.
+Statut : `En cours`. L'application sert le tableau de bord, la liste et le détail des sites, les
+recommandations, la supervision des capteurs (admin) et le flux des alertes actives, tous
+branchés sur l'API réelle.
 
 Ce qui est en place :
 
@@ -13,10 +14,11 @@ Ce qui est en place :
 - `app.config.ts` fournit `provideBrowserGlobalErrorListeners()`, `provideRouter(routes)` et
   `provideHttpClient(withInterceptors([authInterceptor, mockApiInterceptor]))`.
 - Des routes en composants différés (`/dashboard`, `/sites`, `/sites/:siteId`,
-  `/monitoring/sensors` réservée au rôle `admin`) et une redirection depuis la racine.
+  `/recommendations`, `/monitoring/sensors` réservée au rôle `admin`, et les pages
+  d'authentification) et une redirection depuis la racine.
 - `core/services` porte un service HTTP par domaine (`StatsService`, `AlertsService` avec ses
   filtres `site_id` et `severity`, `PredictionsService`, `SitesService`, `ReadingsService`,
-  `SensorsService`, `AuthService`), `core/interceptors` l'intercepteur de fixtures et l'intercepteur
+  `RecommendationsService`, `SensorsService`, `AuthService`), `core/interceptors` l'intercepteur de fixtures et l'intercepteur
   d'authentification (jeton porteur, rafraîchissement sur 401), `core/guards` la garde `authGuard`.
 - `features/` porte une page par domaine. `shared/components` porte la jauge de consommation et
   les graphiques Chart.js, le widget `app-alert-feed` (flux d'alertes filtrable par site et

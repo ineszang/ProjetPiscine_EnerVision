@@ -17,13 +17,16 @@ contredisent, c'est l'ADR qui fait foi et la vue qui est en retard.
 | [40-data.md](40-data.md) | Frontières `db/` et `alembic/`, cycle de vie d'une mesure, modèle |
 | [50-cicd.md](50-cicd.md) | Orchestrateur `ci.yml`, gates bloquantes, e2e et charge, SonarCloud, Dependabot, ce qui manque |
 | [60-observabilite.md](60-observabilite.md) | Métriques, Prometheus, alertes, tableaux de bord Grafana, ce qui manque |
+| [70-pilotage.md](70-pilotage.md) | Runbook de pilotage des traitements automatisés : entraîner, lire la dérive, rejouer un DAG, rétention |
+| [owasp-traceabilite.md](owasp-traceabilite.md) | Traçabilité OWASP Top 10 et API Top 10 : couvert, partiel, ouvert |
 
 La CI/CD a son document : un orchestrateur et ses workflows de composant, c'est assez de
 matière pour qu'une section de plus dans une autre vue devienne illisible. L'observabilité a le
 sien depuis l'issue #26, qui lui a donné de la matière : collecte, alertes et tableaux de bord.
 
-L'orchestration Airflow, elle, en a depuis les issues #115 et #116 : trois DAGs, leur image et
-leurs contraintes sont décrits dans [10-infra.md](10-infra.md).
+L'orchestration Airflow, elle, en a depuis les issues #115 et #116 : les sept DAGs, leur image et
+leurs contraintes sont décrits dans [10-infra.md](10-infra.md), leur pilotage au quotidien dans
+[70-pilotage.md](70-pilotage.md).
 
 La sécurité applicative, elle, a désormais de la matière : la vue consolidée reste dans
 [00-vue-ensemble.md](00-vue-ensemble.md), le détail dans [20-backend.md](20-backend.md), la
@@ -37,6 +40,11 @@ ADR 0002 à 0004.
 GitHub rend Mermaid nativement dans les fichiers `.md`. Un diagramme est donc du texte : il se
 relit en revue, il se diffe, et il ne se périme pas dans un binaire que plus personne ne sait
 rouvrir six mois plus tard. Aucune image exportée, aucun `.drawio`, aucun `.png`.
+
+Une exception existe, et elle est connue : le schéma de données de
+[40-data.md](40-data.md) est une image, `images/EnerVision-schema-donnees.png`, versionnée le 15/09,
+quelques heures après l'adoption de la règle, sans que la revue le relève. Elle se relit à côté de la description des tables qui la suit,
+qui fait foi ; la migrer en Mermaid reste à faire.
 
 ### Chaque section porte son statut
 

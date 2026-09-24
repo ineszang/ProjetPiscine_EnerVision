@@ -1,4 +1,4 @@
-ssh_host             = "10.101.200.37"
+ssh_host             = "<IP-VM-G3>"
 ssh_port             = 22
 ssh_user             = "root"
 ssh_private_key_path = "~/.ssh/id_ed25519"

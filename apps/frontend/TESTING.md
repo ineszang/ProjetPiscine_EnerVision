@@ -24,14 +24,14 @@ it('devrait faire X quand Y', () => {
 ## Ce qui doit être testé en priorité
 - Services (`core/services/`) : logique métier, gestion des erreurs
 - Guards et interceptors (`core/guards/`, `core/interceptors/`) : chaque branche de décision
-- Composants avec logique (formulaires, conditions d'affichage) — pas nécessaire pour
+- Composants avec logique (formulaires, conditions d'affichage), mais pas nécessaire pour
   un composant 100% template, sans logique
 
 `core/services/`, `core/guards/` et `core/interceptors/` n'existent pas encore : c'est
 l'arborescence cible, décrite dans
 [docs/architecture/30-frontend.md](../../docs/architecture/30-frontend.md).
 
-## Gabarit — tester un service avec appel HTTP
+## Gabarit · tester un service avec appel HTTP
 ```typescript
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
@@ -61,7 +61,7 @@ describe('MonService', () => {
 });
 ```
 
-## Gabarit — tester un composant standalone
+## Gabarit · tester un composant standalone
 ```typescript
 import { TestBed } from '@angular/core/testing';
 import { MonComposant } from './mon-composant';
