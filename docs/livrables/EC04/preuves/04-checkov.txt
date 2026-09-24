@@ -1,0 +1,28 @@
+# Checkov 3.3.19 · 2026-09-24 14:47 CEST · commit 9f343e9, sur un export git archive du commit (aucun fichier ignoré du poste)
+# Option --quiet : seuls les contrôles en échec sont listés, le résumé JSON donne les réussis.
+
+## 1. infra/terraform, framework terraform
+-- résumé : (aucune ressource) {'passed': 0, 'failed': 0, 'skipped': 0, 'parsing_errors': 0, 'resource_count': 0, 'checkov_version': '3.3.19'}
+Lecture : resource_count 0. Les 6 ressources Terraform du dépôt sont des null_resource (provisioners SSH), pour lesquelles Checkov n'a aucune politique : ce scan ne prouve rien sur ce Terraform, dans un sens comme dans l'autre.
+
+## 2. framework dockerfile, dépôt entier
+dockerfile scan results:
+Passed checks: 268, Failed checks: 3, Skipped checks: 0
+Check: CKV_DOCKER_2: "Ensure that HEALTHCHECK instructions have been added to container images"
+	FAILED for resource: /ml/Dockerfile.
+	File: /ml/Dockerfile:1-7
+Check: CKV_DOCKER_2: "Ensure that HEALTHCHECK instructions have been added to container images"
+	FAILED for resource: /etl/airflow/Dockerfile.
+	File: /etl/airflow/Dockerfile:1-50
+Check: CKV_DOCKER_2: "Ensure that HEALTHCHECK instructions have been added to container images"
+	FAILED for resource: /apps/frontend/Dockerfile.
+	File: /apps/frontend/Dockerfile:1-47
+-- résumé : dockerfile {'passed': 268, 'failed': 3, 'skipped': 0, 'parsing_errors': 0, 'resource_count': 4, 'checkov_version': '3.3.19'}
+
+## 3. framework github_actions, dépôt entier
+github_actions scan results:
+Passed checks: 596, Failed checks: 0, Skipped checks: 0
+-- résumé : github_actions {'passed': 596, 'failed': 0, 'skipped': 0, 'parsing_errors': 0, 'resource_count': 0, 'checkov_version': '3.3.19'}
+
+## 4. framework secrets, dépôt entier
+-- résumé : (aucune ressource) {'passed': 0, 'failed': 0, 'skipped': 0, 'parsing_errors': 0, 'resource_count': 0, 'checkov_version': '3.3.19'}

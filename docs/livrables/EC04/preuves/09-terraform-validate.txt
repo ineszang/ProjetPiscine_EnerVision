@@ -1,0 +1,16 @@
+# Terraform fmt et validate (mêmes étapes que .github/workflows/infra.yml) · 2026-09-24 14:50 CEST · commit 9f343e9, sur un export git archive · Terraform v1.16.3
+
+## terraform fmt -check -recursive infra/terraform
+exit=0
+
+## infra/terraform/environments/k3s-cible/ : init -backend=false puis validate
+init exit=0
+Success! The configuration is valid.
+
+exit=0
+
+## infra/terraform/environments/vm-eni/ : init -backend=false puis validate
+init exit=0
+Success! The configuration is valid.
+
+exit=0

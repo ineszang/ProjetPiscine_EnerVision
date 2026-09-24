@@ -1,0 +1,15 @@
+# npm audit (méthode du job security-audit de frontend.yml : --package-lock-only) · 2026-09-24 14:45 CEST · commit 9f343e9
+
+## apps/frontend · seuil CI : --audit-level=high
+found 0 vulnerabilities
+exit=0
+## apps/frontend · synthèse tous niveaux (metadata)
+vulnerabilites: {"info": 0, "low": 0, "moderate": 0, "high": 0, "critical": 0, "total": 0}
+dependances: {"prod": 13, "dev": 499, "optional": 150, "peer": 0, "peerOptional": 0, "total": 511}
+
+## tests/e2e · seuil CI : --audit-level=high
+found 0 vulnerabilities
+exit=0
+## tests/e2e · synthèse tous niveaux (metadata)
+vulnerabilites: {"info": 0, "low": 0, "moderate": 0, "high": 0, "critical": 0, "total": 0}
+dependances: {"prod": 1, "dev": 26, "optional": 20, "peer": 0, "peerOptional": 0, "total": 26}
