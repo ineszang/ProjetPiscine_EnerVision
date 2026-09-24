@@ -41,11 +41,19 @@ SUPERVISION := $(findstring monitoring,$(COMPOSE_PROFILES) $(call env-val,COMPOS
 SERVICES_SUPERVISION := prometheus alertmanager grafana postgres-exporter node-exporter cadvisor
 GRAFANA_PORT := $(or $(strip $(call env-val,GRAFANA_PORT)),3001)
 PROMETHEUS_PORT := $(or $(strip $(call env-val,PROMETHEUS_PORT)),9090)
-supervision-garde = for cle in APP_METRICS_TOKEN GRAFANA_ADMIN_PASSWORD SUPERVISION_DB_PASSWORD; do \
+supervision-garde = for cle in APP_METRICS_TOKEN GRAFANA_ADMIN_PASSWORD SUPERVISION_DB_PASSWORD GARAGE_METRICS_TOKEN; do \
 		sed -n "s/^$$cle=//p" .env 2>/dev/null | tail -1 | grep -q . \
 			|| { echo "$$cle manquant dans .env, requis par la supervision (cf. .env.example)"; exit 1; }; \
 	done
 MONITORING := docker compose --profile monitoring
+
+# Piege : l'image Garage n'a pas de shell, elle ne peut pas porter sa garde comme grafana ou
+# airflow-init. Un secret vide ou laisse a change_me la ferait redemarrer en boucle (ADR 0019).
+CLES_GARAGE := GARAGE_RPC_SECRET GARAGE_ADMIN_TOKEN GARAGE_METRICS_TOKEN GARAGE_ACCESS_KEY GARAGE_SECRET_KEY GARAGE_SSE_KEY
+garage-garde = for cle in $(CLES_GARAGE); do \
+		sed -n "s/^$$cle=//p" .env 2>/dev/null | tail -1 | grep -qv '^change_me$$' \
+			|| { echo "$$cle manquant ou laisse a change_me dans .env, requis par Garage (cf. .env.example)"; exit 1; }; \
+	done
 PROMTOOL := $(MONITORING) run --rm --no-deps --entrypoint promtool prometheus
 
 # Piege : `e2e-prepare` ajoute trois sites `demo-*` et des comptes `test-*` a la base visee. Elle
@@ -101,8 +109,9 @@ dev: services-up migrate demo-data ## Lance toute la stack : base, Mailpit, Airf
 	$(MAKE) --no-print-directory dev-frontend & \
 	wait
 
-services-up: ## Démarre les services conteneurisés dont `make dev` dépend (base, Mailpit, Airflow)
-	docker compose up -d db mailpit
+services-up: ## Démarre les services conteneurisés dont `make dev` dépend (base, Mailpit, Garage, Airflow)
+	@$(garage-garde)
+	docker compose up -d db mailpit garage
 	@$(MAKE) --no-print-directory db-wait
 	@$(MAKE) --no-print-directory db-ensure-airflow
 	docker compose up -d airflow-init airflow-apiserver airflow-scheduler airflow-dag-processor
@@ -212,6 +221,7 @@ stack-up: ## Démarre la stack derrière le reverse proxy, puis migre la base. P
 	@openssl x509 -in infra/proxy/tls/fullchain.pem -noout -checkhost "$(PUBLIC_HOST)" >/dev/null \
 		|| { echo "Le certificat ne couvre pas $(PUBLIC_HOST). Relancer make tls-selfsigned PUBLIC_HOST=$(PUBLIC_HOST) FORCE=1"; exit 1; }
 	@$(if $(SUPERVISION),$(supervision-garde),true)
+	@$(garage-garde)
 	$(COMPOSE_PROD) up -d --build
 	$(COMPOSE_PROD) exec -T backend alembic upgrade head
 	@$(if $(SUPERVISION),$(MAKE) --no-print-directory db-ensure-supervision,true)
