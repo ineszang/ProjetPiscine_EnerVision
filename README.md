@@ -16,26 +16,27 @@ series temporelles energetiques, deployee sur une machine on-premise.
 
 Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.md](docs/architecture/00-vue-ensemble.md).
 
-## Stack cible
+## Stack
 
 | Domaine    | Technologie                         | Emplacement         | Etat          |
 |------------|-------------------------------------|---------------------|---------------|
 | Backend    | FastAPI, Python 3.14                | `apps/backend`      | En place    |
 | Frontend   | Angular 22, Node 26                 | `apps/frontend`     | En place |
 | Base       | PostgreSQL 17 + TimescaleDB         | `db`                | En place    |
-| ETL        | Apache Airflow                      | `etl/airflow`       | Cinq DAGs     |
-| Infra      | Terraform (k3s single-node)         | `infra/terraform`   | Initialise    |
-| Reverse proxy | Nginx, TLS                       | `infra/proxy`       | En place      |
+| ETL        | Apache Airflow                      | `etl/airflow`       | Sept DAGs     |
+| Infra      | Terraform (VM ENI ; module k3s)     | `infra/terraform`   | VM appliquée, k3s écrit non appliqué |
+| Reverse proxy | Nginx, TLS, frontal SNI          | `infra/proxy`, `infra/front` | En place, certificats Let's Encrypt |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | En place |
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | En place, profil Compose |
 | Stockage objet | Garage (S3), un par environnement | `infra/garage`      | En place, archives de `reading` |
 | Tests e2e et de charge | Playwright, k6              | `tests`             | En place |
 | ML         | LightGBM, MLflow                    | `ml`                | En place |
 
-Le backend, la base et l'infrastructure (Terraform/k3s) sont initialises a ce stade. Le frontend
-sert un tableau de bord sur `/dashboard`, dont les données proviennent de fixtures : les endpoints
-correspondants restent à écrire côté API. Les autres dossiers portent l'arborescence et un README
-de cadrage, leur contenu fait l'objet d'un ticket dedie.
+Toutes ces briques tournent sur la machine du groupe, en trois environnements (production,
+recette, dev). Le frontend sert le tableau de bord, les vues sites, recommandations et
+supervision des capteurs, toutes branchées sur l'API réelle : les fixtures sont coupées
+(`useMockFixtures: false`). Le module Terraform k3s reste une cible, écrite et validée, jamais
+appliquée.
 
 L'etat detaille de chaque brique et les vues d'architecture sont dans
 [docs/architecture](docs/architecture/README.md).
@@ -53,11 +54,12 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   ├── roles/          Roles PostgreSQL hors schema (supervision)
 │   └── seeds/          Jeu de demonstration des tests
 ├── etl/airflow/
-│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes, imports, dérive)
+│   ├── dags/           DAGs d'orchestration (pipeline ML, alertes, imports, dérive, rétention)
 │   ├── plugins/        Operateurs et hooks maison
 │   ├── include/        Requetes SQL et ressources des DAGs
 │   └── tests/          Tests d'integrite des DAGs
 ├── infra/
+│   ├── front/          Frontal SNI de la machine : ports 80 et 443, aiguillage par nom
 │   ├── garage/         Stockage objet S3 : configuration sans secret
 │   ├── proxy/          Reverse proxy Nginx : terminaison TLS et routage
 │   └── terraform/
@@ -72,13 +74,13 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   ├── e2e/            Parcours Playwright contre la stack
 │   ├── garage/         Tests de fumée S3 joués par la CI contre Garage
 │   └── load/           Scenarios de charge k6
-├── docs/               ADR et vues d'architecture
+├── docs/               ADR, vues d'architecture, runbook de pilotage, livrables de rendu
 └── scripts/            Outillage local
 ```
 
 ## Demarrage
 
-Prerequis : uv, Docker, Node 24 LTS (npm fourni). Le poste doit disposer de Python 3.14, que
+Prerequis : uv, Docker, Node 26 (version de la CI et de l'image frontend, npm fourni). Le poste doit disposer de Python 3.14, que
 `uv` installe seul.
 
 ```bash
@@ -148,16 +150,19 @@ L'overlay emploie `!override` et `!reset`, donc **Docker Compose 2.24.4 ou plus 
 
 ```bash
 make tls-selfsigned PUBLIC_HOST=enervision.local   # certificat de démonstration
-make stack-up PUBLIC_HOST=enervision.local         # nginx en 80/443, rien d'autre n'est publié
+make stack-up PUBLIC_HOST=enervision.local         # nginx en 80/443, le reste sur 127.0.0.1
 ```
 
-Le navigateur avertit d'un émetteur inconnu : Let's Encrypt reste hors d'atteinte tant qu'aucun
-nom de domaine public ne résout vers la machine. Routage, mode ACME et renouvellement dans
+Le navigateur avertit d'un émetteur inconnu : sur le poste, le certificat est auto-signé. Sur la
+machine, les certificats viennent de Let's Encrypt par défi DNS-01
+([ADR 0018](docs/adr/0018-noms-publics-certificats-dns01-et-frontal-sni.md)). Routage, mode ACME et renouvellement dans
 [`infra/proxy/README.md`](infra/proxy/README.md) ; la décision et ses motifs dans
 [l'ADR 0007](docs/adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
 
-Sur la VM ENI, deux environnements cohabitent, recette sur `dev` et production sur `main`,
-chacun dans son dossier et son projet Compose : `scripts/provision-host.sh` les prépare, le
+Sur la VM ENI, trois environnements cohabitent, production sur `main`, recette sur `dev`, et
+`dev` pour toute autre branche lancée à la main
+([ADR 0017](docs/adr/0017-environnement-dev-a-la-demande.md)), chacun dans son dossier et son
+projet Compose, derrière un frontal SNI commun : `scripts/provision-host.sh` les prépare, le
 workflow `deploy.yml` les redéploie par un runner auto-hébergé, une fois la CI du commit poussé
 verte ([ADR 0014](docs/adr/0014-pipeline-ci-unique-et-deploiement-conditionne.md)). Ports, noms
 d'hôte et garde-fous dans [`docs/architecture/10-infra.md`](docs/architecture/10-infra.md) et

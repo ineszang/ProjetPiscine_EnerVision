@@ -7,8 +7,8 @@ dans quel contexte, quelles décisions sont arrêtées, et ce qui manque encore 
 |---|---|---|
 | Docker Compose | Développer et recetter sur le poste | `Fait` |
 | Docker Compose plus reverse proxy | Déployer sur la machine on-premise | `Fait` |
-| Deux projets Compose sur la VM ENI, recette et production | Déploiement continu depuis GitHub | `En cours` |
-| Provisionnement Terraform de la VM | Préparer la machine et enregistrer le runner | `En cours` |
+| Trois projets Compose sur la VM ENI, dev, recette et production | Déploiement continu depuis GitHub | `Fait` |
+| Provisionnement Terraform de la VM | Préparer la machine et enregistrer le runner | `Fait` |
 | k3s single-node | Cible à terme | `En cours` |
 | MLflow (`ml/`) | Tracker les expériences et le registre de modèles en local | `Fait`, non relié aux autres topologies |
 
@@ -179,7 +179,7 @@ du `docker-compose.yml` principal (réseau, volumes et démarrage séparés).
 | `mlflow` | Construite depuis `ml/` | Expose l'UI et l'API MLflow sur `127.0.0.1:5000`. Artefacts sur volume `mlflow-artifacts`, tracking store sur `mlflow-db` |
 
 Portée actuelle : environnement de tracking et de registre de modèles pour le développement
-local uniquement. Ce compose n'est relié ni à `docker-compose.prod.yml`, ni aux deux
+local uniquement. Ce compose n'est relié ni à `docker-compose.prod.yml`, ni aux trois
 environnements Compose de la VM ENI, ni à la cible k3s. Le magasin utilisé par Airflow pour
 `ml_train`/`ml_score` (SQLite, volume `airflow_ml_state`) en est distinct : les deux MLflow ne
 se voient pas tant que `MLFLOW_TRACKING_URI` n'est pas posé côté Airflow.
@@ -199,8 +199,8 @@ d'entrainement Airflow et locaux n'a encore ete identifie.
 ## Machine cible, exécution Docker
 
 Statut : `Fait`. Défini par l'overlay `docker-compose.prod.yml`, appliqué par-dessus le
-`docker-compose.yml`. Écrit et validé sur le poste, **jamais encore lancé sur le serveur de
-l'école**. Décision et motifs dans l'[ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
+`docker-compose.yml`. En service sur la machine du groupe, une stack par environnement (sept
+déploiements de production entre le 23/09 et le 24/09). Décision et motifs dans l'[ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md).
 
 ```mermaid
 flowchart LR
@@ -225,8 +225,9 @@ flowchart LR
   sup -->|"alertes par courriel"| mail
 ```
 
-Le proxy est **le seul service à publier des ports** sur le réseau. Backend et frontend ne sont
-plus publiés du tout, la base et l'interface Mailpit sont ramenées sur `127.0.0.1`, donc joignables
+Sur le poste, le proxy est **le seul service à publier des ports** sur le réseau ; sur la
+machine, même lui n'écoute que sur `127.0.0.1`, derrière le frontal SNI (section suivante).
+Backend et frontend ne sont plus publiés du tout, la base et l'interface Mailpit sont ramenées sur `127.0.0.1`, donc joignables
 par tunnel SSH et pas autrement. Le détail du routage, les deux modes d'obtention du certificat et
 la commande de validation hors exécution sont dans [`infra/proxy/README.md`](../../infra/proxy/README.md).
 
@@ -239,7 +240,7 @@ Deux conséquences se propagent jusqu'à l'application, et elles ne se devinent 
 
 ### Trois environnements sur la même machine
 
-Statut : `En cours`. Décision et motifs dans
+Statut : `Fait`. Décision et motifs dans
 l'[ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md), étendue à un troisième
 environnement par l'[ADR 0017](../adr/0017-environnement-dev-a-la-demande.md) ; noms,
 certificats et frontal sans port dans l'[ADR 0018](../adr/0018-noms-publics-certificats-dns01-et-frontal-sni.md).
@@ -274,7 +275,9 @@ la VM aligne le dossier sur la branche poussée et lance `make stack-up`.
 
 ### Provisionnement de la machine
 
-Statut : `En cours`. Décision et frontière dans
+Statut : `Fait`. Appliqué : le state local porte Docker, les trois environnements et le runner ;
+le coffre LUKS n'est pas appliqué, la machine étant un conteneur LXC
+([ADR 0020](../adr/0020-chiffrement-au-repos-coffre-luks-et-sse-c.md)). Décision et frontière dans
 l'[ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md) : **Terraform
 provisionne la machine, GitHub Actions déploie l'application**. La racine
 `infra/terraform/environments/vm-eni/` fait trois choses, et rien d'autre.
@@ -317,10 +320,10 @@ la migration. Runbook, joué en root sur la VM, coupure des trois environnements
 minutes :
 
 ```bash
-scp scripts/coffre-luks.sh root@10.101.200.37:/tmp/
-ssh root@10.101.200.37 'COFFRE_TAILLE=30G COFFRE_MIGRER=1 bash /tmp/coffre-luks.sh'
-ssh root@10.101.200.37 'findmnt /var/lib/docker/volumes && lsblk /dev/mapper/enervision-coffre && docker ps'
-ssh root@10.101.200.37 'curl -k https://localhost:10443/api/v1/health/ready'
+scp scripts/coffre-luks.sh root@<IP-VM-G3>:/tmp/
+ssh root@<IP-VM-G3> 'COFFRE_TAILLE=30G COFFRE_MIGRER=1 bash /tmp/coffre-luks.sh'
+ssh root@<IP-VM-G3> 'findmnt /var/lib/docker/volumes && lsblk /dev/mapper/enervision-coffre && docker ps'
+ssh root@<IP-VM-G3> 'curl -k https://localhost:10443/api/v1/health/ready'
 ```
 
 Ensuite, dans cet ordre : sauvegarder `/root/enervision-coffre.key` hors de la VM (sans elle, les
@@ -388,7 +391,7 @@ Ces arbitrages sont pris. Ils ne vivaient jusqu'ici que dans des commentaires de
 | Terraform provisionne, GitHub Actions déploie | Deux chemins pour le même acte de livraison, c'est ce que la revue de #141 relève sur la VM | [ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md) |
 | Connexion SSH par clé, jamais par mot de passe | Une variable de mot de passe finit en clair dans le state, ou dans les `triggers` qui y sont persistés | `environments/vm-eni/variables.tf`, `modules/k3s/main.tf` |
 | Terminaison TLS par un reverse proxy Nginx en Compose | L'ingress k3s supposait un registre et des manifestes qui n'existent pas, à quatre jours du rendu | `docker-compose.prod.yml`, [ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md) |
-| Certificat auto-signé par défaut, chemin ACME câblé | Aucun domaine public ne résout vers la machine : le défi HTTP-01 ne peut pas aboutir | `scripts/tls-selfsigned.sh`, `infra/proxy/acme-deploy-hook.sh` |
+| Certificats Let's Encrypt par défi DNS-01 sur la machine, auto-signé sur le poste | La machine n'a qu'une adresse privée : le défi HTTP-01 ne peut pas aboutir, le défi DNS-01 ne demande qu'un enregistrement TXT dans la zone publique | `make tls-dns01`, `scripts/provision-host.sh`, `scripts/tls-selfsigned.sh`, [ADR 0018](../adr/0018-noms-publics-certificats-dns01-et-frontal-sni.md) |
 | Un projet Compose par environnement, sur la même machine | Une seule VM, et l'isolation par nom de projet ne demande ni cluster ni registre | `.env` de chaque dossier, [ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md) |
 | Runner GitHub Actions auto-hébergé sur la VM | Les runners hébergés par GitHub ne joignent pas une adresse privée d'école | `.github/workflows/deploy.yml` |
 | Secrets dans le `.env` de chaque environnement, sur la machine | Ni dans git, ni dans GitHub : le runner n'a rien à recevoir | `scripts/provision-host.sh` |
@@ -422,8 +425,6 @@ question à trancher, avant toute ressource Kubernetes.
 - **Quel ingress** remplace Traefik le jour de la bascule k3s. Qui termine le TLS est tranché par
   l'[ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md), mais la réponse vaut pour la
   topologie Compose, pas pour Kubernetes.
-- **Quel nom de domaine public**, sans lequel Let's Encrypt reste hors d'atteinte et le certificat
-  reste auto-signé.
 - **Quel registre d'images**, et comment il est alimenté sans CI.
 - **Quel stockage persistant** côté Kubernetes pour PostgreSQL, et si la base tourne dans le
   cluster ou à côté.

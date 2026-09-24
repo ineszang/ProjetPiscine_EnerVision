@@ -1,7 +1,9 @@
 # Reverse proxy
 
-Terminaison TLS et routage de la stack déployée. Seul composant publié sur le réseau : il
-écoute en 80 et 443, et rien d'autre ne sort du réseau Compose.
+Terminaison TLS et routage de la stack déployée. Sur un poste, seul composant publié sur le
+réseau : il écoute en 80 et 443, et rien d'autre ne sort du réseau Compose. Sur la VM, il
+n'écoute plus que sur `127.0.0.1`, derrière le frontal SNI `infra/front`, seul composant exposé
+([ADR 0018](../../docs/adr/0018-noms-publics-certificats-dns01-et-frontal-sni.md)).
 
 - `nginx.conf` : bloc `http`, journalisation, compression, zones de limitation de débit.
 - `conf.d/enervision.conf` : redirection 80 vers 443, terminaison TLS, en-têtes de sécurité,
@@ -15,11 +17,13 @@ configuration est montée en volume par `docker-compose.prod.yml`.
 L'overlay emploie les marqueurs `!override` et `!reset`, qui demandent **Docker Compose 2.24.4
 ou plus récent**. Sur une version antérieure, la fusion échoue au lieu de dépublier les ports.
 
-Les ports publiés sont `PROXY_HTTP_PORT` et `PROXY_HTTPS_PORT`, 80 et 443 par défaut. Quand deux
-environnements partagent la machine ([ADR 0009](../../docs/adr/0009-deux-environnements-compose-sur-la-vm-eni.md)),
-la recette publie `8443` et ramène son port 80 sur `127.0.0.1:8081` : la redirection ci-dessous
-renvoie vers `https://$host` sans port, donc vers la production. `PUBLIC_ORIGIN` porte alors
-l'origine avec son port pour le CORS et le lien de réinitialisation.
+Les ports publiés sont `PROXY_HTTP_PORT`, `PROXY_HTTPS_PORT` et `PROXY_FRONT_PORT`, 80, 443 et un
+port aléatoire de la boucle locale par défaut. Sur la VM, trois environnements partagent la
+machine ([ADR 0009](../../docs/adr/0009-deux-environnements-compose-sur-la-vm-eni.md),
+[ADR 0017](../../docs/adr/0017-environnement-dev-a-la-demande.md)) : `scripts/provision-host.sh`
+place les ports de chaque proxy sur `127.0.0.1` (HTTPS en 10443, 8443 et 9443 pour la production,
+la recette et le dev), et le frontal aiguille chaque nom vers le sien. Les URL publiques n'ont
+donc plus de port, et `PUBLIC_ORIGIN` vaut `https://` suivi du nom de l'environnement.
 
 ## Routage
 
@@ -55,15 +59,15 @@ make tls-selfsigned PUBLIC_HOST=enervision.local
 make stack-up
 ```
 
-Le navigateur avertira d'un émetteur inconnu : c'est attendu, et c'est le seul mode exploitable
-tant que la machine cible n'a pas de nom de domaine public.
+Le navigateur avertira d'un émetteur inconnu : c'est attendu. C'est le mode du poste de
+développement et des tests e2e ; la VM utilise Let's Encrypt par DNS-01 (plus bas).
 
 ### Let's Encrypt
 
 Le défi HTTP-01 exige un nom de domaine **résolvable publiquement** et le port 80 joignable
-depuis Internet. La cible documentée aujourd'hui (`ssh_host = "10.0.0.10"`, serveur de l'école)
-ne remplit ni l'une ni l'autre condition : le chemin ci-dessous est livré et documenté, il n'a
-pas été exercé.
+depuis Internet. La VM de l'école ne remplit ni l'une ni l'autre condition : ce chemin reste
+livré pour une machine publique, et n'a pas été exercé. La VM passe par DNS-01 (section
+suivante).
 
 ```bash
 make stack-up                                     # nginx doit tourner pour servir le défi

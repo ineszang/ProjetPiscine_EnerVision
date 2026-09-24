@@ -1,0 +1,99 @@
+# Constats sur la machine du groupe, en lecture seule · 24/09/2026 15h20 à 15h30 CEST · commit déployé en production 9f343e9
+# Commande : ssh root@<IP-VM-G3> 'bash -s' < constats-machine-enervision.sh, puis constats-complement-enervision.sh, lancés par l'auteur
+# Anonymisation : adresse et nom de la machine masqués, identifiants de cluster Vault et adresses internes des réseaux Docker retirés.
+
+## Virtualisation (systemd-detect-virt)
+lxc
+
+## Ports TCP en écoute (ss -tlnpH, adresse locale et processus)
+Sur toutes les interfaces :
+  0.0.0.0:22 et [::]:22          sshd
+  0.0.0.0:80, 0.0.0.0:443        frontal SNI (enervision-front)
+  *:6443                         k3s-server
+  0.0.0.0:8200, *:8201           vault
+  0.0.0.0:8202, *:8203           vault
+  0.0.0.0:8204, *:8205           vault
+Sur la boucle locale seulement :
+  proxys des stacks              127.0.0.1:10080, 10443, 10444 (prod) · 8081, 8443, 8444 (rec) · 8083, 9443, 9444 (dev)
+  bases des stacks               127.0.0.1:5433 (prod), 5434 (rec), 5435 (dev)
+  Mailpit                        127.0.0.1:8025, 8026, 8027
+  API Airflow                    127.0.0.1:8080, 8082, 8084
+  Garage (S3, admin)             127.0.0.1:3900, 3903 (prod) · 3910, 3913 (rec) · aucun pour dev
+  Grafana, Prometheus, Alertmanager (prod)  127.0.0.1:3001, 9090, 9093
+  PostgreSQL 18 de l'hôte        127.0.0.1:5432, [::1]:5432
+  Postfix de l'hôte              127.0.0.1:25, [::1]:25
+  k3s (interne)                  127.0.0.1:6444
+  containerd                     127.0.0.1:34303
+  résolveur systemd              127.0.0.53:53, 127.0.0.54:53
+
+## Pare-feu (nft list ruleset, iptables -S)
+table inet filter : chaînes input, forward et output vides, politique accept.
+table ip raw : 24 règles posées par Docker, qui rejettent tout paquet destiné à un port publié sur 127.0.0.1 (ou à un conteneur) s'il n'arrive pas par lo (ou par le pont Docker du projet).
+iptables : -P INPUT ACCEPT, -P FORWARD DROP, -P OUTPUT ACCEPT, et les chaînes DOCKER, DOCKER-USER, DOCKER-FORWARD de Docker.
+
+## SSH effectif (sshd -T)
+permitrootlogin yes
+pubkeyauthentication yes
+passwordauthentication yes
+kbdinteractiveauthentication no
+
+## Stacks (docker ps par projet Compose)
+### enervision-prod : 15 services démarrés, airflow-init terminé (0)
+airflow-apiserver (healthy), airflow-dag-processor, airflow-scheduler, alertmanager, backend (healthy), cadvisor (healthy), db (healthy), frontend, garage (healthy), grafana, mailpit (healthy), node-exporter, postgres-exporter, prometheus, proxy
+### enervision-rec : 9 services démarrés, airflow-init terminé (0)
+airflow-apiserver (healthy), airflow-dag-processor, airflow-scheduler, backend (healthy), db (healthy), frontend, garage (healthy), mailpit (healthy), proxy
+### enervision-dev : 8 services démarrés, airflow-init terminé (0), pas de Garage
+airflow-apiserver (healthy), airflow-dag-processor, airflow-scheduler, backend (healthy), db (healthy), frontend, mailpit (healthy), proxy
+### enervision-front
+front, démarré depuis 26 heures
+### Hors projets EnerVision
+19 conteneurs arrêtés entre le 16 et le 21/09 ou jamais démarrés, dont 3 hello-world ; aucun en fonctionnement.
+
+## Sondes de santé par le nom public, certificat vérifié (curl sans -k)
+prod http=200 verification_tls=0
+rec http=200 verification_tls=0
+dev http=200 verification_tls=0
+
+## Certificats servis par le frontal (openssl s_client -servername)
+prod : issuer=C = US, O = Let's Encrypt, CN = YE1 · notAfter=Dec 22 09:40:38 2026 GMT
+rec  : issuer=C = US, O = Let's Encrypt, CN = YE1 · notAfter=Dec 22 09:11:04 2026 GMT
+dev  : issuer=C = US, O = Let's Encrypt, CN = YE1 · notAfter=Dec 22 09:17:54 2026 GMT
+
+## En-têtes servis en production sur / (curl -sI)
+server: nginx
+strict-transport-security: max-age=31536000; includeSubDomains
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+
+## Droits des secrets sur disque (stat)
+600 enervision /srv/enervision/dev/.env
+600 enervision /srv/enervision/prod/.env
+600 enervision /srv/enervision/rec/.env
+600 enervision /srv/enervision/dns.token
+
+## Runner GitHub Actions (systemctl)
+actions.runner.<depot>.<machine-G3>.service loaded active running
+
+## Journal d'audit de la production (select action, count(*) from audit_log group by action)
+user.created|5
+user.password_changed|3
+
+## Supervision de la production (API Prometheus, 127.0.0.1:9090)
+cibles : alertmanager, backend, cadvisor, garage, node, postgres, prometheus · toutes health=up
+règles chargées : ApiErreursServeur, ApiIndisponible, ApiLatenceElevee, BaseConnexionsSaturees, BaseIndisponible, CibleInjoignable, HoteCpuSature, HoteDisquePlein, HoteMemoireSaturee (groupes api, base, hote, supervision)
+
+## Services hors plateforme
+k3s : binaire /usr/local/bin/k3s du 17/09/2026 14:07 UTC · systemctl show k3s : ActiveState=activating, SubState=start, NRestarts=51678 · k3s kubectl get pods -A : No resources found, API refusée pendant un redémarrage
+vault.service : active (running), « HashiCorp Vault »
+Vault, seal-status sans authentification (champs utiles) :
+  8200 : version 2.1.1, shamir t=2 n=5, initialized=true, sealed=false, storage_type=file, démarré le 22/09 12:28 UTC
+  8202 : version 2.1.1, shamir t=3 n=5, initialized=true, sealed=false, storage_type=file, démarré le 22/09 07:27 UTC
+  8204 : version 2.1.1, shamir t=4 n=5, initialized=true, sealed=false, storage_type=file, démarré le 22/09 07:28 UTC
+postgresql@18-main : active (running), boucle locale seulement
+postfix@- : active (running), boucle locale seulement
+
+Lecture :
+- La plateforme livrée tient sa promesse : de ses composants, seul le frontal SNI écoute hors de la boucle locale, en 80 et 443. Les trois noms publics répondent 200 avec un certificat Let's Encrypt vérifié, HSTS et CSP sont servis, les .env sont en 600, le runner tourne, les sept cibles Prometheus sont up.
+- La machine, elle, expose davantage : SSH en root avec mot de passe accepté, l'API k3s sur 6443 et trois serveurs Vault descellés sur 8200 à 8205, tous sur toutes les interfaces, sans pare-feu hôte (table nftables vide, politique accept).
+- k3s et Vault ne viennent pas du code livré : git grep vault ne trouve rien sur le commit gelé. Vault est visé par le Terraform d'une branche de travail non fusionnée (provider vault, adresse de la machine en 8200). k3s redémarre en boucle depuis son installation du 17/09 (51 678 redémarrages) et ne porte aucun pod : il consomme sans servir.
+- L'environnement dev tourne encore le commit du 23/09 : pas de Garage. Il suit la dernière branche lancée à la main (ADR 0017), et aucune ne l'a été depuis.
+- Le journal d'audit ne compte que les événements d'administration des comptes (5 créations, 3 changements de mot de passe) : les connexions vont à login_attempt.

@@ -12,7 +12,7 @@ Chaque poste devait éditer son `/etc/hosts` et accepter trois avertissements du
 rien de présentable à un jury, et rien d'utilisable par quelqu'un qui n'a pas la main sur son
 poste.
 
-Contraintes : la VM n'a qu'une IP privée, `10.101.200.37`, que ni Internet ni Let's Encrypt ne
+Contraintes : la VM n'a qu'une IP privée, `<IP-VM-G3>`, que ni Internet ni Let's Encrypt ne
 joignent, et le réseau de l'école ne doit pas être touché. Vérifications faites le 23/09 : les
 résolveurs de l'école rendent bien une adresse privée pour un nom public, la VM sort en HTTPS
 vers Let's Encrypt et vers l'API de dynv6, mais le filtrage de l'école bloque duckdns.org, site

@@ -1,0 +1,78 @@
+# Reverse proxy, frontal SNI et ports publiés · 2026-09-24 14:51 CEST · commit 9f343e9, configuration lue sur un export git archive
+
+## nginx -t du proxy de stack (image nginx:1.31-alpine, celle de docker-compose.prod.yml, configuration montée en lecture seule)
+# --add-host backend et frontend : nginx résout les upstream au test, hors du réseau Compose. Certificat : celui du poste, monté en lecture seule.
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+
+## nginx -t du frontal SNI de la machine (même commande que infra.yml)
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+
+## Directives de sécurité du proxy (grep sur infra/proxy)
+  infra/proxy/nginx.conf:1:# Contrainte : les directives `limit_req_zone` ne sont valides que dans le bloc `http`.
+  infra/proxy/nginx.conf:16:    server_tokens off;
+  infra/proxy/nginx.conf:26:    client_max_body_size 2m;
+  infra/proxy/nginx.conf:35:    limit_req_zone $binary_remote_addr zone=api:10m  rate=20r/s;
+  infra/proxy/nginx.conf:36:    limit_req_zone $binary_remote_addr zone=auth:10m rate=30r/m;
+  infra/proxy/nginx.conf:37:    limit_req_status 429;
+  infra/proxy/conf.d/enervision.conf:14:    listen 80 default_server;
+  infra/proxy/conf.d/enervision.conf:22:        return 301 https://$host$request_uri;
+  infra/proxy/conf.d/enervision.conf:27:    listen 443 ssl default_server;
+  infra/proxy/conf.d/enervision.conf:28:    listen 4443 ssl proxy_protocol default_server;
+  infra/proxy/conf.d/enervision.conf:34:    real_ip_header proxy_protocol;
+  infra/proxy/conf.d/enervision.conf:40:    ssl_protocols TLSv1.2 TLSv1.3;
+  infra/proxy/conf.d/enervision.conf:44:    ssl_session_tickets off;
+  infra/proxy/conf.d/enervision.conf:48:    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  infra/proxy/conf.d/enervision.conf:49:    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+  infra/proxy/conf.d/enervision.conf:61:        limit_req zone=auth burst=20 nodelay;
+  infra/proxy/conf.d/enervision.conf:67:        limit_req zone=api burst=40 nodelay;
+
+## En-têtes posés par l'API elle-même (apps/backend/app/api/middleware.py)
+  apps/backend/app/api/middleware.py:16:    "X-Content-Type-Options": "nosniff",
+  apps/backend/app/api/middleware.py:17:    "X-Frame-Options": "DENY",
+  apps/backend/app/api/middleware.py:18:    "Referrer-Policy": "no-referrer",
+  apps/backend/app/api/middleware.py:21:    "Cross-Origin-Resource-Policy": "same-origin",
+  apps/backend/app/api/middleware.py:37:            response.headers["Cache-Control"] = "no-store"
+
+## Frontal SNI (infra/front/nginx.conf) : aiguillage TCP sans déchiffrement
+      map $ssl_preread_server_name $stack {
+          ~^rec\.  127.0.0.1:8444;
+          ~^dev\.  127.0.0.1:9444;
+          default  127.0.0.1:10444;
+      }
+  
+      server {
+          listen 443;
+          ssl_preread on;
+          proxy_pass $stack;
+          proxy_protocol on;
+          proxy_connect_timeout 5s;
+  Réseau : network_mode host (infra/front/compose.yml), ports 80 et 443 de la machine. Il lit le nom demandé (SNI), sans déchiffrer, et relaie en PROXY protocol vers l'écouteur 4443 du proxy de la stack visée, sur 127.0.0.1.
+
+## Ports publiés après fusion (docker compose 5.5.1, --env-file .env.example, profil monitoring, config --format json)
+# Commande : docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.prod.yml --profile monitoring config --format json, puis extraction des seuls champs ports (aucune variable recopiée)
+airflow-apiserver      127.0.0.1:8080->8080
+airflow-dag-processor  aucun port publié
+airflow-init           aucun port publié
+airflow-scheduler      aucun port publié
+alertmanager           127.0.0.1:9093->9093
+backend                aucun port publié
+cadvisor               aucun port publié
+db                     127.0.0.1:5433->5432
+frontend               aucun port publié
+garage                 127.0.0.1:3900->3900, 127.0.0.1:3903->3903
+grafana                127.0.0.1:3001->3000
+mailpit                127.0.0.1:8025->8025
+node-exporter          aucun port publié
+postgres-exporter      aucun port publié
+prometheus             127.0.0.1:9090->9090
+proxy                  0.0.0.0:80->80, 0.0.0.0:443->443, 127.0.0.1:<aléatoire>->4443
+
+## Ports réellement posés sur la machine par scripts/provision-host.sh (l. 212-214, colonnes https, http, front)
+  prod  127.0.0.1:10443  127.0.0.1:10080  127.0.0.1:10444
+  rec   127.0.0.1:8443   127.0.0.1:8081   127.0.0.1:8444
+  dev   127.0.0.1:9443   127.0.0.1:8083   127.0.0.1:9444
+  Base, Mailpit, Airflow, Garage et supervision décalés par environnement, tous sur 127.0.0.1.
+
+Lecture : les défauts du dépôt publient le proxy en 80 et 443 pour un poste de développement. Sur la machine, provision-host.sh ramène tous les ports des trois stacks sur la boucle locale : le seul composant joignable depuis le réseau est le frontal SNI, en 80 et 443. Backend, frontend, scheduler, dag-processor et exporteurs ne publient rien. Le port SMTP 1025 de Mailpit, publié en développement, disparaît (!override). L'état effectif de la machine est relevé dans 12-constats-machine.txt.

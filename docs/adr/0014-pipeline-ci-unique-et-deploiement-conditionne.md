@@ -2,6 +2,7 @@
 
 - Statut : accepté
 - Date : 2026-09-23
+- Note du 24/09 : au gel, les règles de branche ne sont pas posées : `prod` n'accepte que `main` mais sans relecteur, `rec` et `dev` n'ont aucune règle, aucune branche n'est protégée. L'approbation des workflows externes n'est pas lisible avec les droits d'un membre.
 - Complète : [0009](0009-deux-environnements-compose-sur-la-vm-eni.md), qui reste en vigueur
 
 ## Contexte

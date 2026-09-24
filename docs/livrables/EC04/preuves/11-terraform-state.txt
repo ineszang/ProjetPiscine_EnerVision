@@ -1,0 +1,11 @@
+# State Terraform local de la racine vm-eni · relevé 2026-09-24 14:50 CEST · commit 9f343e9
+# Commande : terraform -chdir=infra/terraform/environments/vm-eni state list (seuls les noms de ressources, aucun attribut recopié)
+
+null_resource.docker_engine
+null_resource.environnements
+null_resource.runner_github
+
+Dernière écriture du state : 2026-09-23 12:12:09
+serial 12 · terraform 1.16.3 · 3 ressources appliquées sur 4 déclarées dans vm-eni/main.tf
+
+Lecture : depuis le relevé du 23/09 9h05 (serial 3, 2 ressources), les applies du 22/09 au 23/09 ont installé Docker, préparé les trois environnements (clones, .env générés sur la machine, certificats) et enregistré le runner GitHub (null_resource.runner_github). La quatrième ressource, null_resource.coffre (volumes Docker dans un coffre LUKS), est désactivée tant que la variable coffre_taille est vide (count = 0), et elle l'est restée : la machine est un conteneur LXC, où LUKS est impossible (ADR 0020), elle n'a donc jamais été appliquée. Clés des triggers relevées (valeurs non recopiées) : docker_engine [hote, user], environnements [depot, domaine, racine, script], runner_github [dossier, labels, nom, version]. L'adresse de la machine et le compte SSH y figurent, mais ni le jeton d'enregistrement du runner ni la clé SSH : le jeton est une variable sensitive hors des triggers (ADR 0010).

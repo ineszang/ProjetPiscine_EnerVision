@@ -1,0 +1,55 @@
+# Trivy fs, scanners vuln et secret (image aquasec/trivy:latest, sha256:62b1e65e8869) · 2026-09-24 14:48 CEST · commit 9f343e9
+# Commande : docker run --rm -v <depot>:/repo:ro aquasec/trivy:latest fs --scanners vuln,secret --skip-dirs node_modules --skip-dirs .venv --skip-dirs .angular /repo
+# Périmètre : arbre de travail du poste, donc fichiers ignorés par git compris. Le corps de toute clé détectée est retiré de cette copie.
+
+Report Summary
+
+┌──────────────────────────────────────────────────────────────────────────────────┬──────┬─────────────────┬─────────┐
+│                                      Target                                      │ Type │ Vulnerabilities │ Secrets │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ apps/backend/uv.lock                                                             │  uv  │        0        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ apps/frontend/package-lock.json                                                  │ npm  │        0        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ etl/airflow/uv.lock                                                              │  uv  │        1        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ ml/mlruns/1/models/m-07209b6bfc7a4edfa1c8a8b1b4577a34/artifacts/requirements.txt │ pip  │        0        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ ml/mlruns/1/models/m-37380043d1da4d578858f40853a7f72d/artifacts/requirements.txt │ pip  │        0        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ ml/mlruns/1/models/m-39f8a317ffed49288cbdffb66046ecd4/artifacts/requirements.txt │ pip  │        0        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ ml/mlruns/1/models/m-3a8d4c6d896b4ca2b0645b323adfb857/artifacts/requirements.txt │ pip  │        0        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ ml/mlruns/1/models/m-57dd632c169a4c43b5777f9fe1a52958/artifacts/requirements.txt │ pip  │        0        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ ml/mlruns/1/models/m-d1cbcc5b82a1400ea438c01c12e73536/artifacts/requirements.txt │ pip  │        0        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ ml/uv.lock                                                                       │  uv  │        0        │    -    │
+├──────────────────────────────────────────────────────────────────────────────────┼──────┼─────────────────┼─────────┤
+│ infra/proxy/tls/privkey.pem                                                      │ text │        -        │    1    │
+└──────────────────────────────────────────────────────────────────────────────────┴──────┴─────────────────┴─────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+
+
+etl/airflow/uv.lock (uv)
+========================
+Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 0, CRITICAL: 0)
+
+┌───────────────────────────────┬────────────────┬──────────┬────────┬───────────────────┬───────────────┬─────────────────────────────────────────────────────────────┐
+│            Library            │ Vulnerability  │ Severity │ Status │ Installed Version │ Fixed Version │                            Title                            │
+├───────────────────────────────┼────────────────┼──────────┼────────┼───────────────────┼───────────────┼─────────────────────────────────────────────────────────────┤
+│ apache-airflow-providers-smtp │ CVE-2026-41016 │ MEDIUM   │ fixed  │ 2.3.2             │ 3.0.0         │ apache-airflow-providers-smtp: No certificate validation on │
+│                               │                │          │        │                   │               │ SMTP STARTTLS connections in SMTP provider                  │
+│                               │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-41016                  │
+└───────────────────────────────┴────────────────┴──────────┴────────┴───────────────────┴───────────────┴─────────────────────────────────────────────────────────────┘
+
+infra/proxy/tls/privkey.pem (secrets)
+=====================================
+Total: 1 (HIGH: 1) · AsymmetricPrivateKey (private-key) · infra/proxy/tls/privkey.pem:2-27 · [contenu retiré]
+
+Lecture :
+- CVE-2026-41016 (= PYSEC-2026-24 de pip-audit) : dépendance transitive d'apache-airflow 3.3.2, SmtpHook sans validation de certificat au STARTTLS. Aucun DAG n'envoie de courriel et aucune connexion SMTP n'est déclarée dans Airflow : pas d'exposition aujourd'hui. Correctif : providers-smtp >= 3.0.0. Inchangée depuis le 23/09 : le verrou etl/airflow/uv.lock n'a pas bougé et n'est audité ni par la CI ni par Dependabot.
+- privkey.pem : clé du certificat auto-signé du poste, générée par make tls-selfsigned pour le développement local ; en recette et en production, le certificat vient de Let's Encrypt (ADR 0018). Ignorée par git (.gitignore, motif infra/proxy/tls/*.pem), jamais commitée (git log --all -- '*.pem' vide, cf. 05-gitleaks.txt). Risque réel : la retrouver dans un ZIP fabriqué à partir de l'arbre de travail au lieu d'un clone.

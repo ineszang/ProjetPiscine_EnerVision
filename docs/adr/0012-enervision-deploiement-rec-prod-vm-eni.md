@@ -1,7 +1,7 @@
 # EnerVision · Recette et production sur la VM ENI, aujourd'hui
 
 État au lundi 21 septembre 2026, 15h. Cible : deux environnements qui tournent sur la VM
-`eadl-2025-nantes-g3` (`10.101.200.37`) avant vendredi 25/09 9h, déployés automatiquement depuis
+`eadl-2025-nantes-g3` (`<IP-VM-G3>`) avant vendredi 25/09 9h, déployés automatiquement depuis
 GitHub. Ce document donne la solution retenue, ce qu'elle change dans le dépôt, et le déroulé de
 l'après-midi avec qui fait quoi.
 
@@ -37,7 +37,7 @@ prod à chaque connexion sur la recette.
 - **Un projet Compose isole tout.** Volumes, réseau, noms de conteneurs sont préfixés par le nom
   du projet. Casser la recette ne touche pas la prod, ce qui est la raison d'être d'une recette.
 - **Le runner sur la VM est la seule façon d'atteindre une IP privée d'école depuis GitHub.** Les
-  runners hébergés par GitHub ne voient pas `10.101.200.37`. Le runner se connecte en sortie
+  runners hébergés par GitHub ne voient pas `<IP-VM-G3>`. Le runner se connecte en sortie
   vers GitHub, aucun port entrant n'est nécessaire. C'était le choix 16 du dossier EC01 : il
   redevient tenu.
 - **La promotion existe déjà dans la stratégie de branches** : `dev` puis `main` par PR. Le
@@ -71,9 +71,9 @@ Ce qui ne change pas : `docker-compose.yml`, la configuration Nginx, `infra/terr
 | # | Qui | Quoi | Durée |
 |---|---|---|---|
 | 1 | **ineszang** (seule admin du dépôt) | Environnement `prod` : branche autorisée `main`, un relecteur requis. Environnement `rec` : branche `dev`. Settings > Actions : « Require approval for all outside collaborators ». Générer le jeton d'enregistrement du runner (Settings > Actions > Runners > New self-hosted runner, Linux x64) et le transmettre à Johan | 10 min |
-| 2 | **Johan** | Déposer sa clé sur la VM : `ssh-copy-id -i ~/.ssh/id_ed25519.pub root@10.101.200.37`, mot de passe du compte administrateur local des postes de l'école | 2 min |
+| 2 | **Johan** | Déposer sa clé sur la VM : `ssh-copy-id -i ~/.ssh/id_ed25519.pub root@<IP-VM-G3>`, mot de passe du compte administrateur local des postes de l'école | 2 min |
 | 3 | Johan + Claude | **Fait à 15h** : branche locale `feat/deploy-rec-prod` avec tous les changements du §3, image frontend reconstruite avec succès, fusion Compose vérifiée pour les deux environnements. Reste : commit, push, PR vers `dev` | fait |
-| 4 | Claude, par SSH | `scripts/provision-host.sh` sur la VM. Écrire les deux `.env` (secrets générés sur la VM, jamais dans git). Certificats : `PUBLIC_HOST=rec.enervision.local PUBLIC_IP=10.101.200.37 make tls-selfsigned` dans `rec`, idem avec `enervision.local` dans `prod`. Puis `make stack-up` dans chaque dossier | 20 min plus la construction des images |
+| 4 | Claude, par SSH | `scripts/provision-host.sh` sur la VM. Écrire les deux `.env` (secrets générés sur la VM, jamais dans git). Certificats : `PUBLIC_HOST=rec.enervision.local PUBLIC_IP=<IP-VM-G3> make tls-selfsigned` dans `rec`, idem avec `enervision.local` dans `prod`. Puis `make stack-up` dans chaque dossier | 20 min plus la construction des images |
 | 5 | Johan, sur la VM | Installer le runner sous un utilisateur non-root membre du groupe `docker`, label `eni-g3`, en service systemd (`./config.sh --unattended --labels eni-g3`, `sudo ./svc.sh install && sudo ./svc.sh start`) | 10 min |
 | 6 | Équipe | Merger la PR dans `dev` : la recette se redéploie seule. Ouvrir la PR `dev` vers `main` : la prod se déploie après approbation dans l'onglet Environments | 15 min |
 | 7 | Tous | Vérifier depuis un poste de l'équipe, `/etc/hosts` renseigné : connexion, tableau de bord, Airflow par tunnel SSH | 15 min |

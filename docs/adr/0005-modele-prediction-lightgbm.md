@@ -13,7 +13,7 @@ contraintes non négociables cadrent le choix, discutées dans l'issue #89 :
 1. **EC06** (grille de notation individuelle) exige un modèle **entraîné, versionné avec
    MLflow**, exposé via un endpoint fonctionnel, avec **surveillance du drift** en production.
 2. **Aucun GPU dédié** : l'infra tourne on-premise sur une VM à 4 CPU / 8 Gio RAM (ou
-   `Standard_B2s`/`B2ms` côté Azure, 2 vCPU max) — Azure Machine Learning est de toute façon
+   `Standard_B2s`/`B2ms` côté Azure, 2 vCPU max) ; Azure Machine Learning est de toute façon
    bloqué par la politique Azure du projet.
 3. **Délai serré** : le jalon J3 arrive à échéance le lendemain de la décision, J4 concentre déjà
    26 issues sur 4 jours. Un modèle long à mettre en œuvre retarde la chaîne complète (service de
@@ -32,7 +32,7 @@ déjà dérivées.
 | Régresseurs exogènes | Oui, mais doivent être connus dans le futur au moment de la prédiction | Oui, via lags/moyennes glissantes sur le passé | Oui, natif | Difficile en multivarié | Aucun support | Contexte de prompt seulement, non appris |
 | Coût de calcul (VM sans GPU) | Faible | Faible | Élevé (deep learning) | Faible | Faible | Élevé à prohibitif |
 | Versionnable MLflow | Oui, nativement | Oui, nativement | Pas de support direct | Oui, générique | Pas de support direct | Rien à versionner (pas un modèle entraîné) |
-| Granularité | Un modèle par site (ou par site × métrique) | Un seul modèle global sur tous les sites | Un par site | Un par site | Un par site | — |
+| Granularité | Un modèle par site (ou par site × métrique) | Un seul modèle global sur tous les sites | Un par site | Un par site | Un par site | - |
 | Effort avant l'échéance | Faible | Moyen (feature engineering) | Élevé | Moyen à élevé | Faible en soi | Élevé, ou factice |
 
 ## Décision
@@ -40,7 +40,7 @@ déjà dérivées.
 **LightGBM, un seul modèle global** couvrant tous les sites, plutôt qu'un modèle par site
 (Prophet) ou par famille de site. Cible : `consumption_kwh`, avec `period_minutes` comme feature
 d'entrée plutôt que comme étape d'agrégation post-prédiction. Suivi et versioning via **MLflow**
-(tracking + registre de modèles), sur le magasin local par défaut dans un premier temps —
+(tracking + registre de modèles), sur le magasin local par défaut dans un premier temps ;
 l'hébergement sur l'infra k3s reste une question ouverte, non bloquante pour démarrer.
 
 Raisons retenues, au-delà du tableau ci-dessus :
@@ -53,7 +53,7 @@ Raisons retenues, au-delà du tableau ci-dessus :
   `humidity_percent` et `solar_irradiance_wm2` sont des mesures passées, pas des prévisions, et
   aucune source de prévision météo n'existe dans le projet. LightGBM s'en sort avec des features
   de lag/moyenne glissante calculées sur l'historique déjà présent dans `reading`, cf.
-  `ml/enervision_ml/features.py` — un choix qui vaut aussi bien à l'entraînement qu'au futur
+  `ml/enervision_ml/features.py`, un choix qui vaut aussi bien à l'entraînement qu'au futur
   scoring.
 - **Apprentissage direct sur `consumption_kwh`** avec `period_minutes` en feature, sans étape
   d'agrégation intermédiaire que la sortie continue de Prophet aurait demandée.
@@ -92,9 +92,9 @@ ValentinDeFaria), actée en réunion d'équipe du 2026-09-17 et validée par l'e
 - **SARIMA** : ne gère pas nativement plusieurs régresseurs exogènes ; réglage (p,d,q,P,D,Q) plus
   long que le délai disponible.
 - **NeuralProphet** : fait tout ce que fait Prophet et apprend en plus des motifs autorégressifs,
-  mais coûte plus cher en calcul (pas de GPU disponible) et n'a pas d'outil MLflow direct — piste
+  mais coûte plus cher en calcul (pas de GPU disponible) et n'a pas d'outil MLflow direct : piste
   d'évolution possible, non engageante à ce stade.
-- **Holt-Winters** : écarté d'entrée, pas seulement différé — aucun support de régresseurs
+- **Holt-Winters** : écarté d'entrée, pas seulement différé : aucun support de régresseurs
   exogènes, alors que la météo et l'irradiance sont nécessaires ici.
 - **CatBoost** : même famille que LightGBM, gère nativement les colonnes catégorielles (comme
   `site_type`) sans encodage manuel. Non rejeté, différé : candidat à comparer si LightGBM

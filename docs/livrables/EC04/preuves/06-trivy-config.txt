@@ -1,0 +1,66 @@
+# Trivy config (image aquasec/trivy:latest, sha256:62b1e65e8869) · 2026-09-24 14:46 CEST · commit 9f343e9, sur un export git archive du commit
+# Commande : docker run --rm -v <export>:/repo:ro aquasec/trivy:latest config /repo
+
+Report Summary
+
+┌────────────────────────────────────────┬────────────┬───────────────────┐
+│                 Target                 │    Type    │ Misconfigurations │
+├────────────────────────────────────────┼────────────┼───────────────────┤
+│ apps/backend/Dockerfile                │ dockerfile │         0         │
+├────────────────────────────────────────┼────────────┼───────────────────┤
+│ apps/frontend/Dockerfile               │ dockerfile │         1         │
+├────────────────────────────────────────┼────────────┼───────────────────┤
+│ etl/airflow/Dockerfile                 │ dockerfile │         1         │
+├────────────────────────────────────────┼────────────┼───────────────────┤
+│ infra/terraform/environments/k3s-cible │ terraform  │         0         │
+├────────────────────────────────────────┼────────────┼───────────────────┤
+│ infra/terraform/environments/vm-eni    │ terraform  │         0         │
+├────────────────────────────────────────┼────────────┼───────────────────┤
+│ ml/Dockerfile                          │ dockerfile │         1         │
+└────────────────────────────────────────┴────────────┴───────────────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+
+
+apps/frontend/Dockerfile (dockerfile)
+=====================================
+Tests: 27 (SUCCESSES: 26, FAILURES: 1)
+Failures: 1 (UNKNOWN: 0, LOW: 1, MEDIUM: 0, HIGH: 0, CRITICAL: 0)
+
+DS-0026 (LOW): Add HEALTHCHECK instruction in your Dockerfile
+════════════════════════════════════════
+You should add HEALTHCHECK instruction in your docker container images to perform the health check on running containers.
+
+See https://avd.aquasec.com/misconfig/ds-0026
+────────────────────────────────────────
+
+
+
+etl/airflow/Dockerfile (dockerfile)
+===================================
+Tests: 27 (SUCCESSES: 26, FAILURES: 1)
+Failures: 1 (UNKNOWN: 0, LOW: 1, MEDIUM: 0, HIGH: 0, CRITICAL: 0)
+
+DS-0026 (LOW): Add HEALTHCHECK instruction in your Dockerfile
+════════════════════════════════════════
+You should add HEALTHCHECK instruction in your docker container images to perform the health check on running containers.
+
+See https://avd.aquasec.com/misconfig/ds-0026
+────────────────────────────────────────
+
+
+
+ml/Dockerfile (dockerfile)
+==========================
+Tests: 27 (SUCCESSES: 26, FAILURES: 1)
+Failures: 1 (UNKNOWN: 0, LOW: 1, MEDIUM: 0, HIGH: 0, CRITICAL: 0)
+
+DS-0026 (LOW): Add HEALTHCHECK instruction in your Dockerfile
+════════════════════════════════════════
+You should add HEALTHCHECK instruction in your docker container images to perform the health check on running containers.
+
+See https://avd.aquasec.com/misconfig/ds-0026
+────────────────────────────────────────
+
+

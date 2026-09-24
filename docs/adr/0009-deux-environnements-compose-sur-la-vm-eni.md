@@ -2,6 +2,8 @@
 
 - Statut : accepté
 - Date : 2026-09-21
+- Complété par : [ADR 0017](0017-environnement-dev-a-la-demande.md), troisième environnement `dev`
+- Note du 24/09 : l'approbation annoncée avant la production n'a jamais été activée. L'environnement GitHub `prod` n'accepte que `main`, sans relecteur requis.
 
 ## Contexte
 

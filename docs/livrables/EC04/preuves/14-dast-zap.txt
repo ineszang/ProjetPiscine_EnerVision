@@ -1,0 +1,21 @@
+# DAST OWASP ZAP, dernier passage publié en artefact zap-report (run 35840107213, dast.yml) · 23/09/2026 10:59 CEST · commit fe0d422 (PR de remontée dev vers main)
+# Récupération : gh run download 35840107213 -n zap-report, puis extraction des alertes du JSON et du bilan de zap-stdout.log
+# Cible : l'API en fonctionnement dans le job (backend seul, sans TLS ni proxy), authentifiée par un compte lecteur jetable
+
+## Bilan des règles (zap-stdout.log)
+FAIL-NEW: 0	FAIL-INPROG: 0	WARN-NEW: 0	WARN-INPROG: 0	INFO: 0	IGNORE: 0	PASS: 118
+
+## Alertes du rapport (ZAP 2.17.0)
+- Informational (High) · A Client Error response code was returned by the server [100000] · 65 occurrence(s)
+- Informational (Medium) · Non-Storable Content [10049] · 5 occurrence(s)
+- Informational (High) · Authentication Request Identified [10111] · 1 occurrence(s)
+    exemple : POST /api/v1/auth/login · paramètre email
+- Informational (Medium) · Information Disclosure - Sensitive Information in URL [10024] · 1 occurrence(s)
+    exemple : GET /api/v1/auth/reset-password/validate?token=token · paramètre token
+
+Lecture :
+- 0 échec, 0 avertissement, 118 règles passées. Les 4 alertes restantes sont informatives.
+- « Client Error response code » (65) : 42 × 404, 16 × 403, 3 × 405, 2 × 422, 2 × 401, les refus attendus d'un scanner qui sonde des routes inexistantes, gardées par rôle ou appelées avec une charge invalide. Aucun 5xx.
+- « Non-Storable Content » (5) : login, logout et refresh marqués Cache-Control: no-store par l'API, voulu ; les deux sondes de santé, que ZAP juge non mémorisables parce qu'appelées avec un en-tête Authorization.
+- « Authentication Request Identified » : repérage de la route de connexion, sans défaut associé.
+- « Sensitive Information in URL » : le jeton de réinitialisation voyage en paramètre de GET /api/v1/auth/reset-password/validate. Mitigations en place : jeton stocké haché (token_hash), valable 15 minutes (password_reset_ttl_seconds = 900), à usage unique (consumed_at), caviardé des journaux de l'API (app/core/logging.py, motif token=), Referrer-Policy: no-referrer. Résidu réel : le journal d'accès du proxy (log_format enervision, champ "$request", infra/proxy/nginx.conf:18) enregistre l'URL complète, donc le jeton en clair pendant sa durée de validité, lisible par qui administre la machine.

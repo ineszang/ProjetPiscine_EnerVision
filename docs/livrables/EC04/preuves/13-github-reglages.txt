@@ -1,0 +1,42 @@
+# Réglages GitHub du dépôt, lus par l'API (gh api, lecture seule) · 2026-09-24 14:54 CEST · commit 9f343e9
+# Heures converties en heure locale (CEST). URL des environnements non reproduites (anonymisation).
+
+## Dépôt
+visibilité : public · branche par défaut : main · licence : aucune · fork autorisé : oui
+
+## Protection des branches (gh api repos/<depot>/branches/<b> --jq .protected ; gh api repos/<depot>/rulesets)
+main : protected=false
+dev  : protected=false
+rulesets : 0
+
+## Environnements de déploiement (gh api repos/<depot>/environments/<env>)
+prod : 1 règle, branch_policy, restreint à la branche main ; relecteurs requis : 0 ; délai : aucun
+rec  : aucune règle
+dev  : aucune règle
+
+## Approbation des workflows des contributeurs externes (gh api repos/<depot>/actions/permissions/workflow)
+refusé avec les droits d'un membre (HTTP 403) : réglage non vérifiable, seule l'administratrice le lit
+
+## Secrets d'Actions (gh secret list, noms seulement)
+SONAR_TOKEN
+
+## Derniers runs de ci.yml (gh run list --workflow ci.yml)
+24/09 11:51  dev   9f343e9  push          success
+24/09 11:08  main  9f343e9  push          success
+24/09 11:08  dev   5a7e2a9  pull_request  success
+24/09 10:59  dev   5a7e2a9  push          success
+
+## Déploiements de l'environnement prod (gh api repos/<depot>/deployments?environment=prod)
+24/09 11:12  9f343e9
+23/09 15:56  5afe2fc
+23/09 14:56  32f1bef
+23/09 12:49  7f4364d
+23/09 12:02  84969d3
+23/09 12:02  93d5cad
+23/09 11:37  b786f27
+
+Lecture :
+- La production n'attend aucune approbation humaine : la seule garde est la restriction à main. L'ADR 0009 annonce une production après approbation, l'ADR 0014 laisse ce réglage à poser par l'administratrice : il ne l'est pas.
+- Aucune branche protégée : un membre en écriture peut pousser directement sur dev ou main, ce qui est arrivé trois fois sur dev (c2f360c, cbbfaf4, 6c09bee), relus ensuite par les PR de remontée #161 et #163.
+- Un seul secret côté GitHub, pour SonarCloud : le déploiement n'en consomme aucun, le runner auto-hébergé travaille dans le dossier qui porte déjà le .env.
+- Chaque push sur main depuis le 23/09 11h37 a produit un déploiement ; le dernier porte le commit gelé 9f343e9.

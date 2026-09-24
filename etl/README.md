@@ -1,4 +1,4 @@
-# Pipeline ETL — EnerVision
+# Pipeline ETL · EnerVision
 
 ## Objectif
 
@@ -236,11 +236,11 @@ apps/backend/
 
 exécuter :
 
-```powershell
-uv run python -m app.etl.historical_import `
-  --csv ..\..\data\raw\all_sites_combined.csv `
-  --metadata ..\..\data\raw\dataset_metadata.json `
-  --source-timezone UTC `
+```bash
+uv run python -m app.etl.historical_import \
+  --csv ../../data/raw/all_sites_combined.csv \
+  --metadata ../../data/raw/dataset_metadata.json \
+  --source-timezone UTC \
   --dry-run
 ```
 
@@ -250,10 +250,10 @@ Aucune donnée n'est écrite dans la base pendant cette exécution.
 
 Depuis `apps/backend/` :
 
-```powershell
-uv run python -m app.etl.historical_import `
-  --csv ..\..\data\raw\all_sites_combined.csv `
-  --metadata ..\..\data\raw\dataset_metadata.json `
+```bash
+uv run python -m app.etl.historical_import \
+  --csv ../../data/raw/all_sites_combined.csv \
+  --metadata ../../data/raw/dataset_metadata.json \
   --source-timezone UTC
 ```
 
@@ -303,7 +303,7 @@ Une nouvelle exécution du même import ne crée donc pas de mesures supplément
 
 Depuis la racine du projet, vérifier le nombre d'enregistrements avec :
 
-```powershell
+```bash
 docker compose exec db psql -U enervision -d enervision -c "SELECT COUNT(*) AS datasets FROM dataset; SELECT COUNT(*) AS sites FROM site; SELECT COUNT(*) AS readings FROM reading;"
 ```
 
@@ -317,7 +317,7 @@ readings = 122647
 
 Vérifier la source des mesures avec :
 
-```powershell
+```bash
 docker compose exec db psql -U enervision -d enervision -c "SELECT source, COUNT(*) FROM reading GROUP BY source ORDER BY source;"
 ```
 
@@ -384,7 +384,9 @@ end_time
 limit
 ```
 
-Le paramètre `limit` doit être compris entre 1 et 1000.
+Le paramètre `limit` doit être compris entre 1 et 1000. Il n'est plus fourni par l'appelant :
+`limit_for_window()` le dérive de la fenêtre demandée, pour obtenir une lecture par heure,
+alignée sur l'heure pile.
 
 ### Configuration de l'API Mock
 
@@ -485,8 +487,13 @@ data_quality = "degraded"
 L'import ne s'interrompt pas pour autant : le mock émet des anomalies par construction, et
 `raw_data` conserve la réponse d'origine.
 
-La taille des réponses est plafonnée : au plus `MAX_SITES` sites, et au plus `--limit` mesures
-par site. Au-delà, l'import échoue au lieu de charger.
+La taille des réponses est plafonnée : au plus `MAX_SITES` sites, et au plus `limit` mesures par
+site, une par heure de la fenêtre (`limit_for_window()`). Au-delà, l'import échoue au lieu de
+charger.
+
+L'import refuse aussi une fenêtre qui recouvre le dataset historique
+(`refuse_if_overlaps_historical_dataset()`) : le CSV couvre 2023 et 2024, une fenêtre de l'API Mock
+doit donc commencer après le 31/12/2024, et démarrer pile sur une heure.
 
 Enfin, seuls les champs attendus sont recopiés vers la base. Une clé supplémentaire renvoyée par
 l'API n'atteint jamais une colonne.
@@ -495,30 +502,36 @@ l'API n'atteint jamais une colonne.
 
 Le mode `--dry-run` permet de tester la connexion, la récupération des sites et la récupération des mesures sans écrire dans PostgreSQL.
 
-Depuis `apps/backend/` :
+Depuis `apps/backend/`, sur une fenêtre de deux heures postérieure au dataset historique (une
+lecture par heure et par site) :
 
-```powershell
-uv run python -m app.etl.mock_api_import `
-  --start-time "2024-06-15T12:00:00" `
-  --end-time "2024-06-15T13:00:00" `
-  --limit 60 `
+```bash
+uv run python -m app.etl.mock_api_import \
+  --start-time "2026-09-24T08:00:00" \
+  --end-time "2026-09-24T10:00:00" \
   --dry-run
 ```
+
+Les heures sans fuseau sont lues en UTC. Seuls `--start-time`, `--end-time` et `--dry-run`
+existent.
 
 ### Chargement réel depuis l'API Mock
 
 Depuis `apps/backend/` :
 
-```powershell
-uv run python -m app.etl.mock_api_import `
-  --start-time "2024-06-15T12:00:00" `
-  --end-time "2024-06-15T13:00:00" `
-  --limit 60
+```bash
+uv run python -m app.etl.mock_api_import \
+  --start-time "2026-09-24T08:00:00" \
+  --end-time "2026-09-24T10:00:00"
 ```
 
-### Résultat validé pour l'API Mock
+En fonctionnement normal, cet import n'est pas lancé à la main : le DAG `mock_api_import` le
+joue chaque heure (voir la fin de ce document).
 
-Le scénario de validation utilisé couvre la période :
+### Validation initiale du 18/09, antérieure à la réconciliation
+
+Le premier scénario de validation, joué le 18/09 avant la clôture de la réconciliation (#15),
+couvrait la période :
 
 ```text
 15/06/2024 12:00 UTC
@@ -526,9 +539,11 @@ Le scénario de validation utilisé couvre la période :
 15/06/2024 13:00 UTC
 ```
 
-avec une limite de 60 lectures par site.
+avec une limite de 60 lectures par site. Il ne se rejoue plus tel quel : depuis le 23/09, cette
+fenêtre est refusée parce qu'elle recouvre le dataset historique, et l'option `--limit` a disparu
+au profit d'une lecture par heure.
 
-Résultat obtenu :
+Résultat obtenu à l'époque :
 
 ```text
 sites récupérés       : 7
@@ -581,7 +596,8 @@ Les tests de l'import API Mock couvrent notamment :
 
 - la récupération des sites ;
 - l'appel à `/api/v1/readings` ;
-- les paramètres `site_id`, `start_time`, `end_time` et `limit` ;
+- les paramètres `site_id`, `start_time`, `end_time` et `limit`, dérivé de la fenêtre ;
+- le refus d'une fenêtre qui recouvre le dataset historique ;
 - la gestion des erreurs HTTP ;
 - la validation du format de la réponse ;
 - la transformation des mesures ;
@@ -594,48 +610,43 @@ Les tests de l'import API Mock couvrent notamment :
 
 Exécuter les tests ETL :
 
-```powershell
-uv run pytest tests\etl -v
+```bash
+uv run pytest tests/etl -v
 ```
 
 Exécuter les tests unitaires de l'import API Mock :
 
-```powershell
-uv run pytest tests\etl\test_mock_api_import.py -v
+```bash
+uv run pytest tests/etl/test_mock_api_import.py -v
 ```
 
 Exécuter le test d'intégration de l'import API Mock :
 
-```powershell
-uv run pytest tests\etl\test_mock_api_import.py -m integration -v
+```bash
+uv run pytest tests/etl/test_mock_api_import.py -m integration -v
 ```
 
 Contrôler la qualité du code :
 
-```powershell
-uv run ruff check app\etl tests\etl
+```bash
+uv run ruff check app/etl tests/etl
 ```
 
 Contrôler le typage :
 
-```powershell
+```bash
 uv run mypy app
 ```
 
 Exécuter la suite complète avec le seuil de couverture :
 
-```powershell
+```bash
 uv run pytest --cov-fail-under=85
 ```
 
-Lors de la validation de l'import API Mock :
-
-```text
-8 tests unitaires passés
-1 test d'intégration passé
-```
-
-La suite backend complète a également été validée avec une couverture supérieure au seuil de 85 %.
+Lors de la première validation, le 18/09, le fichier comptait 8 tests unitaires et 1 test
+d'intégration. Il en compte aujourd'hui 42, dont 2 d'intégration (`pytest --collect-only`), après
+l'ajout des bornes physiques, de la réconciliation et de l'alignement horaire.
 
 ## Suite du pipeline Data
 
@@ -663,10 +674,12 @@ mock_api_import.py
 
 La logique d'extraction, de transformation et de chargement est donc disponible pour les deux sources de données du MVP.
 
-Airflow tourne désormais réellement (`etl/airflow/`, `make airflow-up`) et orchestre cinq DAGs :
+Airflow tourne désormais réellement (`etl/airflow/`, `make airflow-up`) et orchestre sept DAGs :
 le pipeline ML (`ml_train` et `ml_score`, issue #115), la détection d'alertes et la génération
 des recommandations (`alertes`, issue #116), l'import historique (`historical_import`,
-issue #119) et l'import périodique de l'API Mock (`mock_api_import`, issue #15).
+issue #119), l'import périodique de l'API Mock (`mock_api_import`, issue #15), la surveillance
+de dérive du modèle (`derive`, ADR 0013) et la rétention des relevés, exportés vers Garage puis
+supprimés (`retention`, issue #36, ADR 0019).
 
 Le DAG `mock_api_import` s'exécute chaque heure, à la minute `:45`, sur une fenêtre qui part de
 l'heure pile précédant son déclenchement jusqu'à l'instant du déclenchement lui-même (pas
@@ -681,7 +694,7 @@ Les deux pipelines normalisent leurs données vers les tables communes `site` et
 conservant leur source (`csv` ou `api_history`). La réconciliation entre les deux sources
 (issue #15) est close : voir `docs/architecture/40-data.md`.
 
-Airflow permet de planifier les traitements, gérer leur ordre d'exécution, suivre leur état et remonter les erreurs. Il ne remplace pas la logique ETL Python existante : les scripts actuels restent responsables de l'extraction, de la validation, de la transformation et du chargement. `etl/airflow/dags/ml_train.py`, `ml_score.py`, `alertes.py`, `historical_import.py` et
-`mock_api_import.py` montrent le patron retenu (des `BashOperator` qui invoquent le script tel quel, dans l'environnement `uv` que l'image embarque pour lui).
+Airflow permet de planifier les traitements, gérer leur ordre d'exécution, suivre leur état et remonter les erreurs. Il ne remplace pas la logique ETL Python existante : les scripts actuels restent responsables de l'extraction, de la validation, de la transformation et du chargement. `etl/airflow/dags/ml_train.py`, `ml_score.py`, `alertes.py`, `historical_import.py`,
+`mock_api_import.py`, `derive.py` et `retention.py` montrent le patron retenu (des `BashOperator` qui invoquent le script tel quel, dans l'environnement `uv` que l'image embarque pour lui).
 
 Le pipeline Data servira ensuite à préparer les données nécessaires au modèle de Machine Learning.
