@@ -70,11 +70,17 @@ Le lien `front -.-> api` reste en pointillé : le frontend appelle bien une API,
 intercepteur répond à sa place tant que les endpoints n'existent pas. Voir
 [30-frontend.md](30-frontend.md).
 
-Le lien `airflow --> db` est maintenant en trait plein : cinq DAGs tournent, deux pour
+Le lien `airflow --> db` est maintenant en trait plein : six DAGs tournent, deux pour
 l'entraînement et le scoring du modèle ML (issue #115), un pour la détection d'alertes et la
-génération des recommandations (issue #116), `historical_import` pour le dataset historique
-(issue #119) et `mock_api_import` pour l'ingestion horaire de l'API Mock (issue #15).
-La réconciliation globale des données provenant des deux sources reste à compléter dans l'issue #15.
+génération des recommandations (issue #116), un pour la surveillance de dérive (issue #45),
+`historical_import` pour le dataset historique (issue #119) et `mock_api_import` pour l'ingestion
+horaire de l'API Mock (issue #15). La réconciliation entre les deux sources de lectures (issue
+#15) est tranchée : le trou entre la fin de l'historique (31/12/2024) et le début de l'ingestion
+API Mock est accepté comme définitivement perdu, aucune mesure réelle n'existant pour cette
+période. `mock_api_import` refuse toute fenêtre qui recouvrirait des lectures déjà importées du
+CSV plutôt que de laisser les deux sources dupliquer silencieusement un même instant, et le
+pipeline ML déduplique par construction (`DISTINCT ON`, source `csv` préférée) au cas où un
+recouvrement se produirait malgré tout, voir [40-data.md](40-data.md).
 
 Les liens de la supervision sont en trait plein depuis le 23/09 (issue #26) : Prometheus scrute
 `/metrics` avec un jeton, Grafana lit Prometheus et, par un rôle en lecture seule, les tables
@@ -92,7 +98,7 @@ ailleurs ([ADR 0016](../adr/0016-supervision-en-profil-compose.md),
 | ML | LightGBM, MLflow | `ml` | `En cours` | Pipeline d'entraînement et de scoring (`enervision_ml.train`/`.score`, features par lags/moyennes glissantes partagées entre les deux, baseline de persistance saisonnière, suivi MLflow local), exposé en lecture via `GET /predictions`, orchestré par Airflow (`ml_train`/`ml_score`). Voir [ADR 0005](../adr/0005-modele-prediction-lightgbm.md) et [ML-START.md](../ML-START.md). Surveillance de dérive livrée côté backend (`app.monitoring.drift`, table `drift_report`, `GET /monitoring/drift`, DAG `derive`), voir [ADR 0013](../adr/0013-surveillance-de-derive-dans-le-backend.md) |
 | Infra | Docker Compose, Nginx, Terraform, k3s single-node | `infra`, `docker-compose.prod.yml` | `En cours` | Reverse proxy et overlay de déploiement écrits et validés, jamais lancés sur le serveur ([ADR 0007](../adr/0007-terminaison-tls-et-reverse-proxy-nginx.md)). Provisionnement de la VM par Terraform, qui installe Docker, prépare les deux environnements et enregistre le runner, jamais appliqué ([ADR 0010](../adr/0010-terraform-provisionne-github-actions-deploie.md)). Module d'installation k3s jamais appliqué, aucune ressource Kubernetes déclarée |
 | Monitoring | Prometheus, Grafana, Alertmanager | `monitoring` | `Fait` | Profil Compose `monitoring`, actif en prod : Prometheus et trois exporteurs (PostgreSQL, hôte, conteneurs), neuf règles d'alerte testées par `promtool`, Alertmanager vers Mailpit, trois tableaux de bord Grafana provisionnés. Voir [60-observabilite.md](60-observabilite.md) |
-| ETL | Apache Airflow | `etl/airflow` | `En cours` | Webserver et scheduler avec LocalExecutor via Docker Compose, sur une base PostgreSQL dédiée. Six DAGs en sous-processus `uv run` : `ml_train`, `ml_score`, `alertes`, `historical_import`, `mock_api_import` et `derive` (quotidien, surveillance de dérive). L'import historique reste manuel et l'import API Mock s'exécute chaque heure. La réconciliation globale des deux sources reste à compléter dans l'issue #15. |
+| ETL | Apache Airflow | `etl/airflow` | `En cours` | Webserver et scheduler avec LocalExecutor via Docker Compose, sur une base PostgreSQL dédiée. Six DAGs en sous-processus `uv run` : `ml_train`, `ml_score`, `alertes`, `historical_import`, `mock_api_import` et `derive` (quotidien, surveillance de dérive). L'import historique reste manuel et l'import API Mock s'exécute chaque heure. Réconciliation entre les deux sources (issue #15) : trou temporel accepté, recouvrement refusé à l'ingestion et dédupliqué en défense côté ML, voir [40-data.md](40-data.md). |
 | CI/CD | GitHub Actions | `.github/workflows` | `En cours` | Un orchestrateur `ci.yml` qui n'appelle que les composants modifiés ([ADR 0014](../adr/0014-pipeline-ci-unique-et-deploiement-conditionne.md)) : lint, typage, tests avec seuil de couverture bloquant, tests d'intégration sur TimescaleDB réel, audit de dépendances, SAST Bandit, quality gate SonarCloud, intégrité des DAGs Airflow, Terraform, Compose et supervision, parcours Playwright et tirs k6 contre la stack de prod ([ADR 0015](../adr/0015-tests-e2e-et-de-charge-contre-la-stack-compose.md)). Déploiement vers la VM ENI par `deploy.yml`, appelé une fois « CI ok » vert, `dev` en recette et `main` en production après approbation ([ADR 0009](../adr/0009-deux-environnements-compose-sur-la-vm-eni.md)), mais jamais exécuté : le runner n'est pas enregistré sur la machine. Détail dans [50-cicd.md](50-cicd.md) |
 
 ## Flux bout en bout
@@ -102,7 +108,8 @@ Statut : `En cours`. **Le chemin de lecture tourne** entre la base, l'API et le 
 dataset CSV/JSON sur déclenchement manuel et `mock_api_import` collecte chaque heure les mesures
 de l'API Mock. Les DAGs `ml_train` et `ml_score` (issue #115), `alertes` (issue #116) et `derive`
 (issue #45) portent le pipeline ML, la détection d'alertes et la surveillance de dérive. La
-réconciliation globale des données provenant des deux sources reste à compléter dans l'issue #15.
+réconciliation entre les deux sources de lectures (issue #15) est close : voir
+[40-data.md](40-data.md) pour le détail du garde-fou d'ingestion et de la déduplication ML.
 
 ```mermaid
 sequenceDiagram

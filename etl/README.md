@@ -668,15 +668,18 @@ le pipeline ML (`ml_train` et `ml_score`, issue #115), la détection d'alertes e
 des recommandations (`alertes`, issue #116), l'import historique (`historical_import`,
 issue #119) et l'import périodique de l'API Mock (`mock_api_import`, issue #15).
 
-Le DAG `mock_api_import` s'exécute chaque heure, à la minute `:45`. Il appelle
-`app.etl.mock_api_import` avec un intervalle explicite d'une heure et une limite de 1 000 lectures
-par site. Les deux pipelines normalisent leurs données vers les tables communes `site` et
-`reading`, tout en conservant leur source (`csv` ou `api_history`). La réconciliation globale
-des deux sources reste à compléter dans l'issue #15.
-
-Le DAG `mock_api_import` exécute `app.etl.mock_api_import` toutes les heures. Chaque exécution
-traite l'intervalle Airflow précédent. Les deux pipelines normalisent leurs données vers les
-tables communes `site` et `reading`, tout en conservant leur source (`csv` ou `api_history`).
+Le DAG `mock_api_import` s'exécute chaque heure, à la minute `:45`, sur une fenêtre qui part de
+l'heure pile précédant son déclenchement jusqu'à l'instant du déclenchement lui-même (pas
+l'intervalle Airflow `data_interval_start`/`end` tel quel). L'API Mock génère autant de points que
+la limite demandée, répartis sur la fenêtre et le premier à son début :
+`app.etl.mock_api_import.limit_for_window()` dérive donc `limit` de la fenêtre reçue (une seule
+lecture ici, ancrée sur l'heure pile) plutôt que de dépendre d'une valeur fixée à la main côté
+DAG, et refuse une fenêtre qui ne démarre pas pile sur l'heure. Une fenêtre calée sur l'intervalle
+Airflow tel quel (`[:45, :45)`) placerait cette lecture à :45, hors de la grille horaire du reste
+du schéma (vérifié empiriquement contre l'API Mock) ; partir de l'heure pile évite ce décalage.
+Les deux pipelines normalisent leurs données vers les tables communes `site` et `reading`, tout en
+conservant leur source (`csv` ou `api_history`). La réconciliation entre les deux sources
+(issue #15) est close : voir `docs/architecture/40-data.md`.
 
 Airflow permet de planifier les traitements, gérer leur ordre d'exécution, suivre leur état et remonter les erreurs. Il ne remplace pas la logique ETL Python existante : les scripts actuels restent responsables de l'extraction, de la validation, de la transformation et du chargement. `etl/airflow/dags/ml_train.py`, `ml_score.py`, `alertes.py`, `historical_import.py` et
 `mock_api_import.py` montrent le patron retenu (des `BashOperator` qui invoquent le script tel quel, dans l'environnement `uv` que l'image embarque pour lui).
