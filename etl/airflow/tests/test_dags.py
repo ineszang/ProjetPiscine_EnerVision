@@ -18,6 +18,7 @@ DAG_IDS = [
     "historical_import",
     "mock_api_import",
     "derive",
+    "retention",
 ]
 TACHES = [
     ("ml_train", "train"),
@@ -27,6 +28,7 @@ TACHES = [
     ("historical_import", "import_historical"),
     ("mock_api_import", "import_mock_api"),
     ("derive", "derive"),
+    ("retention", "archiver"),
 ]
 
 
@@ -226,6 +228,24 @@ def test_derive_calls_the_backend_drift_module(dagbag: DagBag) -> None:
 def test_derive_never_retries_a_detected_drift(dagbag: DagBag) -> None:
     # Une derive n'est pas une panne passagere : la rejouer la redeclarerait a l'identique.
     assert dagbag.dags["derive"].get_task("derive").retries == 0
+
+
+def test_retention_runs_nightly(dagbag: DagBag) -> None:
+    # Entre `ml_score` (:00), `alertes` (:15) et `mock_api_import` (:45) : drop_chunks verrouille
+    # reading, site et dataset jusqu'au COMMIT.
+    assert dagbag.dags["retention"].timetable.expression == "20 3 * * *"
+
+
+def test_retention_calls_the_backend_retention_module(dagbag: DagBag) -> None:
+    commande = dagbag.dags["retention"].get_task("archiver").bash_command
+
+    assert "app.etl.reading_retention" in commande
+
+
+def test_retention_runs_in_the_backend_environment(dagbag: DagBag) -> None:
+    commande = dagbag.dags["retention"].get_task("archiver").bash_command
+
+    assert "/opt/backend" in commande
 
 
 @pytest.mark.parametrize(("dag_id", "task_id"), TACHES)
