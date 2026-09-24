@@ -28,6 +28,7 @@ Ce que la documentation apporte à chacun : [docs/architecture/00-vue-ensemble.m
 | Reverse proxy | Nginx, TLS                       | `infra/proxy`       | En place      |
 | CI/CD      | GitHub Actions                      | `.github/workflows` | En place |
 | Monitoring | Prometheus, Grafana, Alertmanager   | `monitoring`        | En place, profil Compose |
+| Stockage objet | Garage (S3), un par environnement | `infra/garage`      | En place, archives de `reading` |
 | Tests e2e et de charge | Playwright, k6              | `tests`             | En place |
 | ML         | LightGBM, MLflow                    | `ml`                | En place |
 
@@ -57,6 +58,7 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   ├── include/        Requetes SQL et ressources des DAGs
 │   └── tests/          Tests d'integrite des DAGs
 ├── infra/
+│   ├── garage/         Stockage objet S3 : configuration sans secret
 │   ├── proxy/          Reverse proxy Nginx : terminaison TLS et routage
 │   └── terraform/
 │       ├── modules/        Modules reutilisables
@@ -68,6 +70,7 @@ L'etat detaille de chaque brique et les vues d'architecture sont dans
 │   └── alertmanager/   Routage des alertes
 ├── tests/
 │   ├── e2e/            Parcours Playwright contre la stack
+│   ├── garage/         Tests de fumée S3 joués par la CI contre Garage
 │   └── load/           Scenarios de charge k6
 ├── docs/               ADR et vues d'architecture
 └── scripts/            Outillage local
@@ -101,7 +104,9 @@ et frontend en rechargement a chaud sur le poste.
 Le `.env` doit porter les cles Airflow avant le premier `make dev` : `AIRFLOW_FERNET_KEY`,
 `AIRFLOW_API_SECRET_KEY`, `AIRFLOW_JWT_SECRET`, `AIRFLOW_APP_SECRET_KEY` et
 `AIRFLOW_ADMIN_PASSWORD`. Sans elles `airflow-init` refuse de demarrer, et `airflow-apiserver`,
-`airflow-scheduler` et `airflow-dag-processor` avec lui.
+`airflow-scheduler` et `airflow-dag-processor` avec lui. Il doit aussi porter les six clés
+`GARAGE_*` (rpc, jetons, clé S3, clé SSE-C) : `make services-up` refuse sinon de démarrer Garage,
+où le DAG `retention` archive les mesures anciennes ([ADR 0019](docs/adr/0019-stockage-objet-garage-et-cycle-de-vie-des-mesures.md)).
 
 Les cibles d'origine restent disponibles pour ne demarrer qu'une partie : `make db-up`,
 `make airflow-up`, `make dev-backend`, `make dev-frontend`.

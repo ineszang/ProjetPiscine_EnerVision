@@ -1,0 +1,22 @@
+# Contrainte : aucun secret ici, ce fichier est versionné et monté en lecture seule. Garage lit
+# GARAGE_RPC_SECRET, GARAGE_ADMIN_TOKEN et GARAGE_METRICS_TOKEN dans son environnement, posés par
+# docker-compose.yml depuis le .env (ADR 0019). `--single-node` exige replication_factor = 1.
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+metadata_auto_snapshot_interval = "6h"
+
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+root_domain = ".s3.garage.localhost"
+
+[admin]
+api_bind_addr = "[::]:3903"
+metrics_require_token = true

@@ -44,6 +44,11 @@ zone, `prod`, `rec` et `dev` vers la machine, obtient un certificat Let's Encryp
 renouvellement ; sans jeton, chaque environnement garde un certificat auto-signe. Le frontal SNI (`infra/front`)
 se demarre une fois depuis le dossier de la prod, `make front-up`.
 
+Chiffrement au repos ([ADR 0020](../docs/adr/0020-chiffrement-au-repos-coffre-luks-et-sse-c.md)) :
+`coffre_taille = "30G"` fait poser par `scripts/coffre-luks.sh` un coffre LUKS2 sous `/var/lib/docker/volumes` ;
+vide par defaut, rien n'est pose. La premiere pose arrete Docker le temps de copier les volumes, et la cle
+`/root/enervision-coffre.key` est a sauvegarder hors de la VM.
+
 Retirer le runner se fait a la main, depuis les parametres du depot : `terraform destroy` ne le
 desinscrit pas.
 

@@ -37,6 +37,7 @@ flowchart TB
 |---|---|---|
 | `db` | `timescale/timescaledb-ha:pg17` | Publié sur **5433** côté hôte, 5432 souvent déjà pris. `healthcheck` `pg_isready`, 12 tentatives, `start_period` 40s |
 | `backend` | Construite depuis `apps/backend` | `depends_on: db, condition: service_healthy`. **N'embarque pas le source** : toute modification impose `docker compose up -d --build backend` |
+| `garage` | `dxflrs/garage:v2.4.1` | S3 en `127.0.0.1:3900`, admin et `/metrics` en `127.0.0.1:3903`. `--single-node --default-bucket` : clé et bucket créés au premier démarrage, secrets par l'environnement (`GARAGE_*` du `.env`, garde dans le Makefile), `garage.toml` versionné sans secret dans `infra/garage`. Reçoit les archives du DAG `retention` ([ADR 0019](../adr/0019-stockage-objet-garage-et-cycle-de-vie-des-mesures.md)) |
 | `prometheus`, `alertmanager`, `grafana`, exporteurs | Images épinglées par tag | Profil `monitoring`, jamais démarrés par `make dev`. `make monitoring-up` les lance en `--no-deps`. Voir [60-observabilite.md](60-observabilite.md) |
 | `k6` | `grafana/k6` | Profil `load`, lancé par `make load-*` le temps d'un tir, sur le réseau du projet. Voir [`tests/load/README.md`](../../tests/load/README.md) |
 
@@ -91,6 +92,7 @@ l'[ADR 0008](../adr/0008-airflow-execute-le-code-du-backend.md).
 | `historical_import` | manuelle | `app.etl.historical_import`, dans `/opt/backend/.venv` ; les fichiers de `data/raw` sont montés en lecture seule dans `/opt/data/raw` |
 | `mock_api_import` | `45 * * * *` | `app.etl.mock_api_import`, dans `/opt/backend/.venv` ; importe depuis l'API Mock la mesure de l'heure pile précédant son déclenchement |
 | `derive` | `30 5 * * *` | `app.monitoring.drift`, dans `/opt/backend/.venv` ; quotidien parce que sa fenêtre couvre 168 h, et sans reprise parce qu'une dérive n'est pas une panne passagère |
+| `retention` | `20 3 * * *` | `app.etl.reading_retention`, dans `/opt/backend/.venv` ; exporte vers Garage (CSV gzip, SSE-C) chaque chunk de `reading` plus vieux que `READING_RETENTION_DAYS` puis le supprime par `drop_chunks` ; la nuit parce que la suppression verrouille `site` et `dataset` jusqu'au COMMIT |
 
 Le DAG `historical_import` réutilise le pipeline historique existant sans dupliquer sa logique.
 Il reste manuel, car le dataset sert à initialiser l'environnement. Le montage
@@ -99,8 +101,10 @@ modifier.
 
 Le DAG `mock_api_import` exécute le pipeline API Mock toutes les heures, à la minute `:45`.
 Un `CronTriggerTimetable` explicite lui attribue un intervalle d'une heure, y compris lors d'un
-déclenchement manuel. Il transmet cet intervalle au script backend et charge les mesures dans
-les tables communes `site` et `reading`. Le décalage à `:45` laisse quinze minutes avant le
+déclenchement manuel, mais la fenêtre transmise au script backend part de l'heure pile qui
+précède le déclenchement (pas de l'intervalle Airflow tel quel), pour que la mesure importée
+tombe à :00 et non à :45, voir [40-data.md](40-data.md). Le pipeline charge la mesure dans les
+tables communes `site` et `reading`. Le décalage à `:45` laisse quinze minutes avant le
 scoring exécuté à l'heure pile, puis quinze minutes supplémentaires avant les alertes à `:15`.
 `max_active_runs=1` empêche deux exécutions du DAG de se chevaucher.
 
@@ -177,7 +181,7 @@ du `docker-compose.yml` principal (réseau, volumes et démarrage séparés).
 Portée actuelle : environnement de tracking et de registre de modèles pour le développement
 local uniquement. Ce compose n'est relié ni à `docker-compose.prod.yml`, ni aux deux
 environnements Compose de la VM ENI, ni à la cible k3s. Le magasin utilisé par Airflow pour
-`ml_train`/`ml_score` (SQLite, volume `airflow_ml_state`) en est distinct — les deux MLflow ne
+`ml_train`/`ml_score` (SQLite, volume `airflow_ml_state`) en est distinct : les deux MLflow ne
 se voient pas tant que `MLFLOW_TRACKING_URI` n'est pas posé côté Airflow.
 
 Limite connue : le DAG Airflow `ml_train` enregistre lui aussi une version a chaque execution
@@ -251,6 +255,7 @@ les secrets et les certificats, et ne démarre rien.
 | URL | `https://dev.enervision-g3.dynv6.net` | `https://rec.enervision-g3.dynv6.net` | `https://prod.enervision-g3.dynv6.net` |
 | Proxy HTTP, HTTPS, PROXY protocol, sur `127.0.0.1` | `8083`, `9443`, `9444` | `8081`, `8443`, `8444` | `10080`, `10443`, `10444` |
 | PostgreSQL, Mailpit, Airflow, sur `127.0.0.1` | `5435`, `8027`, `8084` | `5434`, `8026`, `8082` | `5433`, `8025`, `8080` |
+| Garage S3, admin, sur `127.0.0.1` | `3920`, `3923` | `3910`, `3913` | `3900`, `3903` |
 | Supervision (profil `monitoring`) | à la demande, `make monitoring-up` | à la demande, `make monitoring-up` | active, `COMPOSE_PROFILES=monitoring` |
 | Grafana, Prometheus, Alertmanager, sur `127.0.0.1` | `3003`, `9092`, `9095` | `3002`, `9091`, `9094` | `3001`, `9090`, `9093` |
 
@@ -294,6 +299,35 @@ sonde de `deploy.yml` qui le dit.
 
 Le jeton d'enregistrement du runner est valable une heure et ne vaut que pour une inscription :
 l'`apply` n'est pas rejouable sans qu'un administrateur du dépôt en crée un nouveau.
+
+### Coffre LUKS des volumes Docker (issue #42)
+
+Statut : `Bloqué par la plateforme`. La machine ENI est un conteneur LXC sur Proxmox, sans
+device-mapper ni loop : `scripts/coffre-luks.sh` s'y arrête sur sa garde, et le chiffrement du
+disque de ce conteneur relève de l'hôte Proxmox, demandé à l'administrateur de l'école. Ce qui
+est en place aujourd'hui : le SSE-C des archives déposées sur Garage. Le runbook ci-dessous vaut
+pour une vraie VM (cible k3s, ou remplacement du conteneur). Décision et modèle de menace dans
+l'[ADR 0020](../adr/0020-chiffrement-au-repos-coffre-luks-et-sse-c.md). Un fichier image LUKS2
+(`/srv/enervision/coffre.img`, clé `/root/enervision-coffre.key`) est monté sur
+`/srv/enervision/coffre`, et `/var/lib/docker/volumes` est bind-monté depuis ce coffre : les
+volumes des trois environnements sont chiffrés au repos sans qu'un fichier Compose change.
+`scripts/coffre-luks.sh` pose tout, rejouable ; Terraform le joue aussi quand `coffre_taille` est
+renseignée. Prérequis : deux fois la taille actuelle des volumes libre sur le disque, le temps de
+la migration. Runbook, joué en root sur la VM, coupure des trois environnements d'une à trois
+minutes :
+
+```bash
+scp scripts/coffre-luks.sh root@10.101.200.37:/tmp/
+ssh root@10.101.200.37 'COFFRE_TAILLE=30G COFFRE_MIGRER=1 bash /tmp/coffre-luks.sh'
+ssh root@10.101.200.37 'findmnt /var/lib/docker/volumes && lsblk /dev/mapper/enervision-coffre && docker ps'
+ssh root@10.101.200.37 'curl -k https://localhost:10443/api/v1/health/ready'
+```
+
+Ensuite, dans cet ordre : sauvegarder `/root/enervision-coffre.key` hors de la VM (sans elle, les
+trois bases sont perdues) ; redémarrer la machine et rejouer les deux vérifications, ce qui valide
+l'ordonnancement crypttab, fstab et drop-in Docker ; alors seulement supprimer la copie en clair,
+`rm -rf /var/lib/docker/volumes.avant-coffre`. Le script affiche ces trois étapes à la fin et
+n'exécute jamais la suppression.
 
 ## Cible à terme, k3s
 

@@ -76,9 +76,25 @@ class Settings(BaseSettings):
     expose_api_docs: bool | None = None
     metrics_token: SecretStr | None = None
 
-    # Compose passe `APP_METRICS_TOKEN` vide quand aucun jeton n'est posé : vide vaut absent, sinon
-    # `/metrics` exigerait un `Bearer` sans valeur et plus rien ne pourrait le scruter.
-    @field_validator("metrics_token", mode="before")
+    s3_endpoint_url: str | None = None
+    s3_region: str = "garage"
+    s3_access_key: str | None = None
+    s3_secret_key: SecretStr | None = None
+    s3_bucket: str | None = None
+    s3_sse_key: SecretStr | None = None
+    reading_retention_days: int = Field(default=1095, ge=30)
+
+    # Compose passe `APP_METRICS_TOKEN` et les réglages S3 vides quand rien n'est posé : vide vaut
+    # absent, sinon `/metrics` exigerait un `Bearer` sans valeur et l'archivage un endpoint vide.
+    @field_validator(
+        "metrics_token",
+        "s3_endpoint_url",
+        "s3_access_key",
+        "s3_secret_key",
+        "s3_bucket",
+        "s3_sse_key",
+        mode="before",
+    )
     @classmethod
     def _jeton_vide_vaut_absent(cls, valeur: object) -> object:
         return None if valeur == "" else valeur

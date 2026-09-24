@@ -16,8 +16,9 @@ L'ingestion des **mesures** est implémentée pour les deux sources du MVP, le d
 l'API Mock. Celle des **alertes** de l'API Mock, `/alerts`, reste à faire : voir
 l'[ADR 0006](../adr/0006-moteur-de-regles-dans-le-backend.md). Les alertes `source='enervision'`,
 elles, sont produites par la détection interne, désormais ordonnancée par le DAG Airflow `alertes`
-(issue #116). L'orchestration de l'ingestion, les agrégats continus, la compression et la
-rétention restent des cibles.
+(issue #116). L'orchestration de l'ingestion, les agrégats continus et la compression restent
+des cibles. La rétention de `reading` est faite : chaque chunk plus vieux que la borne est exporté
+vers Garage puis supprimé (issue #36, section « Rétention et archivage » ci-dessous).
 
 ## Trois emplacements, trois rôles
 
@@ -27,7 +28,7 @@ au mauvais endroit ne s'exécute jamais, ou s'exécute deux fois.
 | Emplacement | Contenu | Quand ça s'exécute |
 |---|---|---|
 | `db/init/` | Extensions, bases annexes | **Une seule fois**, à la première initialisation du conteneur, quand `PGDATA` est vide. Ne rejoue jamais |
-| `db/migrations/` | SQL versionné qui ne découle pas du schéma applicatif : rétention, compression | À la main, aujourd'hui vide |
+| `db/migrations/` | SQL versionné qui ne découle pas du schéma applicatif : compression. La rétention de `reading` n'y est pas : une politique TimescaleDB ignorerait l'export, elle vit dans `apps/backend/app/etl/reading_retention.py`, ordonnancée par le DAG `retention` ([ADR 0019](../adr/0019-stockage-objet-garage-et-cycle-de-vie-des-mesures.md)) | À la main, aujourd'hui vide |
 | `apps/backend/alembic/` | Le schéma exposé par l'API, et lui seul | `alembic upgrade head`, c'est `Base.metadata` qui fait foi |
 
 Une hypertable relève des deux derniers : **Alembic crée la table, et le `create_hypertable()`
@@ -75,8 +76,9 @@ Les mécanismes d'ingestion sont maintenant implémentés pour les deux sources 
 
 Les traitements sont actuellement exécutables directement depuis le backend.
 
-L'orchestration avec Apache Airflow reste une cible, tout comme les agrégats continus,
-la compression et les politiques de rétention.
+L'orchestration avec Apache Airflow reste une cible, tout comme les agrégats continus et la
+compression. La rétention est faite : le DAG `retention` exporte chaque chunk de `reading` plus
+vieux que `READING_RETENTION_DAYS` vers Garage, puis le supprime.
 
 ```mermaid
 flowchart LR
@@ -91,7 +93,8 @@ flowchart LR
 
   hy -.-> agg[("Agrégat continu")]
   hy -.-> comp["Compression"]
-  hy -.-> ret["Rétention"]
+  hy --> ret["Rétention : export CSV gzip vers Garage, puis drop_chunks"]
+  ret --> garage[("Garage S3")]
 
   agg -.-> backend["API FastAPI"]
   agg -.-> graf["Grafana"]
@@ -103,6 +106,26 @@ Les flèches pointillées représentent les éléments encore prévus comme cibl
 
 Les lectures de l'API et de Grafana viseront l'agrégat continu, pas la table brute : c'est tout
 l'intérêt de TimescaleDB, et cela doit rester vrai quand les volumes augmenteront.
+
+### Rétention et archivage (issue #36)
+
+Statut : `Fait`.
+
+`apps/backend/app/etl/reading_retention.py`, ordonnancé chaque nuit à 03:20 UTC par le DAG
+`retention`, sélectionne dans `timescaledb_information.chunks` les chunks de `reading` dont
+`range_end` est antérieur ou égal à `now() - READING_RETENTION_DAYS` : seul un chunk entièrement
+plus vieux que la borne est éligible. Chaque chunk est lu via l'hypertable (`WHERE timestamp >=
+range_start AND timestamp < range_end`), jamais via la table interne, sérialisé en CSV gzip
+reproductible (jsonb et tableaux en JSON trié), puis écrit chiffré SSE-C sous la clé
+`reading/<année>/reading_<début>_<fin>.csv.gz`, bornes UTC compactes. L'objet est relu et son
+sha256 comparé à celui du corps envoyé ; en cas d'écart le chunk est conservé. Seulement alors
+`drop_chunks('reading', older_than => range_end, newer_than => range_start)` supprime ce chunk et
+lui seul, dans une transaction dédiée et courte : `drop_chunks` pose un verrou exclusif sur
+`reading`, `site` et `dataset` jusqu'au COMMIT. Un objet déjà présent avec le même sha256 n'est pas
+réécrit et un chunk supprimé n'est plus éligible : rejouer le DAG est sans effet, `--dry-run` liste
+et mesure sans rien écrire. Le premier passage en production archive les chunks de janvier à
+septembre 2023 ; la démo, ancrée au 31/12/2024, n'est pas touchée. Restauration manuelle :
+télécharger l'objet avec la clé SSE-C, `gunzip`, `COPY` dans `reading` ; aucune commande fournie.
 
 ## Tables d'authentification
 
@@ -239,8 +262,9 @@ colonne de temps : les index déclarés dans la révision le couvrent déjà.
   devient ininterprétable dès le premier changement d'heure.
 - **La colonne de partitionnement entre dans la clé primaire.** Dans `reading` elle s'appelle
   `timestamp` : c'est un nom de colonne, son type reste `timestamptz`.
-- **Les politiques de rétention et de compression** vont dans `db/migrations/`, pas dans Alembic :
-  elles ne découlent pas du schéma applicatif.
+- **Les politiques de compression** vont dans `db/migrations/`, pas dans Alembic : elles ne
+  découlent pas du schéma applicatif. La rétention de `reading` est un traitement ETL
+  (`reading_retention.py`), pas une politique TimescaleDB : elle doit exporter avant de supprimer.
 - **Tout modèle doit être importé dans `app/models/__init__.py`**, sans quoi
   `alembic revision --autogenerate` ne le voit pas et génère un `drop` de sa table.
 
@@ -251,7 +275,9 @@ livrés : ce qui suit porte sur leur exploitation, plus sur leur forme.
 
 - **Quelle granularité** conserver à long terme à l'ingestion : seconde, minute ou quart d'heure.
 - **Quels agrégats continus** créer et sur quelles fenêtres.
-- **Quelle profondeur de rétention** conserver en données brutes et à partir de quand compresser.
+- **Quelle profondeur de rétention** : répondu par l'issue #36. Trois ans en base chaude par
+  défaut (`READING_RETENTION_DAYS`, 1095 jours) ; au-delà, les chunks sont archivés en CSV gzip
+  sur Garage, chiffrés SSE-C, puis supprimés. Reste ouvert : à partir de quand compresser.
 - **Multi-tenant ou non** : un site appartient-il à un client et faut-il cloisonner les lectures.
 
 ## Modélisation détaillée des données
@@ -437,9 +463,28 @@ Les paramètres de ligne de commande disponibles pour l'import sont :
 ```text
 --start-time
 --end-time
---limit
 --dry-run
 ```
+
+**Piège sur `limit`, corrigé dans le code plutôt que documenté** : l'API ne renvoie pas un flux à
+un rythme naturel, elle répartit exactement `limit` lectures, espacées uniformément, sur toute la
+fenêtre `[start_time, end_time)` demandée, la première au tout début de la fenêtre (vérifié
+empiriquement en interrogeant directement l'API). Une fenêtre d'une heure avec `limit=1000`, le
+réglage d'origine, renvoyait donc 1000 lectures espacées de 3,6 secondes à l'intérieur de cette
+heure, pas une lecture horaire, incompatible avec les lags positionnels de `build_features`.
+Plutôt que documenter la règle « `limit` = nombre d'heures de la fenêtre » et compter sur chaque
+appelant pour la respecter, `limit_for_window()` la porte : `import_mock_api_history()` calcule
+`limit` depuis la fenêtre reçue, refuse une fenêtre dont `start_time` ne tombe pas pile sur
+l'heure (c'est elle qui ancre l'alignement), et refuse un intervalle de plus de 1000 heures (le
+plafond `limit` de l'API). `--limit` n'existe donc plus côté CLI. Deux formes de fenêtre sont
+gérées : un multiple entier d'heures (`limit` = ce nombre d'heures, une lecture par heure
+espacée d'1h pile, chemin du backfill manuel) ou une fenêtre plus courte qu'une heure, ou qui
+n'en est pas un multiple entier (`limit=1`, seule valeur qui reste alignée quand l'espacement
+`durée / limit` ne peut valoir 1h pile). Le DAG `mock_api_import` est dans ce second cas : il
+demande la fenêtre `[heure pile précédant le déclenchement, instant du déclenchement)`, plus
+courte qu'une heure, plutôt que l'intervalle Airflow `[data_interval_start, data_interval_end)`
+tel quel (`[:45, :45)`) qui aurait placé l'unique lecture à :45, hors de la grille horaire du
+reste du schéma.
 
 ### Flux d'ingestion API Mock
 
@@ -492,7 +537,7 @@ réponse est donc traitée comme une entrée hostile, conformément à API10 dan
 [la traçabilité OWASP](owasp-traceabilite.md). Le risque premier n'est pas la fausse alerte,
 c'est l'empoisonnement du jeu d'entraînement du modèle de prédiction.
 
-Quatre garde-fous, tous dans `mock_api_import.py` :
+Cinq garde-fous, tous dans `mock_api_import.py` :
 
 | Garde-fou | Mise en œuvre |
 |---|---|
@@ -500,6 +545,7 @@ Quatre garde-fous, tous dans `mock_api_import.py` :
 | Taille de tableau plafonnée | `MAX_SITES` sites, et au plus `--limit` mesures par site |
 | Bornes physiques | `PHYSICAL_BOUNDS`, une plage par grandeur |
 | Frontière d'anti-corruption | `build_site_row()` et `build_reading_row()`, qui ne recopient que les champs attendus |
+| Refus de recouvrir l'historique | `refuse_if_overlaps_historical_dataset()`, voir ci-dessous |
 
 Une valeur hors bornes, d'un type inattendu, `NaN` ou infinie devient `NULL`. Elle laisse sa
 trace dans `null_reasons` sous la forme `out_of_physical_bounds:<colonne>`, et `data_quality`
@@ -509,6 +555,51 @@ d'origine intacte : rien n'est perdu, seule son exploitation est bornée.
 
 Le plafond de taille s'applique après désérialisation de la réponse. Borner le corps HTTP
 lui-même demanderait une lecture en flux, et reste à faire.
+
+### Réconciliation entre les deux sources (issue #15)
+
+`historical_import` (source `csv`) et `mock_api_import` (source `api_history`) écrivent toutes
+deux dans `reading`. Trois décisions ferment cette réconciliation :
+
+- **Le trou temporel est accepté.** Le dataset historique s'arrête au 31/12/2024, et
+  `mock_api_import` n'importe que l'heure précédant chaque déclenchement : rien ne comble
+  automatiquement la période intermédiaire, et rien ne le pourra jamais, aucune mesure réelle
+  n'existe pour ces instants. Conséquence pour le ML, pas nouvelle mais que ce trou rend
+  définitive : `build_features()` calcule ses lags par `shift(n)` positionnel, et `train.py`
+  n'écarte que les lignes où `lag_168h` est `NaN`. Pour un site présent dans les deux sources, les
+  168 premières lectures `api_history` qui suivent le trou héritent donc de lags et de moyennes
+  glissantes calculés sur décembre 2024 (et tant que l'ingestion a moins de 7 jours, c'est le cas
+  de toutes les lectures). Même effet, plus ponctuel, pour chaque heure que le DAG manque
+  (`mock_api_import` en échec, Airflow arrêté). Aucun garde-fou ne détecte aujourd'hui un lag
+  calculé sur un écart réel différent de celui attendu ; issue de suivi à ouvrir.
+- **Le recouvrement est refusé à l'ingestion.** `uq_reading_source` autorise deux lignes au même
+  `(site_id, timestamp)` dès que `source` diffère : rien dans le schéma n'empêche donc un import
+  Mock API manuel avec une fenêtre passée (le script accepte `--start-time`/`--end-time`
+  arbitraires) de dupliquer un point déjà couvert par le CSV. `import_mock_api_history()` appelle
+  `refuse_if_overlaps_historical_dataset()` avant toute écriture, y compris en `--dry-run` (le
+  contrôle est en lecture seule) et avant le moindre appel à l'API Mock : si la fenêtre demandée
+  recouvre au moins une lecture `source='csv'`, l'import est refusé (`ValueError`) plutôt que
+  d'écrire un doublon inter-source silencieux. Le contrôle ne porte que sur la fenêtre demandée,
+  pas sur les lectures reçues : `fetch_readings()` écarte donc toute lecture dont le `timestamp`
+  déborde de `[start_time, end_time)`, pour qu'une réponse hors fenêtre (bug du mock, ou hostile)
+  ne puisse pas le contourner. Ce contrôle compare des instants, pas des chaînes : `parse_datetime()`
+  pose `tzinfo=UTC` sur une entrée sans fuseau (même pattern que `_vers_utc()` dans
+  `app/services/reading.py`), sans quoi l'encodeur `timestamptz` d'asyncpg lirait un datetime naïf
+  dans le fuseau local du **processus**, correct dans le conteneur Airflow (UTC) mais décalé pour
+  un import manuel lancé depuis un poste en Europe/Paris.
+- **Le pipeline ML déduplique en défense.** Le garde-fou ci-dessus protège l'ingestion, pas
+  la lecture : si un recouvrement se produisait malgré tout (import direct en base, contournement
+  du script), `ml/enervision_ml/data.py` ne doit pas casser silencieusement l'hypothèse de
+  `build_features` (« une ligne par `(site_id, timestamp)` »). `load_from_database()` et
+  `load_recent_from_database()` utilisent donc `SELECT DISTINCT ON (site_id, timestamp)`, `source
+  = 'csv'` gagnant sur `'api_history'` en cas d'égalité, l'historique étant une source vérifiée,
+  l'API Mock une entrée hostile (cf. ci-dessus). **Cette préférence est spécifique au chargeur
+  ML.** `GET /readings` renvoie les deux lignes sans les fusionner, et `DriftRepository` /
+  `ReadingRepository.latest_by_site()` / `.latest_for_site()` départagent par `reading_id` le plus
+  grand (en pratique la ligne insérée en dernier, pas forcément `csv`) : en cas de recouvrement, la
+  dérive comparerait alors une prévision à une valeur différente de celle sur laquelle le modèle a
+  appris. Pas d'incohérence aujourd'hui tant que le recouvrement reste refusé à l'ingestion ; à
+  aligner si ce garde-fou devait un jour être contourné.
 
 ### Qualité des données de l'API Mock
 

@@ -67,6 +67,16 @@ jobs:
       - name: Prépare un .env d'exemple
         run: cp .env.example .env
 
+      # Garage refuse un rpc_secret qui n'est pas 32 octets hexadécimaux : `change_me` ne suffit pas.
+      - name: Génère les secrets Garage du .env
+        run: |
+          sed -i -e "s|^GARAGE_RPC_SECRET=.*|GARAGE_RPC_SECRET=$(openssl rand -hex 32)|" \
+              -e "s|^GARAGE_ADMIN_TOKEN=.*|GARAGE_ADMIN_TOKEN=$(openssl rand -hex 32)|" \
+              -e "s|^GARAGE_METRICS_TOKEN=.*|GARAGE_METRICS_TOKEN=$(openssl rand -hex 32)|" \
+              -e "s|^GARAGE_ACCESS_KEY=.*|GARAGE_ACCESS_KEY=GK$(openssl rand -hex 12)|" \
+              -e "s|^GARAGE_SECRET_KEY=.*|GARAGE_SECRET_KEY=$(openssl rand -hex 32)|" \
+              -e "s|^GARAGE_SSE_KEY=.*|GARAGE_SSE_KEY=$(openssl rand -base64 32)|" .env
+
       - name: Valide la stack de développement
         run: docker compose config --quiet
 
@@ -90,6 +100,29 @@ jobs:
 
       - name: Valide les tableaux de bord Grafana
         run: for tableau in monitoring/grafana/dashboards/*.json; do jq empty "$tableau"; done
+
+      # Action tierce, épinglée sur le commit du tag (règle Sonar githubactions:S7637).
+      - name: Installe uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: false
+
+      # Même image et même healthcheck qu'en prod : `--wait` ne rend la main qu'une fois le S3 prêt.
+      - name: Démarre Garage
+        run: docker compose up -d --wait --wait-timeout 120 garage
+
+      - name: Fumée S3 sur Garage, SSE-C compris
+        run: |
+          set -a; . ./.env; set +a
+          uvx --no-build --with boto3==1.43.101 pytest==9.1.1 tests/garage -q
+
+      - name: Journaux de Garage en cas d'échec
+        if: failure()
+        run: docker compose logs --tail=100 garage
+
+      - name: Arrête Garage
+        if: always()
+        run: docker compose down --volumes
 
   workflows:
     name: Analyse des workflows

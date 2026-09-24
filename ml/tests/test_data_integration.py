@@ -11,7 +11,7 @@ from enervision_ml.data import (
     load_from_database,
     load_recent_from_database,
 )
-from tests.conftest import ANCRAGE, insere_lecture, insere_lectures, insere_site
+from tests.conftest import ANCRAGE, insere_dataset, insere_lecture, insere_lectures, insere_site
 
 pytestmark = pytest.mark.integration
 
@@ -37,6 +37,65 @@ def test_load_from_database_joins_the_site_attributes_to_every_reading(
     assert len(mien) == 3
     assert set(mien["site_type"]) == {"factory"}
     assert set(mien["capacity_kw"]) == {250.0}
+
+
+def test_load_from_database_deduplicates_two_sources_at_the_same_instant(
+    connexion_ml: Connection,
+) -> None:
+    # `uq_reading_source` autorise deux lignes au meme (site_id, timestamp) des que `source`
+    # differe : le garde-fou vit dans `mock_api_import.py`, pas dans le schema. Le chargeur ML
+    # doit donc imposer lui-meme "une ligne par (site_id, timestamp)", pas la supposer.
+    #
+    # `csv` est inseree en premier (reading_id le plus bas) et `api_history` en second (le plus
+    # haut) : un depart par `reading_id DESC` seul choisirait `api_history` a tort. Seule la
+    # preference explicite pour `source='csv'` fait gagner le bon reading_id ici, et le test
+    # cesserait de proteger cette regle si l'ordre d'insertion etait inverse.
+    site_id = insere_site(connexion_ml)
+    dataset_id = insere_dataset(connexion_ml)
+    insere_lecture(
+        connexion_ml,
+        site_id,
+        instant=ANCRAGE,
+        consumption_kwh=99.0,
+        source="csv",
+        dataset_id=dataset_id,
+    )
+    insere_lecture(
+        connexion_ml, site_id, instant=ANCRAGE, consumption_kwh=10.0, source="api_history"
+    )
+
+    frame = load_from_database(connexion_ml)
+
+    mien = frame[frame["site_id"] == site_id]
+    assert len(mien) == 1
+    assert mien["consumption_kwh"].iloc[0] == 99.0
+
+
+def test_load_recent_from_database_prefers_csv_when_two_sources_share_an_instant(
+    connexion_ml: Connection,
+) -> None:
+    # Meme ordre d'insertion que ci-dessus, et pour la meme raison : `csv` doit gagner malgre un
+    # `reading_id` plus bas que celui d'`api_history`.
+    site_id = insere_site(connexion_ml)
+    dataset_id = insere_dataset(connexion_ml)
+    insere_lecture(
+        connexion_ml,
+        site_id,
+        instant=ANCRAGE,
+        consumption_kwh=99.0,
+        source="csv",
+        dataset_id=dataset_id,
+    )
+    insere_lecture(
+        connexion_ml, site_id, instant=ANCRAGE, consumption_kwh=10.0, source="api_history"
+    )
+
+    frame = load_recent_from_database(
+        connexion_ml, since=ANCRAGE, until=ANCRAGE + timedelta(hours=3)
+    )
+
+    assert len(frame) == 1
+    assert frame["consumption_kwh"].iloc[0] == 99.0
 
 
 def test_load_recent_from_database_excludes_readings_before_the_since_bound(

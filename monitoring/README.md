@@ -12,6 +12,7 @@ Issue #26, décisions dans l'ADR 0016, vue d'architecture dans
 | `postgres-exporter` | `prometheuscommunity/postgres-exporter` | Connexions, transactions, taille des bases | réseau interne |
 | `node-exporter` | `prom/node-exporter` | Processeur, mémoire et disque de l'hôte | réseau interne |
 | `cadvisor` | `gcr.io/cadvisor/cadvisor` | Mémoire et processeur par conteneur | réseau interne |
+| `garage` (cible) | service de la stack | Requêtes S3, octets lus et écrits, disque local, santé du nœud, sur `garage:3903/metrics` avec `GARAGE_METRICS_TOKEN` | réseau interne |
 
 Les interfaces n'écoutent que sur `127.0.0.1`. Depuis un poste, on passe par un tunnel SSH,
 comme pour Airflow :
@@ -27,7 +28,7 @@ ssh -L 3001:127.0.0.1:3001 -L 9090:127.0.0.1:9090 enervision@10.101.200.37
 - **Recette et poste.** À la demande, sur une stack déjà démarrée : `make monitoring-up`. Les
   services partent en `--no-deps`, sans toucher aux autres.
 
-Trois secrets sont requis, et `make stack-up` comme `make monitoring-up` refusent de démarrer
+Quatre secrets sont requis, et `make stack-up` comme `make monitoring-up` refusent de démarrer
 s'il en manque un. `scripts/provision-host.sh` les génère pour un nouvel environnement.
 
 | Variable | Rôle |
@@ -35,6 +36,7 @@ s'il en manque un. `scripts/provision-host.sh` les génère pour un nouvel envir
 | `APP_METRICS_TOKEN` | Jeton que Prometheus présente sur `/metrics`, et que l'API exige dès qu'il est posé |
 | `GRAFANA_ADMIN_PASSWORD` | Compte `admin` de Grafana. Sans lui, le conteneur refuse de démarrer |
 | `SUPERVISION_DB_PASSWORD` | Rôle PostgreSQL `supervision`, en lecture seule (`db/roles/supervision.sql`) |
+| `GARAGE_METRICS_TOKEN` | Jeton que Prometheus présente sur `/metrics` de Garage (ADR 0019), passé en secret Compose |
 
 L'API doit tourner en conteneur (`make stack-up`, ou `docker compose up -d backend`) :
 Prometheus la joint en `backend:8000`, sur le réseau du projet. Une API lancée par `make dev`

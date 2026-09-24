@@ -26,12 +26,19 @@ secret() { openssl rand -base64 48 | tr -d '/+=\n' | cut -c1-48; }
 court() { secret | cut -c1-20; }
 # Clé Fernet : 32 octets en base64 urlsafe, padding compris.
 fernet() { openssl rand -base64 32 | tr '+/' '-_'; }
+# Garage : rpc_secret et secret de clé S3 en 32 octets hexadécimaux, identifiant de clé en GK + hex,
+# clé SSE-C des archives en 32 octets base64 (ADR 0019, 0020).
+hex32() { openssl rand -hex 32; }
+cle_acces() { echo "GK$(openssl rand -hex 12)"; }
+cle_sse() { openssl rand -base64 32; }
 
 declare -A GENERATEURS=(
     [POSTGRES_PASSWORD]=secret [APP_SECRET_KEY]=secret [AIRFLOW_FERNET_KEY]=fernet
     [AIRFLOW_API_SECRET_KEY]=secret [AIRFLOW_JWT_SECRET]=secret [AIRFLOW_ADMIN_PASSWORD]=court
     [AIRFLOW_APP_SECRET_KEY]=secret [APP_METRICS_TOKEN]=secret [GRAFANA_ADMIN_PASSWORD]=court
     [SUPERVISION_DB_PASSWORD]=secret
+    [GARAGE_RPC_SECRET]=hex32 [GARAGE_ADMIN_TOKEN]=secret [GARAGE_METRICS_TOKEN]=secret
+    [GARAGE_ACCESS_KEY]=cle_acces [GARAGE_SECRET_KEY]=hex32 [GARAGE_SSE_KEY]=cle_sse
 )
 
 verifier_outils() {
@@ -67,7 +74,7 @@ preparer() {
     local env="$1" branche="$2" hote="$3"
     local port_https="$4" port_http="$5" port_front="$6" port_pg="$7" port_mailpit="$8"
     local port_airflow="$9" profils="${10}" port_grafana="${11}" port_prometheus="${12}"
-    local port_alertmanager="${13}"
+    local port_alertmanager="${13}" port_garage_s3="${14}" port_garage_admin="${15}"
     local dossier="$RACINE/$env"
     local fichier="$dossier/.env" brouillon="$dossier/.env.brouillon" cle oubliees ajoutees=""
 
@@ -103,6 +110,7 @@ preparer() {
         [POSTGRES_PORT]="$port_pg" [MAILPIT_UI_PORT]="$port_mailpit" [AIRFLOW_PORT]="$port_airflow"
         [COMPOSE_PROFILES]="$profils" [GRAFANA_PORT]="$port_grafana"
         [PROMETHEUS_PORT]="$port_prometheus" [ALERTMANAGER_PORT]="$port_alertmanager"
+        [GARAGE_S3_PORT]="$port_garage_s3" [GARAGE_ADMIN_PORT]="$port_garage_admin"
     )
     for cle in "${!adressage[@]}"; do
         poser "$brouillon" "$cle" "${adressage[$cle]}"
@@ -200,10 +208,10 @@ publier_dns
 
 # Supervision active en prod seulement (ADR 0016). La prod vit sur `prod.` et non à la racine :
 # dynv6 ne sert pas de façon fiable un TXT `_acme-challenge` à la racine de la zone (ADR 0018).
-#        env   branche  hôte            https            http             front            pg    mailpit airflow profils    grafana prometheus alertmanager
-preparer prod  main     "prod.$DOMAINE" 127.0.0.1:10443  127.0.0.1:10080  127.0.0.1:10444  5433  8025    8080    monitoring 3001    9090       9093
-preparer rec   dev      "rec.$DOMAINE"  127.0.0.1:8443   127.0.0.1:8081   127.0.0.1:8444   5434  8026    8082    ""         3002    9091       9094
-preparer dev   dev      "dev.$DOMAINE"  127.0.0.1:9443   127.0.0.1:8083   127.0.0.1:9444   5435  8027    8084    ""         3003    9092       9095
+#        env   branche  hôte            https            http             front            pg    mailpit airflow profils    grafana prometheus alertmanager garage-s3 garage-admin
+preparer prod  main     "prod.$DOMAINE" 127.0.0.1:10443  127.0.0.1:10080  127.0.0.1:10444  5433  8025    8080    monitoring 3001    9090       9093         3900      3903
+preparer rec   dev      "rec.$DOMAINE"  127.0.0.1:8443   127.0.0.1:8081   127.0.0.1:8444   5434  8026    8082    ""         3002    9091       9094         3910      3913
+preparer dev   dev      "dev.$DOMAINE"  127.0.0.1:9443   127.0.0.1:8083   127.0.0.1:9444   5435  8027    8084    ""         3003    9092       9095         3920      3923
 
 planifier_renouvellement
 if [[ -n "$PROPRIETAIRE" && "$(id -u)" -eq 0 ]]; then

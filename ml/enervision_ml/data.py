@@ -47,9 +47,15 @@ NUMERIC_COLUMNS = [
 # `bool` : `astype(bool)` ferait un `True` d'une absence, et les deux chargeurs divergeraient.
 FLAG_COLUMNS = ["is_working_hours"]
 
+# `uq_reading_source` autorise deux lignes au meme (site_id, timestamp) des que `source` differe
+# (cf. `app/etl/mock_api_import.py`, qui refuse desormais d'importer une fenetre deja couverte par
+# le CSV, mais ne protege pas le sens inverse). `build_features` suppose une ligne par
+# (site_id, timestamp) sans doublon : le `DISTINCT ON` l'impose plutot que de la supposer.
+# 'csv' gagne sur 'api_history' en cas de recouvrement, l'historique etant une source verifiee
+# alors que l'API Mock est traitee comme une entree hostile (cf. OWASP API10).
 _READING_QUERY = text(
     """
-    SELECT
+    SELECT DISTINCT ON (r.site_id, r.timestamp)
         r.site_id,
         r.timestamp,
         r.consumption_kwh,
@@ -61,14 +67,14 @@ _READING_QUERY = text(
         s.capacity_kw
     FROM reading r
     JOIN site s ON s.site_id = r.site_id
-    ORDER BY r.site_id, r.timestamp
+    ORDER BY r.site_id, r.timestamp, (r.source = 'csv') DESC, r.reading_id DESC
     """
 )
 
 
 _RECENT_READING_QUERY = text(
     """
-    SELECT
+    SELECT DISTINCT ON (r.site_id, r.timestamp)
         r.site_id,
         r.timestamp,
         r.consumption_kwh,
@@ -81,7 +87,7 @@ _RECENT_READING_QUERY = text(
     FROM reading r
     JOIN site s ON s.site_id = r.site_id
     WHERE r.timestamp >= :since AND r.timestamp <= :until
-    ORDER BY r.site_id, r.timestamp
+    ORDER BY r.site_id, r.timestamp, (r.source = 'csv') DESC, r.reading_id DESC
     """
 )
 
