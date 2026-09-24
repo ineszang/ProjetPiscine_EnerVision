@@ -302,7 +302,11 @@ l'`apply` n'est pas rejouable sans qu'un administrateur du dépôt en crée un n
 
 ### Coffre LUKS des volumes Docker (issue #42)
 
-Statut : `En cours`, script écrit, jamais encore joué sur la VM. Décision et modèle de menace dans
+Statut : `Bloqué par la plateforme`. La machine ENI est un conteneur LXC sur Proxmox, sans
+device-mapper ni loop : `scripts/coffre-luks.sh` s'y arrête sur sa garde, et le chiffrement du
+disque de ce conteneur relève de l'hôte Proxmox, demandé à l'administrateur de l'école. Ce qui
+est en place aujourd'hui : le SSE-C des archives déposées sur Garage. Le runbook ci-dessous vaut
+pour une vraie VM (cible k3s, ou remplacement du conteneur). Décision et modèle de menace dans
 l'[ADR 0020](../adr/0020-chiffrement-au-repos-coffre-luks-et-sse-c.md). Un fichier image LUKS2
 (`/srv/enervision/coffre.img`, clé `/root/enervision-coffre.key`) est monté sur
 `/srv/enervision/coffre`, et `/var/lib/docker/volumes` est bind-monté depuis ce coffre : les

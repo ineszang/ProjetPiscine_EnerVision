@@ -48,6 +48,11 @@ installer() {
 
 verifier_prerequis() {
     [[ "$(id -u)" -eq 0 ]] || erreur "à lancer en root"
+    # Constaté le 24/09 : la machine ENI est un conteneur LXC, sans device-mapper ni loop. LUKS y
+    # est impossible ; le chiffrement de son disque relève de l'hôte Proxmox (ADR 0020).
+    [[ "$(systemd-detect-virt --container 2>/dev/null || true)" != lxc ]] \
+        || erreur "conteneur LXC : pas de device-mapper ni de loop, LUKS impossible ici ; le chiffrement du disque se fait sur l'hôte (ADR 0020)"
+    [[ -e /dev/mapper/control ]] || erreur "/dev/mapper/control absent : device-mapper indisponible, LUKS impossible ici"
     [[ "$COFFRE_IMAGE" != /var/lib/docker/* ]] \
         || erreur "l'image $COFFRE_IMAGE ne doit pas vivre sous /var/lib/docker, que le coffre recouvre"
     installer cryptsetup || erreur "cryptsetup introuvable dans apt"

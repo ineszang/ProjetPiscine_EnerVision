@@ -39,8 +39,7 @@ sans shell : la garde sur les secrets vit dans le `Makefile` (`garage-garde`, ap
 **Nœud unique assumé.** `replication_factor = 1` et moteur `sqlite`, avec un instantané des
 métadonnées toutes les six heures. La documentation de Garage réserve ce facteur aux
 déploiements de test : ici la machine est unique, la redondance n'existe pour aucun autre service,
-et le coffre LUKS de l'[ADR 0020](0020-chiffrement-au-repos-coffre-luks-et-sse-c.md) porte les
-volumes. LMDB, le moteur par défaut, se corrompt à l'arrêt brutal et rien ne le reconstruirait.
+et le chiffrement au repos est traité à part ([ADR 0020](0020-chiffrement-au-repos-coffre-luks-et-sse-c.md)). LMDB, le moteur par défaut, se corrompt à l'arrêt brutal et rien ne le reconstruirait.
 
 **La rétention de `reading` est un traitement du backend, ordonnancé par Airflow.** Le DAG
 `retention` lance chaque nuit `app.etl.reading_retention` ([ADR 0008](0008-airflow-execute-le-code-du-backend.md)),

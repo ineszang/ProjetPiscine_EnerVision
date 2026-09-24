@@ -22,6 +22,17 @@ console au démarrage : tout redémarrage doit aboutir sans saisie.
 
 ## Décision
 
+**Constat du 24/09, qui borne tout ce qui suit.** La machine `eadl-2025-nantes-g3` n'est pas une
+machine virtuelle mais un conteneur LXC Ubuntu 24.04 sur un hôte Proxmox (`systemd-detect-virt`
+répond `lxc`, aucun `/dev/mapper/control`, aucun périphérique loop, pas de `/dev/fuse`, module
+`dm_crypt` inaccessible). LUKS, comme tout chiffrement au niveau bloc ou FUSE, y est impossible.
+Le chiffrement au repos du disque de ce conteneur ne peut se faire que sur l'hôte Proxmox
+(volume LUKS ou ZFS chiffré sous le conteneur), par l'administrateur de l'école : la demande
+lui est adressée, et jusqu'à sa réponse la base et les métadonnées Garage sont en clair sur ce
+disque. `scripts/coffre-luks.sh` détecte ce cas et refuse de démarrer. Ce qui suit reste la
+décision pour toute machine où le device-mapper est disponible (la cible k3s de `10-infra.md`,
+ou une vraie VM), et le SSE-C des archives est en place dès aujourd'hui.
+
 **Un coffre LUKS2 sous tous les volumes Docker, posé par `scripts/coffre-luks.sh`.**
 
 - Le coffre est un **fichier image creux** (`/srv/enervision/coffre.img`, 30 Go par défaut)

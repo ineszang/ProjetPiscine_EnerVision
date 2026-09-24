@@ -141,10 +141,11 @@ consolidée.
   Argon2id, RBAC à trois rôles. Détail dans [20-backend.md](20-backend.md), décisions dans les
   [ADR 0002](../adr/0002-authentification-jwt-et-refresh-opaque.md) et
   [0003](../adr/0003-autorisation-rbac-a-trois-roles.md).
-- **Chiffrement au repos.** Sur la VM, tous les volumes Docker (base, Garage, Airflow,
-  supervision) vivent dans un coffre LUKS2 dont Docker exige le montage pour démarrer ; les
-  archives de mesures déposées sur Garage sont en plus chiffrées par clé client (SSE-C). Ce que
-  cela protège et ne protège pas : [ADR 0020](../adr/0020-chiffrement-au-repos-coffre-luks-et-sse-c.md).
+- **Chiffrement au repos.** Les archives de mesures déposées sur Garage sont chiffrées par clé
+  client (SSE-C). Le coffre LUKS des volumes Docker (`scripts/coffre-luks.sh`) est prêt pour une
+  vraie VM, mais la machine ENI est un conteneur LXC sans device-mapper : le chiffrement de son
+  disque relève de l'hôte Proxmox, demandé à l'école. Ce qui est couvert et ce qui ne l'est pas :
+  [ADR 0020](../adr/0020-chiffrement-au-repos-coffre-luks-et-sse-c.md).
 - **Interdire par défaut.** Toute route exige un jeton, sauf quatre exceptions listées dans un
   fichier de test qui interroge réellement chaque route sans identifiant.
 - **Révocation immédiate.** Le compte est relu en base à chaque requête : une désactivation ou un

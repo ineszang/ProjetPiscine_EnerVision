@@ -11,8 +11,8 @@ Stockage objet S3 de la stack, un conteneur par projet Compose (ADR 0019). Il ne
 - Ports, sur `127.0.0.1` seulement : `GARAGE_S3_PORT` (3900) pour l'API S3, `GARAGE_ADMIN_PORT`
   (3903) pour `/health` (sans jeton) et `/metrics` (jeton `GARAGE_METRICS_TOKEN`, scruté par
   Prometheus). Le RPC 3901 n'est pas publié.
-- Nœud unique, `replication_factor = 1`, moteur sqlite : aucune redondance, le coffre LUKS de la
-  VM (ADR 0020) et l'instantané des métadonnées toutes les six heures sont les seules protections.
+- Nœud unique, `replication_factor = 1`, moteur sqlite : aucune redondance, l'instantané des
+  métadonnées toutes les six heures est la seule protection ; chiffrement au repos : ADR 0020.
 
 ```bash
 docker compose exec garage /garage status
