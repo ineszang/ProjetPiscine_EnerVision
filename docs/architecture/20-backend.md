@@ -104,6 +104,16 @@ démarre ne prouve rien sur la base, la première connexion réelle a lieu au pr
 | `APP_TRUST_PROXY_HEADERS` | `false` | À vrai derrière un proxy, sinon le compteur par IP devient global |
 | `APP_EXPOSE_API_DOCS` | déduit | Faux en `staging` et `prod` si non renseigné |
 | `APP_METRICS_TOKEN` | absent | Si présent et non vide, `/metrics` exige `Authorization: Bearer`. Vide vaut absent |
+| `APP_S3_ENDPOINT_URL` | absent | Endpoint S3 des archives ; `http://garage:3900` posé par Compose sur `airflow-scheduler`. Vide vaut absent |
+| `APP_S3_REGION` | `garage` | Région déclarée au client S3 |
+| `APP_S3_ACCESS_KEY` | absent | Identifiant de la clé Garage. Vide vaut absent |
+| `APP_S3_SECRET_KEY` | absent | Secret de la clé Garage, `SecretStr`. Vide vaut absent |
+| `APP_S3_BUCKET` | absent | Bucket des archives, `enervision-archives` en Compose. Vide vaut absent |
+| `APP_S3_SSE_KEY` | absent | Base64 de 32 octets, clé SSE-C des archives, `SecretStr`. Vide vaut absent |
+| `APP_READING_RETENTION_DAYS` | `1095` | Profondeur de `reading` en base chaude, 30 jours minimum |
+
+L'API n'exige aucun des réglages `APP_S3_*` ni `APP_READING_RETENTION_DAYS` : seul
+`app.etl.reading_retention` les réclame, et refuse de partir sans endpoint, clés et bucket.
 
 Cinq gardes refusent de démarrer plutôt que de laisser passer une erreur silencieuse :
 secret de moins de 32 caractères ou laissé à sa valeur d'exemple, `debug` en `staging` ou

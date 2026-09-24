@@ -20,3 +20,7 @@ runner_token = "A_RENSEIGNER"
 # Nom du runner cote GitHub. Vide par defaut : le nom d'hote de la machine. A renseigner
 # seulement si deux runners doivent tourner sur la meme machine, leurs noms devant differer.
 # runner_nom = "eni-g3-bis"
+
+# Coffre LUKS des volumes Docker (ADR 0020). Vide ou absent : rien n'est pose. La premiere pose
+# arrete Docker le temps de copier les volumes ; la cle reste sur la machine, a sauvegarder ailleurs.
+# coffre_taille = "30G"

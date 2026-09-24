@@ -16,8 +16,9 @@ L'ingestion des **mesures** est implémentée pour les deux sources du MVP, le d
 l'API Mock. Celle des **alertes** de l'API Mock, `/alerts`, reste à faire : voir
 l'[ADR 0006](../adr/0006-moteur-de-regles-dans-le-backend.md). Les alertes `source='enervision'`,
 elles, sont produites par la détection interne, désormais ordonnancée par le DAG Airflow `alertes`
-(issue #116). L'orchestration de l'ingestion, les agrégats continus, la compression et la
-rétention restent des cibles.
+(issue #116). L'orchestration de l'ingestion, les agrégats continus et la compression restent
+des cibles. La rétention de `reading` est faite : chaque chunk plus vieux que la borne est exporté
+vers Garage puis supprimé (issue #36, section « Rétention et archivage » ci-dessous).
 
 ## Trois emplacements, trois rôles
 
@@ -27,7 +28,7 @@ au mauvais endroit ne s'exécute jamais, ou s'exécute deux fois.
 | Emplacement | Contenu | Quand ça s'exécute |
 |---|---|---|
 | `db/init/` | Extensions, bases annexes | **Une seule fois**, à la première initialisation du conteneur, quand `PGDATA` est vide. Ne rejoue jamais |
-| `db/migrations/` | SQL versionné qui ne découle pas du schéma applicatif : rétention, compression | À la main, aujourd'hui vide |
+| `db/migrations/` | SQL versionné qui ne découle pas du schéma applicatif : compression. La rétention de `reading` n'y est pas : une politique TimescaleDB ignorerait l'export, elle vit dans `apps/backend/app/etl/reading_retention.py`, ordonnancée par le DAG `retention` ([ADR 0019](../adr/0019-stockage-objet-garage-et-cycle-de-vie-des-mesures.md)) | À la main, aujourd'hui vide |
 | `apps/backend/alembic/` | Le schéma exposé par l'API, et lui seul | `alembic upgrade head`, c'est `Base.metadata` qui fait foi |
 
 Une hypertable relève des deux derniers : **Alembic crée la table, et le `create_hypertable()`
@@ -75,8 +76,9 @@ Les mécanismes d'ingestion sont maintenant implémentés pour les deux sources 
 
 Les traitements sont actuellement exécutables directement depuis le backend.
 
-L'orchestration avec Apache Airflow reste une cible, tout comme les agrégats continus,
-la compression et les politiques de rétention.
+L'orchestration avec Apache Airflow reste une cible, tout comme les agrégats continus et la
+compression. La rétention est faite : le DAG `retention` exporte chaque chunk de `reading` plus
+vieux que `READING_RETENTION_DAYS` vers Garage, puis le supprime.
 
 ```mermaid
 flowchart LR
@@ -91,7 +93,8 @@ flowchart LR
 
   hy -.-> agg[("Agrégat continu")]
   hy -.-> comp["Compression"]
-  hy -.-> ret["Rétention"]
+  hy --> ret["Rétention : export CSV gzip vers Garage, puis drop_chunks"]
+  ret --> garage[("Garage S3")]
 
   agg -.-> backend["API FastAPI"]
   agg -.-> graf["Grafana"]
@@ -103,6 +106,26 @@ Les flèches pointillées représentent les éléments encore prévus comme cibl
 
 Les lectures de l'API et de Grafana viseront l'agrégat continu, pas la table brute : c'est tout
 l'intérêt de TimescaleDB, et cela doit rester vrai quand les volumes augmenteront.
+
+### Rétention et archivage (issue #36)
+
+Statut : `Fait`.
+
+`apps/backend/app/etl/reading_retention.py`, ordonnancé chaque nuit à 03:20 UTC par le DAG
+`retention`, sélectionne dans `timescaledb_information.chunks` les chunks de `reading` dont
+`range_end` est antérieur ou égal à `now() - READING_RETENTION_DAYS` : seul un chunk entièrement
+plus vieux que la borne est éligible. Chaque chunk est lu via l'hypertable (`WHERE timestamp >=
+range_start AND timestamp < range_end`), jamais via la table interne, sérialisé en CSV gzip
+reproductible (jsonb et tableaux en JSON trié), puis écrit chiffré SSE-C sous la clé
+`reading/<année>/reading_<début>_<fin>.csv.gz`, bornes UTC compactes. L'objet est relu et son
+sha256 comparé à celui du corps envoyé ; en cas d'écart le chunk est conservé. Seulement alors
+`drop_chunks('reading', older_than => range_end, newer_than => range_start)` supprime ce chunk et
+lui seul, dans une transaction dédiée et courte : `drop_chunks` pose un verrou exclusif sur
+`reading`, `site` et `dataset` jusqu'au COMMIT. Un objet déjà présent avec le même sha256 n'est pas
+réécrit et un chunk supprimé n'est plus éligible : rejouer le DAG est sans effet, `--dry-run` liste
+et mesure sans rien écrire. Le premier passage en production archive les chunks de janvier à
+septembre 2023 ; la démo, ancrée au 31/12/2024, n'est pas touchée. Restauration manuelle :
+télécharger l'objet avec la clé SSE-C, `gunzip`, `COPY` dans `reading` ; aucune commande fournie.
 
 ## Tables d'authentification
 
@@ -239,8 +262,9 @@ colonne de temps : les index déclarés dans la révision le couvrent déjà.
   devient ininterprétable dès le premier changement d'heure.
 - **La colonne de partitionnement entre dans la clé primaire.** Dans `reading` elle s'appelle
   `timestamp` : c'est un nom de colonne, son type reste `timestamptz`.
-- **Les politiques de rétention et de compression** vont dans `db/migrations/`, pas dans Alembic :
-  elles ne découlent pas du schéma applicatif.
+- **Les politiques de compression** vont dans `db/migrations/`, pas dans Alembic : elles ne
+  découlent pas du schéma applicatif. La rétention de `reading` est un traitement ETL
+  (`reading_retention.py`), pas une politique TimescaleDB : elle doit exporter avant de supprimer.
 - **Tout modèle doit être importé dans `app/models/__init__.py`**, sans quoi
   `alembic revision --autogenerate` ne le voit pas et génère un `drop` de sa table.
 
@@ -251,7 +275,9 @@ livrés : ce qui suit porte sur leur exploitation, plus sur leur forme.
 
 - **Quelle granularité** conserver à long terme à l'ingestion : seconde, minute ou quart d'heure.
 - **Quels agrégats continus** créer et sur quelles fenêtres.
-- **Quelle profondeur de rétention** conserver en données brutes et à partir de quand compresser.
+- **Quelle profondeur de rétention** : répondu par l'issue #36. Trois ans en base chaude par
+  défaut (`READING_RETENTION_DAYS`, 1095 jours) ; au-delà, les chunks sont archivés en CSV gzip
+  sur Garage, chiffrés SSE-C, puis supprimés. Reste ouvert : à partir de quand compresser.
 - **Multi-tenant ou non** : un site appartient-il à un client et faut-il cloisonner les lectures.
 
 ## Modélisation détaillée des données

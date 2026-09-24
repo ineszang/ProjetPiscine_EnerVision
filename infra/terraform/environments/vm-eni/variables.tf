@@ -94,3 +94,9 @@ variable "runner_dossier" {
   description = "Dossier d'installation du runner sur la machine."
   default     = "/opt/actions-runner"
 }
+
+variable "coffre_taille" {
+  type        = string
+  description = "Taille du coffre LUKS qui chiffre /var/lib/docker/volumes (ADR 0020, scripts/coffre-luks.sh), ex. 30G. Vide : le coffre n'est pas pose. La premiere pose arrete Docker le temps de copier les volumes ; la cle reste sur la machine, a sauvegarder ailleurs."
+  default     = ""
+}

@@ -21,6 +21,8 @@ flowchart LR
     db[("db<br/>TimescaleDB")]
     mail["mailpit"]
 
+    garage["garage<br/>:3903/metrics"]
+
     subgraph sup["Profil monitoring"]
       prom["prometheus<br/>15 s, 15 jours"]
       am["alertmanager"]
@@ -35,6 +37,7 @@ flowchart LR
 
   prom -->|"Bearer APP_METRICS_TOKEN"| api
   prom --> pge & node & cad
+  prom -->|"Bearer GARAGE_METRICS_TOKEN"| garage
   pge -->|"rôle supervision"| db
   node -.->|"/proc, /sys"| hote
   cad -.->|"cgroups"| hote
@@ -56,6 +59,7 @@ conteneur couvre donc aussi la recette, qu'on distingue au préfixe `enervision-
 | node-exporter | Processeur, mémoire disponible, espace disque de `/` | Tableau « Infrastructure » |
 | cAdvisor | Mémoire (`working_set`) et processeur par conteneur | Tableau « Infrastructure » |
 | TimescaleDB, en SQL | Fraîcheur des relevés par site, relevés ingérés par heure, alertes par sévérité, `drift_report` | Tableau « Données et modèle » |
+| Garage (`/metrics` du port admin, jeton `GARAGE_METRICS_TOKEN`) | `api_s3_request_counter`, `block_bytes_written`, `garage_local_disk_avail`, `cluster_healthy` | Prometheus seulement, aucun tableau dédié ; `CibleInjoignable` couvre son indisponibilité ([ADR 0019](../adr/0019-stockage-objet-garage-et-cycle-de-vie-des-mesures.md)) |
 
 Deux choix de l'instrumentation se lisent dans ces courbes :
 
