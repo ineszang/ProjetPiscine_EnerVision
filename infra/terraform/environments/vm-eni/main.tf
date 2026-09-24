@@ -6,12 +6,15 @@
 # Contrainte : pas de provisioner `destroy` sur le runner. Il imposerait une connexion ne lisant
 # que `self`, donc le chemin de la cle SSH dans le state, et `svc.sh uninstall` ne desinscrit pas
 # le runner cote GitHub : le retrait reste manuel, depuis les parametres du depot.
+# Piege : seule exception a « un apply n'interrompt pas la stack » : la premiere pose du coffre
+# (`coffre_taille` non vide, ADR 0020) arrete Docker le temps de copier les volumes.
 # Ref : ADR 0009 et 0017 pour les trois environnements, `scripts/provision-host.sh` pour leur contenu.
 
 locals {
   sudo           = var.ssh_user == "root" ? "" : "sudo "
   en_tant_que    = "${var.ssh_user == "root" ? "" : "sudo "}runuser -u ${var.proprietaire} --"
   provisionneur  = "${path.root}/../../../../scripts/provision-host.sh"
+  coffre         = "${path.root}/../../../../scripts/coffre-luks.sh"
   runner_archive = "actions-runner-linux-x64-${var.runner_version}.tar.gz"
   # Substitution shell, evaluee par le sh -c distant : un nom de runner doit etre unique dans
   # le depot, le nom d'hote l'est deja et le reste si cette racine sert a une autre machine.
@@ -50,11 +53,47 @@ resource "null_resource" "docker_engine" {
   }
 }
 
+# Optionnel : un coffre LUKS2 dans un fichier image, bind-monte sur /var/lib/docker/volumes
+# (ADR 0020). Rejouable : deja en place, le script affiche l'etat et sort sans rien toucher.
+resource "null_resource" "coffre" {
+  count      = var.coffre_taille == "" ? 0 : 1
+  depends_on = [null_resource.docker_engine]
+
+  triggers = {
+    script = filesha256(local.coffre)
+    taille = var.coffre_taille
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.ssh_host
+    port        = var.ssh_port
+    user        = var.ssh_user
+    private_key = file(pathexpand(var.ssh_private_key_path))
+    timeout     = "5m"
+  }
+
+  provisioner "file" {
+    source      = local.coffre
+    destination = "/tmp/coffre-luks.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      <<-EOT
+        set -eu
+        ${local.sudo}env COFFRE_TAILLE='${var.coffre_taille}' COFFRE_MIGRER=1 bash /tmp/coffre-luks.sh
+        rm -f /tmp/coffre-luks.sh
+      EOT
+    ]
+  }
+}
+
 # `provision-host.sh` verifie lui-meme docker, compose et la sortie HTTPS, puis prepare un clone
 # par environnement, son `.env` et son certificat. Il est rejouable : un `.env` existant n'est
 # jamais reecrit, un certificat present jamais regenere.
 resource "null_resource" "environnements" {
-  depends_on = [null_resource.docker_engine]
+  depends_on = [null_resource.docker_engine, null_resource.coffre]
 
   triggers = {
     script  = filesha256(local.provisionneur)
