@@ -26,7 +26,7 @@ production `main`.
 
 | Membre | Compte GitHub | Commits sur `dev`, hors merges | PR mergées, auteur principal | PR mergées par lui | Board : Done / En cours / Todo | Domaines observés dans ses PR |
 |---|---|---|---|---|---|---|
-| Johan LEROY (Tech Lead) | `JohanLeroy` | 172 | 34 | 59 | 36 / 0 / 0 | Socle backend (auth, RBAC, audit, contrat OpenAPI), moteur de règles, vues frontend, reverse proxy et certificats, déploiement continu et trois environnements, Terraform, CI unifiée, e2e et charge, supervision, Garage et rétention, tests d'intégration, dérive, documentation |
+| Johan LEROY | `JohanLeroy` | 172 | 34 | 59 | 36 / 0 / 0 | Socle backend et sécurité, moteur de règles, vues frontend, déploiement et environnements, CI, supervision, stockage objet |
 | Dorian PESCE | `phyri0s` | 42 | 11 | 11 | 16 / 0 / 0 | Terraform k3s, endpoints, pipeline LightGBM, scoring, alertes internes, DAGs ML, DAST, en-tête CORP, réconciliation des sources |
 | Inès ZANG | `ineszang` | 54 | 4 | 5 | 5 / 2 / 0 | Terraform initial, pipeline CI, SonarCloud, administration du dépôt, procédures de déploiement |
 | Meryem EL GHAM | `Meryemel-gham` | 23 | 6 | 2 | 7 / 2 / 0 | Schéma de données, imports historique et API Mock, DAGs d'import |
@@ -37,8 +37,7 @@ production `main`.
 
 Totaux : **323 commits** hors merges sur `dev` (458 avec merges), **81 PR mergées**, 69 éléments
 au board. Méthode : l'**auteur principal** d'une PR est l'auteur majoritaire des commits de sa
-branche. Deux PR ouvertes par Valentin reviennent ainsi à Johan : #73 et #164 (5 commits sur 6,
-sur une amorce de Valentin). Les six remontées de `dev` vers `main` ne sont attribuées à
+branche, qui peut différer du membre qui l'a ouverte. Les six remontées de `dev` vers `main` ne sont attribuées à
 personne. Le nombre de commits mesure une activité, pas une valeur : les pratiques de découpage
 diffèrent d'un membre à l'autre.
 
@@ -51,8 +50,8 @@ Tech Lead a été nommé au départ ; les autres se lisent dans les PR de chacun
 
 | Membre | Rôle principal exercé |
 |---|---|
-| Johan LEROY | **Tech Lead** : architecture, intégration, relecture, sécurité, déploiement |
-| Dorian PESCE | **Data & IA** : modèle LightGBM, DAGs ML, scoring ; premier relecteur de l'équipe |
+| Johan LEROY | **Tech Lead** : architecture, intégration, sécurité, déploiement |
+| Dorian PESCE | **Data & IA** : modèle LightGBM, DAGs ML, scoring, scan DAST |
 | Inès ZANG | **Cloud / DevOps** : Terraform initial, pipeline CI, SonarCloud, administration du dépôt |
 | Meryem EL GHAM | **Data** : schéma de données, imports historique et API Mock, DAGs d'import |
 | Valentin DE FARIA RODRIGUES | **Fullstack Dev** : frontend et ses tests, supervision des capteurs, registre MLflow |
@@ -71,14 +70,16 @@ points d'avancement.
 
 | Chantier | Responsible | Accountable | Consulted | Informed |
 |---|---|---|---|---|
-| Backend / API | `JohanLeroy`, `phyri0s`, `Meryemel-gham` | `JohanLeroy` | `phyri0s` | équipe |
-| Frontend | `JohanLeroy`, `ValentinDeFaria`, `ineszang` | `JohanLeroy` | `phyri0s` | équipe |
-| Data & ML | `phyri0s`, `Meryemel-gham`, `JohanLeroy`, `ValentinDeFaria` (registre) | `JohanLeroy` | `phyri0s`, `JohanLeroy` | équipe |
-| Infra / CI-CD | `JohanLeroy`, `ineszang`, `phyri0s`, `ValentinDeFaria` | `JohanLeroy` | `phyri0s` | équipe |
-| Sécurité | `JohanLeroy`, `phyri0s` (DAST) | `JohanLeroy` | `phyri0s` | équipe |
+| Backend / API | les cinq membres | `ineszang`, `JohanLeroy`, `Meryemel-gham`, `phyri0s` | `JohanLeroy`, `Meryemel-gham`, `phyri0s`, `ValentinDeFaria` | équipe |
+| Frontend | `ineszang`, `JohanLeroy`, `phyri0s`, `ValentinDeFaria` | `ineszang`, `JohanLeroy`, `phyri0s`, `ValentinDeFaria` | `JohanLeroy`, `Meryemel-gham`, `phyri0s` | équipe |
+| Data & ML | `JohanLeroy`, `Meryemel-gham`, `phyri0s`, `ValentinDeFaria` | les cinq membres | `JohanLeroy`, `phyri0s` | équipe |
+| Infra / CI-CD | les cinq membres | les cinq membres | `JohanLeroy`, `Meryemel-gham`, `phyri0s` | équipe |
+| Sécurité | `JohanLeroy`, `Meryemel-gham`, `phyri0s`, `ValentinDeFaria` | `JohanLeroy`, `phyri0s` | `JohanLeroy`, `Meryemel-gham`, `phyri0s` | équipe |
 
-Lecture : le Tech Lead valide l'intégration de tous les chantiers, et `phyri0s` en est le premier
-relecteur. Le RACI n'a pas été posé en amont : il se lit a posteriori dans les merges et les revues.
+Membres cités par ordre alphabétique de leur compte. Lecture : chaque chantier compte au moins
+quatre contributeurs, plusieurs membres ont validé des merges sur chacun, et chacun a été relu
+par au moins deux membres. Le RACI n'a pas été posé en amont : il est reconstitué depuis les
+merges et les revues.
 
 ---
 
@@ -95,18 +96,13 @@ Constat factuel tiré du GitHub Project, du tracker d'issues et du dépôt :
   pris avant un ticket essentiel.
 - **Estimation en taille de tee-shirt** : 48 S, 13 M, 5 XS, 3 sans taille.
 - **Traçabilité ticket → PR → commit** : chaque ticket livré porte ses PR liées.
-- **Revue de code avant merge.** `JohanLeroy` a relu par écrit **23 PR d'autres membres** :
-  15 revues formelles (8 `APPROVED`, 5 `COMMENTED`, 2 `CHANGES_REQUESTED`) et 8 revues publiées
-  en commentaire. `phyri0s` a posé 17 approbations formelles, `ValentinDeFaria` 2. Au total,
-  **55 des 62 PR de fonctionnalité (89 %)** ont été relues par un autre membre avant merge, par
-  revue formelle ou commentaire ; les remontées de `dev` vers `main` ne portent que des PR déjà
-  relues.
+- **Revue de code avant merge.** **55 des 62 PR de fonctionnalité (89 %)** ont été relues par
+  un autre membre avant merge, par revue formelle ou commentaire ; les remontées de `dev` vers
+  `main` ne portent que des PR déjà relues.
 - **Intégration.** **81 PR mergées** : 62 vers `dev`, 19 vers `main` (6 remontées, 1 réglage
-  Sonar, 12 Dependabot). `JohanLeroy` en a mergé 59, dont 42 vers `dev` ; parmi elles, 13 PR
-  écrites par d'autres membres et 12 PR Dependabot.
-- **Décisions écrites.** **20 ADR** : 17 rédigés par `JohanLeroy` (0001 à 0004, 0006 à 0010,
-  0013 à 0020), 1 par `phyri0s` (0005, LightGBM), et 2 procédures de déploiement versées par
-  `ineszang` (0011, 0012), qui relèvent davantage de la note d'exécution que de l'ADR.
+  Sonar, 12 Dependabot). Les cinq membres ont mergé des PR.
+- **Décisions écrites.** **20 ADR** versionnées dans `docs/adr/`, dont deux procédures de
+  déploiement (0011, 0012) qui relèvent davantage de la note d'exécution que de l'ADR.
 - **Points d'avancement** les 15, 17, 18 et 21/09, chacun terminé par une décision ; ceux du 15
   et du 18/09 sont versionnés dans `docs/dailies/`. Le compte rendu du 18/09 a été rédigé après
   coup, le 21/09.
@@ -196,24 +192,24 @@ fermées, mais 18 PR mergées, le déploiement continu et Terraform, les plus lo
 
 ### Livré depuis le 18/09 à 16h00
 
-| PR | Mergée le | Auteur principal | Contenu |
-|---|---|---|---|
-| #113, #118 | 18 et 21/09 | `phyri0s` | Détection des alertes internes ; entraînement et scoring LightGBM orchestrés par deux DAGs |
-| #114, #124 | 21/09 | `JohanLeroy` | Moteur de règles de recommandation (ADR 0006) ; DAG d'alertes et de recommandations (ADR 0008) |
-| #112, #138, #146 | 21 et 22/09 | `Meryemel-gham` | Import depuis l'API Mock borné ; import historique, puis import horaire, orchestrés par Airflow |
-| #107, #123 | 21 et 22/09 | `ValentinDeFaria` | Supervision des capteurs par site ; enregistrement du modèle dans le registre MLflow |
-| #117, #121 | 21/09 | `JohanLeroy` | Reverse proxy Nginx et TLS (ADR 0007) ; SAST Bandit et vue CI/CD |
-| #136, #137 | 21/09 | `JohanLeroy` | Flux d'alertes du tableau de bord ; vue recommandations |
-| #139, #143, #144 | 22/09 | `JohanLeroy` | Déploiement continu, runner auto-hébergé (ADR 0009) ; réalignement Airflow 3 ; Terraform provisionne la machine (ADR 0010) |
-| #140 | 22/09 | `phyri0s` | Scan dynamique OWASP ZAP de l'API |
-| #147 | 22/09 | `JohanLeroy` | Tests d'intégration API, base et ML ; surveillance de dérive (ADR 0013) |
-| #148 | 23/09 | `JohanLeroy` | CI unifiée (ADR 0014), e2e Playwright et charge k6 (ADR 0015), supervision Prometheus, Alertmanager, Grafana (ADR 0016) |
-| #149 | 23/09 | `phyri0s` | En-tête `Cross-Origin-Resource-Policy` sur toutes les réponses |
-| #151 | 23/09 | `JohanLeroy` | Troisième environnement, `dev`, déployé à la demande (ADR 0017) |
-| #156, #159 | 23/09 | `JohanLeroy` | Noms publics, certificats Let's Encrypt par DNS-01, frontal SNI (ADR 0018) |
-| #162 | 23/09 | `phyri0s` | Réconciliation des deux sources de relevés |
-| #164 | 24/09 | `JohanLeroy` | Garage par environnement, rétention exportée des relevés, chiffrement des archives (ADR 0019, 0020) |
-| 6 remontées, #142, 12 Dependabot | 21 au 24/09 | - | Mises en production, analyse Sonar sautée sur les PR Dependabot, mises à jour de dépendances |
+| PR | Mergée le | Contenu |
+|---|---|---|
+| #113, #118 | 18 et 21/09 | Détection des alertes internes ; entraînement et scoring LightGBM orchestrés par deux DAGs |
+| #114, #124 | 21/09 | Moteur de règles de recommandation (ADR 0006) ; DAG d'alertes et de recommandations (ADR 0008) |
+| #112, #138, #146 | 21 et 22/09 | Import depuis l'API Mock borné ; import historique, puis import horaire, orchestrés par Airflow |
+| #107, #123 | 21 et 22/09 | Supervision des capteurs par site ; enregistrement du modèle dans le registre MLflow |
+| #117, #121 | 21/09 | Reverse proxy Nginx et TLS (ADR 0007) ; SAST Bandit et vue CI/CD |
+| #136, #137 | 21/09 | Flux d'alertes du tableau de bord ; vue recommandations |
+| #139, #143, #144 | 22/09 | Déploiement continu, runner auto-hébergé (ADR 0009) ; réalignement Airflow 3 ; Terraform provisionne la machine (ADR 0010) |
+| #140 | 22/09 | Scan dynamique OWASP ZAP de l'API |
+| #147 | 22/09 | Tests d'intégration API, base et ML ; surveillance de dérive (ADR 0013) |
+| #148 | 23/09 | CI unifiée (ADR 0014), e2e Playwright et charge k6 (ADR 0015), supervision Prometheus, Alertmanager, Grafana (ADR 0016) |
+| #149 | 23/09 | En-tête `Cross-Origin-Resource-Policy` sur toutes les réponses |
+| #151 | 23/09 | Troisième environnement, `dev`, déployé à la demande (ADR 0017) |
+| #156, #159 | 23/09 | Noms publics, certificats Let's Encrypt par DNS-01, frontal SNI (ADR 0018) |
+| #162 | 23/09 | Réconciliation des deux sources de relevés |
+| #164 | 24/09 | Garage par environnement, rétention exportée des relevés, chiffrement des archives (ADR 0019, 0020) |
+| 6 remontées, #142, 12 Dependabot | 21 au 24/09 | Mises en production, analyse Sonar sautée sur les PR Dependabot, mises à jour de dépendances |
 
 ### Ce qui n'a pas été livré, et pourquoi
 
@@ -303,7 +299,7 @@ full stack de l'équipe, qui maîtrisait Angular ; aucune objection dans le cadr
 Déclaration exigée par le formateur : outils utilisés, tâches réalisées, valeur ajoutée,
 limites constatées, vérifications humaines.
 
-### Déclaration de Johan LEROY (Tech Lead)
+### Déclaration de Johan LEROY
 
 | | |
 |---|---|
