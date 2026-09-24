@@ -258,43 +258,7 @@ imparti, et **RPA avancé**, au-delà de l'orchestration Airflow.
 
 ---
 
-## 6. Écarts entre conception (EC01) et réalisation
-
-Le guide d'évaluation le dit : **les écarts entre conception et réalisation font partie du
-compte rendu d'activité**. Chaque écart ci-dessous porte sa trace.
-
-| # | Choix du dossier EC01 (14/09) | Réalisé au gel | Verdict |
-|---|---|---|---|
-| 1 | FastAPI / Python pour l'API | FastAPI, contrat OpenAPI versionné et testé | ✅ Tenu |
-| 2 | PostgreSQL 17 + TimescaleDB | Identique, relevés en hypertable (ADR 0001) | ✅ Tenu |
-| 3 | JWT + Argon2id, RBAC à 3 rôles | Identique, plus rotation du jeton de rafraîchissement (ADR 0002, 0003) | ✅ Tenu |
-| 4 | Une valeur nulle n'est jamais effacée | Qualité de donnée et imputation tracées, gravées par une contrainte `CHECK` | ✅ Tenu |
-| 5 | Contrats d'interface figés | Contrat OpenAPI testé, table `prediction` comme frontière ML | ✅ Tenu |
-| 6 | Docker Compose plutôt que Kubernetes | Compose, un projet par environnement (ADR 0009, 0017) | ✅ Tenu |
-| 7 | On-premise plutôt que cloud public | Machine de l'école, aucune ressource cloud | ✅ Tenu |
-| 8 | Traefik en terminaison TLS | Nginx par stack (ADR 0007) et frontal SNI (ADR 0018) | 🔁 Substitué |
-| 9 | Prophet + IsolationForest | LightGBM, un modèle global (ADR 0005), alertes internes par règles, dérive surveillée (ADR 0013) | 🔁 Substitué |
-| 10 | APScheduler pour l'ETL | Airflow, 7 DAGs : imports, entraînement, scoring, alertes, dérive, rétention | 🔁 Substitué |
-| 11 | MinIO, couche bronze | Garage par environnement (ADR 0019) | 🔁 Substitué |
-| 12 | Ansible, durcissement et déploiement | Terraform et script rejouable (ADR 0010) ; durcissement non automatisé | ⚠️ Partiel |
-| 13 | SOPS + age pour les secrets | Secrets générés sur la machine, hors de Git | ❌ Non fait |
-| 14 | Trivy, Bandit, gitleaks en CI | Bandit (#121) et un DAST ZAP non prévu (#140) ; Trivy et gitleaks hors CI | ⚠️ Partiel |
-| 15 | Prometheus, Grafana, Loki | Prometheus, Alertmanager, Grafana actifs en production (ADR 0016) ; pas de Loki | ⚠️ Partiel |
-| 16 | Runner auto-hébergé, déploiement automatique | `deploy.yml` sur runner auto-hébergé, sept déploiements de production | ✅ Tenu |
-| 17 | Deux réseaux Docker, données jamais exposées | Un seul composant exposé, le frontal ; tout le reste sur la boucle locale | 🔁 Intention tenue, autre moyen |
-
-**Décompte sur les 17 choix du dossier : 8 tenus, 5 substitués, 3 partiels, 1 non fait.** Au
-23/09, il était de 8 tenus, 4 substitués, 3 partiels et 2 non faits : MinIO est passé de « non
-fait » à « substitué » par Garage.
-
-**Hors de cette liste**, le dashboard était prévu en React / Vite ; il est en **Angular 22**
-depuis son initialisation le 14/09 (commit `49f4697`, PR #52). Sans effet sur le reste de
-l'architecture, puisque le frontend ne connaît que le contrat d'API. Motif : choix de Valentin, développeur
-full stack de l'équipe, qui maîtrisait Angular ; aucune objection dans le cadre du projet.
-
----
-
-## 7. Usage de l'intelligence artificielle
+## 6. Usage de l'intelligence artificielle
 
 Déclaration exigée par le formateur : outils utilisés, tâches réalisées, valeur ajoutée,
 limites constatées, vérifications humaines.
@@ -316,7 +280,7 @@ tâches, valeur ajoutée, limites, vérifications.
 
 ---
 
-## 8. Licences logicielles
+## 7. Licences logicielles
 
 **Licence du dépôt** : aucun fichier `LICENSE` au gel. Faute de licence explicite, le code reste
 sous le régime par défaut : tous droits réservés à ses auteurs, aucune réutilisation accordée.
@@ -348,7 +312,7 @@ notamment sa licence AGPL, que Garage partage ; les autres raisons de l'ADR rest
 
 ---
 
-## 9. Anonymisation et conformité RGPD
+## 8. Anonymisation et conformité RGPD
 
 - **Les données du projet sont synthétiques.** Les séries de consommation proviennent des CSV
   fournis par l'organisme de formation et de l'API Mock simulée. Aucune donnée de consommation
