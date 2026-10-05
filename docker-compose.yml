@@ -271,7 +271,7 @@ services:
 
   # Sans mot de passe, Grafana créerait un compte admin/admin : le conteneur refuse de démarrer.
   grafana:
-    image: grafana/grafana:13.2.2
+    image: grafana/grafana:13.2.3
     profiles: ["monitoring"]
     entrypoint:
       - /bin/sh
