@@ -8,8 +8,8 @@
     "report": "playwright show-report"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "@types/node": "^26.6.2",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^26.6.4",
     "typescript": "~7.0.2"
   }
 }
