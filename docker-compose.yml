@@ -237,7 +237,7 @@ services:
   # Profil `monitoring` : actif en prod par COMPOSE_PROFILES, à la demande ailleurs (ADR 0016).
   # Aucun `depends_on` : `make monitoring-up` démarre en `--no-deps`, sans jamais recréer `db`.
   prometheus:
-    image: prom/prometheus:v3.14.0
+    image: prom/prometheus:v3.15.1
     profiles: ["monitoring"]
     command:
       - --config.file=/etc/prometheus/prometheus.yml
