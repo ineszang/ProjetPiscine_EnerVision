@@ -68,7 +68,7 @@ services:
     restart: unless-stopped
 
   certbot:
-    image: certbot/certbot:v5.8.0
+    image: certbot/certbot:v5.9.0
     profiles: ["acme"]
     volumes:
       - letsencrypt:/etc/letsencrypt
